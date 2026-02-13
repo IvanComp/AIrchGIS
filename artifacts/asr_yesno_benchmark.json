@@ -1,0 +1,27 @@
+{
+  "device": "cpu",
+  "max_utterances": 60,
+  "results": {
+    "wav2vec2_base_960h": {
+      "token_accuracy": 0.4583333333333333,
+      "utterance_exact_match": 0.0,
+      "tokens_evaluated": 480,
+      "utterances_evaluated": 60,
+      "elapsed_sec": 17.61561433300085
+    },
+    "wav2vec2_large_960h": {
+      "token_accuracy": 0.6229166666666667,
+      "utterance_exact_match": 0.0,
+      "tokens_evaluated": 480,
+      "utterances_evaluated": 60,
+      "elapsed_sec": 40.28703720899648
+    },
+    "hubert_asr_large": {
+      "token_accuracy": 0.75,
+      "utterance_exact_match": 0.2,
+      "tokens_evaluated": 480,
+      "utterances_evaluated": 60,
+      "elapsed_sec": 39.8591452499968
+    }
+  }
+}

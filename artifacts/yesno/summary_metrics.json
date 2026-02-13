@@ -1,0 +1,20 @@
+{
+  "small": {
+    "test_loss": 0.1486843228340149,
+    "test_accuracy": 1.0,
+    "keras_model": "artifacts/yesno/models/yesnonet_small.keras",
+    "tflite_model": "artifacts/yesno/models/yesnonet_small.tflite"
+  },
+  "medium": {
+    "test_loss": 0.12186533957719803,
+    "test_accuracy": 1.0,
+    "keras_model": "artifacts/yesno/models/yesnonet_medium.keras",
+    "tflite_model": "artifacts/yesno/models/yesnonet_medium.tflite"
+  },
+  "big": {
+    "test_loss": 0.12447785586118698,
+    "test_accuracy": 1.0,
+    "keras_model": "artifacts/yesno/models/yesnonet_big.keras",
+    "tflite_model": "artifacts/yesno/models/yesnonet_big.tflite"
+  }
+}
