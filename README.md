@@ -1,5 +1,9 @@
 # Neural Detecting v0.5
 
+## MASE
+
+<https://sim.mase.gov.it/portalediaccesso/mappe/#/viewer/new>
+
 ## iPhone / Chrome mobile (modo semplice)
 
 Avvio standard con link HTTPS Gradio:
@@ -18,12 +22,14 @@ Non usare `https://IP:7860` (quello genera `Invalid HTTP request`).
 Usa tunnel HTTPS alternativo (`localhost.run`):
 
 Terminale A:
+
 ```bash
 cd '/Users/ivan/Desktop/Neural-Detecting'
 YESNO_SHARE=0 python3 yesno_live_web.py
 ```
 
 Terminale B:
+
 ```bash
 ssh -o StrictHostKeyChecking=no -R 80:127.0.0.1:7860 nokey@localhost.run
 ```
