@@ -15,6 +15,7 @@ import rasterio
 import rasterio.warp
 import rasterio.features
 import rasterio.transform
+from rasterio.fill import fillnodata
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -30,12 +31,22 @@ import requests
 import rvt.vis
 import rvt.blend
 
+try:
+    from scipy.ndimage import gaussian_filter
+except Exception:
+    gaussian_filter = None
+
 EXTS = {".tif", ".tiff", ".asc"}
 SAT_ZOOMS_TRY = (19, 18, 17, 16, 15, 14, 13, 12)
 MASE_URL = "https://sim.mase.gov.it/portalediaccesso/mappe/#/viewer/new."
 GE_URL = "https://earth.google.com/web/@42.06329556,13.44458279,859.60342866a,1982377.06794083d,35y,0h,0t,0r/data=CgRCAggBOgMKATBCAggASg0I____________ARAA"
 FIRST_DIR_CANDIDATES = ("DSM_First", "DSM_Fisrt", "DSMfirst")
 LAST_DIR_CANDIDATES = ("DSM_Last", "DSMlast")
+PREPRO_PROFILES = {
+    "prep1": {"label": "PrePro 1", "suffix": "_prep1", "fill_dist": 60, "fill_smooth_iter": 1, "sigma": 0.45},
+    "prep2": {"label": "PrePro 2", "suffix": "_prep2", "fill_dist": 100, "fill_smooth_iter": 1, "sigma": 0.8},
+    "prep3": {"label": "PrePro 3", "suffix": "_prep3", "fill_dist": 140, "fill_smooth_iter": 2, "sigma": 1.2},
+}
 
 def unzip_all(folder: Path):
     if not folder.exists():
@@ -88,11 +99,11 @@ def find_dir(base: Path, candidates):
     return None
 
 
-def pick_latest_from_candidates(base: Path, candidates):
+def pick_latest_from_candidates(base: Path, candidates, prefer_preprocessed=None):
     best = None
     best_mtime = -1
     for name in candidates:
-        p = pick_latest_raster(base / name)
+        p = pick_latest_raster(base / name, prefer_preprocessed=prefer_preprocessed)
         if p is None:
             continue
         try:
@@ -103,6 +114,84 @@ def pick_latest_from_candidates(base: Path, candidates):
             best = p
             best_mtime = mt
     return best
+
+
+def utm_epsg_from_lonlat(lon, lat):
+    zone = int((lon + 180) // 6) + 1
+    if lat >= 0:
+        return f"EPSG:{32600 + zone}"
+    return f"EPSG:{32700 + zone}"
+
+
+def prep_output_path(src_path: Path, suffix="_prep"):
+    if src_path.stem.endswith(suffix):
+        return src_path
+    return src_path.with_name(f"{src_path.stem}{suffix}{src_path.suffix}")
+
+
+def preprocess_raster_file(src_path: Path, dst_path: Path, fill_dist=100, fill_smooth_iter=1, sigma=0.8):
+    with rasterio.open(src_path) as src:
+        arr = src.read(1).astype(np.float32)
+        nodata = src.nodata
+        meta = src.meta.copy()
+        src_crs = src.crs
+        src_transform = src.transform
+        src_bounds = src.bounds
+
+    if nodata is not None:
+        arr[arr == nodata] = np.nan
+
+    mask_nan = ~np.isfinite(arr)
+    if np.any(mask_nan):
+        filled = np.nan_to_num(arr, nan=0.0).astype(np.float32)
+        valid = np.isfinite(arr).astype(np.uint8)
+        if np.any(valid):
+            arr = fillnodata(
+                filled,
+                mask=valid,
+                max_search_distance=int(fill_dist),
+                smoothing_iterations=int(fill_smooth_iter),
+            ).astype(np.float32)
+        else:
+            arr = filled
+
+    if gaussian_filter is not None and sigma and float(sigma) > 0:
+        arr = gaussian_filter(arr, sigma=float(sigma)).astype(np.float32)
+
+    dst_crs = src_crs
+    if src_crs and src_crs.is_geographic:
+        lon_c = float((src_bounds.left + src_bounds.right) * 0.5)
+        lat_c = float((src_bounds.bottom + src_bounds.top) * 0.5)
+        dst_crs = rasterio.crs.CRS.from_string(utm_epsg_from_lonlat(lon_c, lat_c))
+
+    if dst_crs and src_crs and str(dst_crs) != str(src_crs):
+        dst_transform, dst_w, dst_h = rasterio.warp.calculate_default_transform(
+            src_crs, dst_crs, meta["width"], meta["height"], *src_bounds
+        )
+        dst_arr = np.full((dst_h, dst_w), np.nan, dtype=np.float32)
+        rasterio.warp.reproject(
+            source=arr,
+            destination=dst_arr,
+            src_transform=src_transform,
+            src_crs=src_crs,
+            dst_transform=dst_transform,
+            dst_crs=dst_crs,
+            src_nodata=np.nan,
+            dst_nodata=np.nan,
+            resampling=rasterio.warp.Resampling.bilinear,
+        )
+        arr = dst_arr
+        meta.update(transform=dst_transform, width=dst_w, height=dst_h, crs=dst_crs)
+    else:
+        meta.update(transform=src_transform, crs=src_crs)
+
+    out_nodata = -9999.0
+    out = np.asarray(arr, dtype=np.float32)
+    out[~np.isfinite(out)] = out_nodata
+    meta.update(dtype="float32", count=1, nodata=out_nodata, compress="lzw")
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+    with rasterio.open(dst_path, "w", **meta) as dst:
+        dst.write(out, 1)
 
 
 def _infer_geojson_crs(geojson_obj):
@@ -256,11 +345,19 @@ def list_rasters(folder: Path):
     return out
 
 
-def pick_latest_raster(folder: Path):
+def pick_latest_raster(folder: Path, prefer_preprocessed=None):
     rasters = list_rasters(folder)
     if not rasters:
         return None
     rasters.sort(key=lambda p: p.stat().st_mtime_ns, reverse=True)
+    if prefer_preprocessed is True:
+        pref = [p for p in rasters if p.stem.endswith("_prep")]
+        if pref:
+            return pref[0]
+    if prefer_preprocessed is False:
+        pref = [p for p in rasters if not p.stem.endswith("_prep")]
+        if pref:
+            return pref[0]
     return rasters[0]
 
 
@@ -739,8 +836,14 @@ class InputData:
         self.bounds = None
         self.crs = None
         self.area_geojson_path = None
+        self.src_dtm_path = None
+        self.src_dsmf_path = None
+        self.src_dsml_path = None
+        self.src_original_dtm_path = None
+        self.src_original_dsmf_path = None
+        self.src_original_dsml_path = None
 
-    def load(self, place_name=None):
+    def load(self, place_name=None, use_preprocessed=False):
         if place_name:
             db_root = get_database_root(self.root)
             if db_root is None:
@@ -749,16 +852,28 @@ class InputData:
                 return
             base = db_root / place_name
             prepare_inputs_place(base)
-            p_dtm = pick_latest_raster(base / "DTM")
-            p_f = pick_latest_from_candidates(base, FIRST_DIR_CANDIDATES)
-            p_l = pick_latest_from_candidates(base, LAST_DIR_CANDIDATES)
+            p_dtm_orig = pick_latest_raster(base / "DTM", prefer_preprocessed=False)
+            p_f_orig = pick_latest_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=False)
+            p_l_orig = pick_latest_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=False)
+            if use_preprocessed:
+                p_dtm = pick_latest_raster(base / "DTM", prefer_preprocessed=True) or p_dtm_orig
+                p_f = pick_latest_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=True) or p_f_orig
+                p_l = pick_latest_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=True) or p_l_orig
+            else:
+                p_dtm, p_f, p_l = p_dtm_orig, p_f_orig, p_l_orig
             area_geojson_path = find_place_geojson(base)
         else:
             prepare_inputs(self.root)
             base = self.root / "image"
-            p_dtm = pick_latest_raster(base / "DTM")
-            p_f = pick_latest_from_candidates(base, FIRST_DIR_CANDIDATES)
-            p_l = pick_latest_from_candidates(base, LAST_DIR_CANDIDATES)
+            p_dtm_orig = pick_latest_raster(base / "DTM", prefer_preprocessed=False)
+            p_f_orig = pick_latest_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=False)
+            p_l_orig = pick_latest_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=False)
+            if use_preprocessed:
+                p_dtm = pick_latest_raster(base / "DTM", prefer_preprocessed=True) or p_dtm_orig
+                p_f = pick_latest_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=True) or p_f_orig
+                p_l = pick_latest_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=True) or p_l_orig
+            else:
+                p_dtm, p_f, p_l = p_dtm_orig, p_f_orig, p_l_orig
             area_geojson_path = None
 
         if p_dtm is None or p_f is None or p_l is None:
@@ -796,6 +911,12 @@ class InputData:
         self.bounds = tile["bounds"]
         self.crs = tile["crs"]
         self.area_geojson_path = str(area_geojson_path) if area_geojson_path else None
+        self.src_dtm_path = str(p_dtm)
+        self.src_dsmf_path = str(p_f)
+        self.src_dsml_path = str(p_l)
+        self.src_original_dtm_path = str(p_dtm_orig) if p_dtm_orig else None
+        self.src_original_dsmf_path = str(p_f_orig) if p_f_orig else None
+        self.src_original_dsml_path = str(p_l_orig) if p_l_orig else None
 
         self.loaded = True
         self.error = None
@@ -828,6 +949,7 @@ class App(tk.Tk):
 
         self.basemap_on = tk.BooleanVar(value=False)
         self.basemap_mix = tk.DoubleVar(value=0.35)
+        self.use_preprocessed = tk.BooleanVar(value=False)
 
         self.param_widgets = {}
 
@@ -966,8 +1088,15 @@ class App(tk.Tk):
         btn_box.grid(row=5, column=0, sticky="ew")
         btn_box.columnconfigure(0, weight=1)
         btn_box.columnconfigure(1, weight=1)
+        btn_box.columnconfigure(2, weight=1)
         ttk.Button(btn_box, text="Export .TIFF", command=self.export_current).grid(row=0, column=0, sticky="ew", pady=(0, 6), padx=(0, 4))
         ttk.Button(btn_box, text="Export PNG", command=self.export_current_view_hq).grid(row=0, column=1, sticky="ew", pady=(0, 6), padx=(4, 0))
+        ttk.Checkbutton(
+            btn_box,
+            text="Base image preprocess",
+            variable=self.use_preprocessed,
+            command=self.on_toggle_preprocessed,
+        ).grid(row=0, column=2, sticky="e", pady=(0, 6), padx=(4, 0))
         self.status = tk.StringVar(value="")
         ttk.Label(left, textvariable=self.status, wraplength=360).grid(row=6, column=0, sticky="ew", pady=(10, 0))
 
@@ -1140,17 +1269,18 @@ class App(tk.Tk):
             self._show_blank()
             return
         place = selected
-        self.data.load(place_name=place)
+        self.data.load(place_name=place, use_preprocessed=bool(self.use_preprocessed.get()))
         if not self.data.loaded:
             self.status.set(self.data.error or "Errore input.")
             self.update_param_states()
             self._show_blank()
             return
         place_txt = f"Database/{place}"
+        src_mode = "preprocessato" if self.use_preprocessed.get() else "originale"
         if self.data.area_geojson_path:
-            self.status.set(f"OK | sorgente: {place_txt} | area: {Path(self.data.area_geojson_path).name}")
+            self.status.set(f"OK | sorgente: {place_txt} ({src_mode}) | area: {Path(self.data.area_geojson_path).name}")
         else:
-            self.status.set(f"OK | sorgente: {place_txt}")
+            self.status.set(f"OK | sorgente: {place_txt} ({src_mode})")
         self.update_param_states()
         self.schedule_update()
 
@@ -1678,6 +1808,43 @@ class App(tk.Tk):
             self.status.set(f"Export: {out_dir / fname}")
         except Exception as e:
             messagebox.showerror("Export", str(e))
+
+    def preprocess_current_example(self):
+        if not self.data.loaded:
+            messagebox.showerror("Preprocess", "Input non caricati.")
+            return
+        srcs = [
+            self.data.src_original_dtm_path or self.data.src_dtm_path,
+            self.data.src_original_dsmf_path or self.data.src_dsmf_path,
+            self.data.src_original_dsml_path or self.data.src_dsml_path,
+        ]
+        srcs = [Path(p) for p in srcs if p]
+        if len(srcs) != 3:
+            messagebox.showerror("Preprocess", "File sorgenti non disponibili per l'esempio corrente.")
+            return
+        try:
+            outs = []
+            for src in srcs:
+                dst = prep_output_path(src)
+                if not dst.exists():
+                    preprocess_raster_file(src, dst)
+                    outs.append(dst)
+            return outs
+        except Exception as e:
+            messagebox.showerror("Preprocess", str(e))
+            return None
+
+    def on_toggle_preprocessed(self):
+        if self.use_preprocessed.get():
+            outs = self.preprocess_current_example()
+            if outs is None:
+                self.use_preprocessed.set(False)
+                return
+            if outs:
+                self.status.set(f"Preprocess completato: {', '.join([p.name for p in outs])}")
+            self.reload_inputs()
+            return
+        self.reload_inputs()
 
     def batch_pipeline(self):
         if not self.data.loaded:
