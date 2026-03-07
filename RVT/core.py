@@ -3,6 +3,9 @@ import zipfile
 import shutil
 import math
 import io
+import subprocess
+import webbrowser
+from datetime import datetime
 from pathlib import Path
 from collections import OrderedDict
 
@@ -22,10 +25,14 @@ from PIL import Image
 import requests
 
 import rvt.vis
+import rvt.blend
 
 EXTS = {".tif", ".tiff", ".asc"}
-SAT_ZOOMS_TRY = (17, 16, 15, 14, 13, 12)
-
+SAT_ZOOMS_TRY = (19, 18, 17, 16, 15, 14, 13, 12)
+MASE_URL = "https://sim.mase.gov.it/portalediaccesso/mappe/#/viewer/new."
+GE_URL = "https://earth.google.com/web/@42.06329556,13.44458279,859.60342866a,1982377.06794083d,35y,0h,0t,0r/data=CgRCAggBOgMKATBCAggASg0I____________ARAA"
+FIRST_DIR_CANDIDATES = ("DSM_First", "DSM_Fisrt", "DSMfirst")
+LAST_DIR_CANDIDATES = ("DSM_Last", "DSMlast")
 
 def unzip_all(folder: Path):
     if not folder.exists():
@@ -60,11 +67,69 @@ def unzip_all(folder: Path):
 
 
 def prepare_inputs(root: Path):
-    return (
-        unzip_all(root / "image" / "DTM")
-        + unzip_all(root / "image" / "DSM_First")
-        + unzip_all(root / "image" / "DSM_Last")
-    )
+    n = 0
+    base = root / "image"
+    n += unzip_all(base / "DTM")
+    for name in FIRST_DIR_CANDIDATES:
+        n += unzip_all(base / name)
+    for name in LAST_DIR_CANDIDATES:
+        n += unzip_all(base / name)
+    return n
+
+
+def find_dir(base: Path, candidates):
+    for name in candidates:
+        p = base / name
+        if p.exists():
+            return p
+    return None
+
+
+def pick_latest_from_candidates(base: Path, candidates):
+    best = None
+    best_mtime = -1
+    for name in candidates:
+        p = pick_latest_raster(base / name)
+        if p is None:
+            continue
+        try:
+            mt = p.stat().st_mtime_ns
+        except Exception:
+            mt = 0
+        if mt > best_mtime:
+            best = p
+            best_mtime = mt
+    return best
+
+
+def list_database_places(root: Path):
+    db = get_database_root(root)
+    if db is None:
+        return []
+    out = []
+    for p in sorted([x for x in db.iterdir() if x.is_dir()], key=lambda x: x.name.lower()):
+        if p.name.startswith("."):
+            continue
+        out.append(p.name)
+    return out
+
+
+def get_database_root(root: Path):
+    cands = [root / "Database", root / "image" / "Database"]
+    for db in cands:
+        if db.exists() and db.is_dir():
+            return db
+    return None
+
+
+def prepare_inputs_place(place_root: Path):
+    n = 0
+    n += unzip_all(place_root / "DTM")
+    for name in FIRST_DIR_CANDIDATES:
+        n += unzip_all(place_root / name)
+    for name in LAST_DIR_CANDIDATES:
+        n += unzip_all(place_root / name)
+    return n
 
 
 def list_rasters(folder: Path):
@@ -98,19 +163,30 @@ def load_raster(path: Path):
     return data, res, profile, nodata, bounds, crs
 
 
-def profile_for_float(profile, nodata_val=-9999.0):
+def profile_for_float(profile, nodata_val=-9999.0, count=1):
     p = profile.copy()
-    p.update(dtype=rasterio.float32, count=1, nodata=nodata_val, driver="GTiff", compress="lzw")
+    p.update(dtype=rasterio.float32, count=count, nodata=nodata_val, driver="GTiff", compress="lzw")
     return p
 
 
 def save_geotiff(path: Path, data: np.ndarray, profile, nodata_val=-9999.0):
     path.parent.mkdir(parents=True, exist_ok=True)
-    p = profile_for_float(profile, nodata_val=nodata_val)
     out = np.asarray(data, dtype=np.float32)
-    out[~np.isfinite(out)] = np.float32(nodata_val)
+    if out.ndim == 2:
+        bands = out[None, :, :]
+    elif out.ndim == 3:
+        if out.shape[0] <= 16 and out.shape[1] > 16 and out.shape[2] > 16:
+            bands = out
+        elif out.shape[2] <= 16 and out.shape[0] > 16 and out.shape[1] > 16:
+            bands = np.moveaxis(out, 2, 0)
+        else:
+            raise RuntimeError(f"Shape export non supportata: {out.shape}")
+    else:
+        raise RuntimeError(f"Dimensioni export non supportate: {out.ndim}")
+    p = profile_for_float(profile, nodata_val=nodata_val, count=int(bands.shape[0]))
+    bands[~np.isfinite(bands)] = np.float32(nodata_val)
     with rasterio.open(path, "w", **p) as dst:
-        dst.write(out, 1)
+        dst.write(bands)
 
 
 def sig_filter(func, kwargs):
@@ -190,11 +266,88 @@ def as_float32(x):
     return np.asarray(x, dtype=np.float32)
 
 
+def to_single_band(out, dem_shape):
+    arr = as_float32(out)
+    if arr.ndim == 2:
+        return arr
+    if arr.ndim == 3:
+        if arr.shape[0] <= 64 and arr.shape[1:] == dem_shape:
+            return as_float32(np.nanmean(arr, axis=0))
+        if arr.shape[-1] <= 4 and arr.shape[:2] == dem_shape:
+            return as_float32(np.nanmean(arr, axis=2))
+        if arr.shape[0] in (3, 4):
+            return as_float32(np.nanmean(arr, axis=0))
+        return as_float32(np.nanmean(arr, axis=0))
+    raise RuntimeError(f"Output RVT con shape non supportata: {arr.shape}")
+
+
+def fit_to_shape(arr, target_shape):
+    if arr.shape == target_shape:
+        return arr
+    th, tw = target_shape
+    h, w = arr.shape
+
+    out = np.full((th, tw), np.nan, dtype=np.float32)
+
+    src_y0 = max(0, (h - th) // 2)
+    src_x0 = max(0, (w - tw) // 2)
+    dst_y0 = max(0, (th - h) // 2)
+    dst_x0 = max(0, (tw - w) // 2)
+
+    copy_h = min(h - src_y0, th - dst_y0)
+    copy_w = min(w - src_x0, tw - dst_x0)
+    if copy_h <= 0 or copy_w <= 0:
+        return out
+
+    out[dst_y0 : dst_y0 + copy_h, dst_x0 : dst_x0 + copy_w] = arr[src_y0 : src_y0 + copy_h, src_x0 : src_x0 + copy_w]
+    return out
+
+
+def normalize_rgb01(arr):
+    rgb = as_float32(arr)
+    if rgb.ndim != 3:
+        raise RuntimeError(f"Output RGB non valido: {rgb.shape}")
+    if rgb.shape[0] in (3, 4):
+        rgb = np.moveaxis(rgb[:3, :, :], 0, 2)
+    elif rgb.shape[2] in (3, 4):
+        rgb = rgb[:, :, :3]
+    else:
+        raise RuntimeError(f"Output RGB non valido: {rgb.shape}")
+    finite = np.isfinite(rgb)
+    if not finite.any():
+        return np.zeros_like(rgb, dtype=np.float32)
+    lo = np.nanpercentile(rgb, 2.0)
+    hi = np.nanpercentile(rgb, 98.0)
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        lo = np.nanmin(rgb)
+        hi = np.nanmax(rgb)
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        out = np.zeros_like(rgb, dtype=np.float32)
+        out[~np.isfinite(rgb)] = 0.0
+        return out
+    out = (rgb - lo) / (hi - lo)
+    out = np.clip(out, 0.0, 1.0).astype(np.float32)
+    out[~np.isfinite(rgb)] = 0.0
+    return out
+
+
+def is_rgb_method(method_name):
+    return method_name in {"e3MSTP (RGB)"}
+
+
 def compute_method(method, dem, res, az, alt, z, rad, n_dir):
     if method == "Raw":
         return dem
 
     dem2, mask = fill_nan_with_median(dem)
+    svf_r = int(max(1, round(rad)))
+
+    def finalize(raw):
+        arr = to_single_band(extract_array(raw), dem2.shape)
+        arr = fit_to_shape(arr, dem2.shape)
+        if arr.shape == mask.shape:
+            arr[mask] = np.nan
+        return arr
 
     if method == "Hillshade" and hasattr(rvt.vis, "hillshade"):
         f = rvt.vis.hillshade
@@ -209,67 +362,150 @@ def compute_method(method, dem, res, az, alt, z, rad, n_dir):
             "z": z,
         }
         out = safe_call(f, (dem2, res, res), kw)
-        out = as_float32(extract_array(out))
-        out[mask] = np.nan
-        return out
+        return finalize(out)
 
     if method == "Slope":
         if hasattr(rvt.vis, "slope"):
             f = rvt.vis.slope
             kw = {"z_factor": z, "z": z}
             out = safe_call(f, (dem2, res, res), kw)
-            out = as_float32(extract_array(out))
-            out[mask] = np.nan
-            return out
+            return finalize(out)
         if hasattr(rvt.vis, "slope_aspect"):
             f = rvt.vis.slope_aspect
-            kw = {"z_factor": z, "z": z}
+            kw = {"ve_factor": z, "z_factor": z, "z": z}
             out = safe_call(f, (dem2, res, res), kw)
-            out = as_float32(extract_array(out))
-            out[mask] = np.nan
-            return out
+            if isinstance(out, dict) and "slope" in out:
+                out = out["slope"]
+            return finalize(out)
 
     if method == "Sky-View Factor" and hasattr(rvt.vis, "sky_view_factor"):
-        f = rvt.vis.sky_view_factor
+        out = rvt.vis.sky_view_factor(
+            dem2,
+            float(res),
+            compute_svf=True,
+            compute_asvf=False,
+            compute_opns=False,
+            svf_n_dir=int(n_dir),
+            svf_r_max=svf_r,
+            ve_factor=float(z),
+        )
+        if isinstance(out, dict) and "svf" in out:
+            out = out["svf"]
+        return finalize(out)
+
+    if method == "Anisotropic Sky-View Factor" and hasattr(rvt.vis, "sky_view_factor"):
+        out = rvt.vis.sky_view_factor(
+            dem2,
+            float(res),
+            compute_svf=False,
+            compute_asvf=True,
+            compute_opns=False,
+            svf_n_dir=int(n_dir),
+            svf_r_max=svf_r,
+            asvf_dir=float(az),
+            asvf_level=1,
+            ve_factor=float(z),
+        )
+        if isinstance(out, dict) and "asvf" in out:
+            out = out["asvf"]
+        return finalize(out)
+
+    if method == "Positive Openness" and hasattr(rvt.vis, "sky_view_factor"):
+        out = rvt.vis.sky_view_factor(
+            dem2,
+            float(res),
+            compute_svf=False,
+            compute_asvf=False,
+            compute_opns=True,
+            svf_n_dir=int(n_dir),
+            svf_r_max=svf_r,
+            ve_factor=float(z),
+        )
+        if isinstance(out, dict) and "opns" in out:
+            out = out["opns"]
+        return finalize(out)
+
+    if method in {"Simple Local Relief Model", "Local Relief Model"} and (hasattr(rvt.vis, "slrm") or hasattr(rvt.vis, "local_relief_model")):
+        if hasattr(rvt.vis, "slrm"):
+            f = rvt.vis.slrm
+            radius_cell = int(round(rad))
+            radius_cell = max(10, min(50, radius_cell))
+            kw = {"radius_cell": radius_cell, "ve_factor": z}
+            out = safe_call(f, (dem2,), kw)
+        else:
+            f = rvt.vis.local_relief_model
+            kw = {"radius": rad, "rad": rad, "max_rad": rad, "ve_factor": z, "z_factor": z, "z": z}
+            out = safe_call(f, (dem2, res, res), kw)
+        return finalize(out)
+
+    if method == "Multi-Hillshade" and hasattr(rvt.vis, "multi_hillshade"):
+        f = rvt.vis.multi_hillshade
+        kw = {"nr_directions": int(n_dir), "sun_elevation": alt, "ve_factor": z}
+        out = safe_call(f, (dem2, res, res), kw)
+        return finalize(out)
+
+    if method == "Sky Illumination" and hasattr(rvt.vis, "sky_illumination"):
+        f = rvt.vis.sky_illumination
         kw = {
             "resolution": res,
-            "compute_svf": True,
-            "svf_n_dir": int(n_dir),
-            "n_dir": int(n_dir),
-            "max_rad": rad,
-            "radius": rad,
-            "rad": rad,
-            "z_factor": z,
-            "z": z,
+            "num_directions": int(n_dir),
+            "max_fine_radius": int(max(1, round(rad))),
+            "shadow_az": az,
+            "shadow_el": alt,
+            "ve_factor": z,
         }
         out = safe_call(f, (dem2,), kw)
-        out = as_float32(extract_array(out))
-        out[mask] = np.nan
-        return out
+        return finalize(out)
 
-    if method == "Local Relief Model" and hasattr(rvt.vis, "local_relief_model"):
-        f = rvt.vis.local_relief_model
-        kw = {"radius": rad, "rad": rad, "max_rad": rad, "z_factor": z, "z": z}
-        out = safe_call(f, (dem2, res, res), kw)
-        out = as_float32(extract_array(out))
-        out[mask] = np.nan
-        return out
+    if method == "Local Dominance" and hasattr(rvt.vis, "local_dominance"):
+        f = rvt.vis.local_dominance
+        min_rad = max(1, int(round(rad)))
+        max_rad = max(min_rad + 5, min_rad * 2)
+        rad_inc = max(1, int(round(min_rad / 5)))
+        angular_res = max(5, int(round(360 / max(4, int(n_dir)))))
+        kw = {
+            "min_rad": min_rad,
+            "max_rad": max_rad,
+            "rad_inc": rad_inc,
+            "angular_res": angular_res,
+            "observer_height": 1.7,
+            "ve_factor": z,
+        }
+        out = safe_call(f, (dem2,), kw)
+        return finalize(out)
 
-    if method == "Positive Openness" and hasattr(rvt.vis, "openness_pos"):
-        f = rvt.vis.openness_pos
-        kw = {"radius": rad, "rad": rad, "max_rad": rad, "n_dir": int(n_dir), "svf_n_dir": int(n_dir), "z_factor": z, "z": z}
-        out = safe_call(f, (dem2, res, res), kw)
-        out = as_float32(extract_array(out))
-        out[mask] = np.nan
-        return out
+    if method == "Multi-Scale Relief Model" and hasattr(rvt.vis, "msrm"):
+        f = rvt.vis.msrm
+        feature_min = max(float(res), float(rad) * float(res) * 0.5)
+        feature_max = max(feature_min + float(res), feature_min * 6.0)
+        kw = {"resolution": res, "feature_min": feature_min, "feature_max": feature_max, "scaling_factor": 2, "ve_factor": z}
+        out = safe_call(f, (dem2,), kw)
+        return finalize(out)
 
-    if method == "Negative Openness" and hasattr(rvt.vis, "openness_neg"):
-        f = rvt.vis.openness_neg
-        kw = {"radius": rad, "rad": rad, "max_rad": rad, "n_dir": int(n_dir), "svf_n_dir": int(n_dir), "z_factor": z, "z": z}
-        out = safe_call(f, (dem2, res, res), kw)
-        out = as_float32(extract_array(out))
-        out[mask] = np.nan
-        return out
+    if method == "Multi-Scale Topographic Position" and hasattr(rvt.vis, "mstp"):
+        f = rvt.vis.mstp
+        kw = {"ve_factor": z}
+        out = safe_call(f, (dem2,), kw)
+        return finalize(out)
+
+    if method == "e3MSTP (RGB)" and hasattr(rvt.blend, "e3mstp"):
+        out = rvt.blend.e3mstp(dem2, float(res))
+        rgb = normalize_rgb01(out)
+        if rgb.shape[:2] != dem2.shape:
+            h, w = dem2.shape
+            rh, rw = rgb.shape[:2]
+            tmp = np.full((h, w, 3), 0.0, dtype=np.float32)
+            src_y0 = max(0, (rh - h) // 2)
+            src_x0 = max(0, (rw - w) // 2)
+            dst_y0 = max(0, (h - rh) // 2)
+            dst_x0 = max(0, (w - rw) // 2)
+            copy_h = min(rh - src_y0, h - dst_y0)
+            copy_w = min(rw - src_x0, w - dst_x0)
+            if copy_h > 0 and copy_w > 0:
+                tmp[dst_y0 : dst_y0 + copy_h, dst_x0 : dst_x0 + copy_w, :] = rgb[src_y0 : src_y0 + copy_h, src_x0 : src_x0 + copy_w, :]
+            rgb = tmp
+        rgb[mask, :] = 0.0
+        return rgb
 
     raise RuntimeError(f"Metodo non disponibile o non supportato: {method}")
 
@@ -345,7 +581,7 @@ def build_satellite_rgb(bounds_lonlat, zoom):
     mosaic = Image.new("RGB", (w, h), (0, 0, 0))
 
     session = requests.Session()
-    session.headers.update({"User-Agent": "RVT-Lidar-Explorer"})
+    session.headers.update({"User-Agent": "RVT-LiDAR-Explorer"})
 
     for ty in range(ty0, ty1 + 1):
         for tx in range(tx0, tx1 + 1):
@@ -389,20 +625,31 @@ class InputData:
         self.bounds = None
         self.crs = None
 
-        self._p_dtm = None
-        self._p_f = None
-        self._p_l = None
-
-    def load(self):
-        prepare_inputs(self.root)
-
-        p_dtm = pick_latest_raster(self.root / "image" / "DTM")
-        p_f = pick_latest_raster(self.root / "image" / "DSM_First")
-        p_l = pick_latest_raster(self.root / "image" / "DSM_Last")
+    def load(self, place_name=None):
+        if place_name:
+            db_root = get_database_root(self.root)
+            if db_root is None:
+                self.loaded = False
+                self.error = "Cartella Database non trovata (attese: ./Database oppure ./image/Database)."
+                return
+            base = db_root / place_name
+            prepare_inputs_place(base)
+            p_dtm = pick_latest_raster(base / "DTM")
+            p_f = pick_latest_from_candidates(base, FIRST_DIR_CANDIDATES)
+            p_l = pick_latest_from_candidates(base, LAST_DIR_CANDIDATES)
+        else:
+            prepare_inputs(self.root)
+            base = self.root / "image"
+            p_dtm = pick_latest_raster(base / "DTM")
+            p_f = pick_latest_from_candidates(base, FIRST_DIR_CANDIDATES)
+            p_l = pick_latest_from_candidates(base, LAST_DIR_CANDIDATES)
 
         if p_dtm is None or p_f is None or p_l is None:
             self.loaded = False
-            self.error = "Input mancanti: metti zip o raster in image/DTM, image/DSM_First, image/DSM_Last."
+            if place_name:
+                self.error = f"Input mancanti in Database/{place_name}: richieste cartelle DTM, DSM_First (o DSM_Fisrt), DSM_Last."
+            else:
+                self.error = "Input mancanti: metti zip o raster in image/DTM, image/DSM_First (o DSM_Fisrt), image/DSM_Last."
             return
 
         dtm, res, prof, _, bounds, crs = load_raster(p_dtm)
@@ -420,10 +667,6 @@ class InputData:
         self.bounds = bounds
         self.crs = crs
 
-        self._p_dtm = p_dtm
-        self._p_f = p_f
-        self._p_l = p_l
-
         self.loaded = True
         self.error = None
 
@@ -431,13 +674,14 @@ class InputData:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("RVT Lidar Explorer")
+        self.title("RVT LiDAR Explorer")
         self.geometry("1200x720")
-        self.minsize(1050, 650)
+        self.minsize(1150, 750)
 
         self.root_path = Path(__file__).resolve().parent
         self.data = InputData(self.root_path)
         self.basemap_cache = BasemapCache(max_items=6)
+        self.place_name = tk.StringVar(value="")
 
         self.dataset = tk.StringVar(value="DTM")
         self.method = tk.StringVar(value="Hillshade")
@@ -459,11 +703,42 @@ class App(tk.Tk):
 
         self._update_job = None
         self._pan_state = None
+        self._brush_state = None
         self._home_limits = None
         self._last_shape = None
+        self.annotation_alpha = None
+        self.im_anno = None
+
+        self.brush_on = tk.BooleanVar(value=False)
+        self.brush_size = tk.IntVar(value=5)
 
         self._build_ui()
+        self.refresh_places()
         self.reload_inputs()
+
+    def open_mase(self):
+        url = MASE_URL
+        try:
+            subprocess.Popen(["open", "-a", "Google Chrome", url])
+            return
+        except Exception:
+            pass
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    def open_ge(self):
+        url = GE_URL
+        try:
+            subprocess.Popen(["open", "-a", "Google Chrome", url])
+            return
+        except Exception:
+            pass
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
 
     def _build_ui(self):
         self.columnconfigure(0, weight=1)
@@ -482,13 +757,34 @@ class App(tk.Tk):
         right = ttk.Frame(main, padding=0)
         right.grid(row=0, column=1, sticky="nsew")
         right.columnconfigure(0, weight=1)
-        right.rowconfigure(0, weight=1)
+        right.rowconfigure(0, weight=0)
+        right.rowconfigure(1, weight=1)
+
+        right_top = ttk.Frame(right, padding=(8, 8, 8, 0))
+        right_top.grid(row=0, column=0, sticky="ew")
+        right_top.columnconfigure(0, weight=1)
+        ttk.Checkbutton(right_top, text="Pennello giallo", variable=self.brush_on, command=self._on_brush_toggle).grid(row=0, column=1, sticky="e")
+        ttk.Label(right_top, text="Dim").grid(row=0, column=2, sticky="e", padx=(8, 2))
+        self.brush_size_scale = ttk.Scale(right_top, from_=1, to=20, command=lambda v: self.brush_size.set(int(round(float(v)))))
+        self.brush_size_scale.grid(row=0, column=3, sticky="e", padx=(0, 8))
+        self.brush_size_scale.set(self.brush_size.get())
+        ttk.Button(right_top, text="Pulisci segni", command=self.clear_annotations).grid(row=0, column=4, sticky="e", padx=(0, 8))
+        ttk.Button(right_top, text="Griglia metodi", command=self.show_methods_grid).grid(row=0, column=5, sticky="e")
 
         top = ttk.Frame(left)
         top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         top.columnconfigure(0, weight=1)
-        ttk.Label(top, text=str(self.root_path)).grid(row=0, column=0, sticky="w")
+        place_box = ttk.Frame(top)
+        place_box.grid(row=0, column=0, sticky="ew")
+        place_box.columnconfigure(1, weight=1)
+        ttk.Label(place_box, text="Posto").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.place_combo = ttk.Combobox(place_box, textvariable=self.place_name, values=[], state="readonly")
+        self.place_combo.grid(row=0, column=1, sticky="ew")
+        self.place_combo.bind("<<ComboboxSelected>>", lambda _e: self.reload_inputs())
         ttk.Button(top, text="Reload", command=self.reload_inputs).grid(row=0, column=1, padx=(8, 0))
+        ttk.Button(top, text="MASE", command=self.open_mase).grid(row=0, column=2, padx=(8, 0))
+        ttk.Button(top, text="GE", command=self.open_ge).grid(row=0, column=3, padx=(8, 0))
+        ttk.Button(top, text="Preset Arch", command=self.apply_archaeology_preset).grid(row=0, column=4, padx=(8, 0))
 
         ds_box = ttk.LabelFrame(left, text="Dataset", padding=8)
         ds_box.grid(row=1, column=0, sticky="ew", pady=(0, 10))
@@ -540,12 +836,13 @@ class App(tk.Tk):
         btn_box.grid(row=5, column=0, sticky="ew")
         btn_box.columnconfigure(0, weight=1)
         ttk.Button(btn_box, text="Export corrente GeoTIFF", command=self.export_current).grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        ttk.Button(btn_box, text="Batch pipeline base", command=self.batch_pipeline).grid(row=1, column=0, sticky="ew")
+        ttk.Button(btn_box, text="Batch pipeline base", command=self.batch_pipeline).grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        ttk.Button(btn_box, text="Scarica immagine destra HQ (PNG)", command=self.export_current_view_hq).grid(row=2, column=0, sticky="ew")
 
         self.status = tk.StringVar(value="")
         ttk.Label(left, textvariable=self.status, wraplength=360).grid(row=6, column=0, sticky="ew", pady=(10, 0))
 
-        fig = Figure(figsize=(6, 5), dpi=100)
+        fig = Figure(figsize=(6, 5), dpi=150)
         fig.patch.set_facecolor("black")
         fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
         self.ax = fig.add_subplot(111)
@@ -557,24 +854,38 @@ class App(tk.Tk):
 
         self.canvas = FigureCanvasTkAgg(fig, master=right)
         w = self.canvas.get_tk_widget()
-        w.grid(row=0, column=0, sticky="nsew")
+        w.grid(row=1, column=0, sticky="nsew")
         w.configure(borderwidth=0, highlightthickness=0)
+        try:
+            w.configure(padx=0, pady=0)
+        except Exception:
+            pass
         self._connect_mouse()
 
     def available_methods(self):
         methods = ["Raw"]
         if hasattr(rvt.vis, "hillshade"):
             methods.append("Hillshade")
+        if hasattr(rvt.vis, "multi_hillshade"):
+            methods.append("Multi-Hillshade")
         if hasattr(rvt.vis, "slope") or hasattr(rvt.vis, "slope_aspect"):
             methods.append("Slope")
         if hasattr(rvt.vis, "sky_view_factor"):
             methods.append("Sky-View Factor")
-        if hasattr(rvt.vis, "local_relief_model"):
-            methods.append("Local Relief Model")
-        if hasattr(rvt.vis, "openness_pos"):
+            methods.append("Anisotropic Sky-View Factor")
             methods.append("Positive Openness")
-        if hasattr(rvt.vis, "openness_neg"):
-            methods.append("Negative Openness")
+        if hasattr(rvt.vis, "slrm") or hasattr(rvt.vis, "local_relief_model"):
+            methods.append("Simple Local Relief Model")
+        if hasattr(rvt.vis, "msrm"):
+            methods.append("Multi-Scale Relief Model")
+        if hasattr(rvt.vis, "mstp"):
+            methods.append("Multi-Scale Topographic Position")
+        if hasattr(rvt.vis, "sky_illumination"):
+            methods.append("Sky Illumination")
+        if hasattr(rvt.vis, "local_dominance"):
+            methods.append("Local Dominance")
+        if hasattr(rvt.blend, "e3mstp"):
+            methods.append("e3MSTP (RGB)")
         return methods
 
     def _add_slider(self, parent, label, key, var, vmin, vmax, row, is_int=False):
@@ -616,14 +927,63 @@ class App(tk.Tk):
             pass
         self.schedule_update()
 
+    def apply_archaeology_preset(self):
+        methods = self.available_methods()
+        preferred = ["Hillshade", "Simple Local Relief Model", "Sky-View Factor", "Multi-Hillshade"]
+        chosen = None
+        for m in preferred:
+            if m in methods:
+                chosen = m
+                break
+        if chosen is None and methods:
+            chosen = methods[0]
+
+        self.dataset.set("DTM")
+        if chosen is not None:
+            self.method.set(chosen)
+        self.basemap_on.set(False)
+        self.invert.set(False)
+
+        self.azimuth.set(315.0)
+        self.altitude.set(24.0)
+        self.z_factor.set(1.8)
+        self.radius.set(20.0)
+        self.n_dir.set(32)
+        self.p_low.set(0.8)
+        self.p_high.set(99.5)
+
+        self.update_param_states()
+        self.schedule_update()
+        self.status.set("Preset archeologia applicato (DTM + contrasto alto).")
+
+    def refresh_places(self):
+        places = list_database_places(self.root_path)
+        values = places
+        current = self.place_name.get()
+        self.place_combo["values"] = values
+        if values and current in values:
+            self.place_name.set(current)
+        elif values:
+            self.place_name.set(values[0])
+        else:
+            self.place_name.set("")
+
     def reload_inputs(self):
-        self.data.load()
+        self.refresh_places()
+        selected = self.place_name.get()
+        if not selected:
+            self.status.set("Nessun posto trovato in Database.")
+            self._show_blank()
+            return
+        place = selected
+        self.data.load(place_name=place)
         if not self.data.loaded:
             self.status.set(self.data.error or "Errore input.")
             self.update_param_states()
             self._show_blank()
             return
-        self.status.set("OK")
+        place_txt = f"Database/{place}"
+        self.status.set(f"OK | sorgente: {place_txt}")
         self.update_param_states()
         self.schedule_update()
 
@@ -645,10 +1005,22 @@ class App(tk.Tk):
 
         use_params = (not is_original) and (m != "Raw")
 
-        need_az_alt = use_params and (m == "Hillshade")
-        need_rad = use_params and (m in {"Sky-View Factor", "Local Relief Model", "Positive Openness", "Negative Openness"})
-        need_dir = use_params and (m in {"Sky-View Factor", "Positive Openness", "Negative Openness"})
-        need_z = use_params and (m in {"Hillshade", "Slope", "Sky-View Factor", "Local Relief Model", "Positive Openness", "Negative Openness"})
+        need_az_alt = use_params and (m in {"Hillshade", "Multi-Hillshade", "Sky Illumination"})
+        need_rad = use_params and (
+            m
+            in {
+                "Sky-View Factor",
+                "Anisotropic Sky-View Factor",
+                "Positive Openness",
+                "Simple Local Relief Model",
+                "Local Relief Model",
+                "Multi-Scale Relief Model",
+                "Sky Illumination",
+                "Local Dominance",
+            }
+        )
+        need_dir = use_params and (m in {"Sky-View Factor", "Anisotropic Sky-View Factor", "Positive Openness", "Multi-Hillshade", "Sky Illumination"})
+        need_z = use_params and (m != "e3MSTP (RGB)")
 
         self.param_widgets["azimuth"].state(["!disabled"] if need_az_alt else ["disabled"])
         self.param_widgets["altitude"].state(["!disabled"] if need_az_alt else ["disabled"])
@@ -719,6 +1091,93 @@ class App(tk.Tk):
             return self.data.diff
         return None
 
+    def show_methods_grid(self):
+        if not self.data.loaded:
+            messagebox.showerror("Griglia metodi", "Input non caricati.")
+            return
+
+        ds = self.dataset.get()
+        if ds == "Original":
+            messagebox.showerror("Griglia metodi", "Seleziona un dataset diverso da Original.")
+            return
+
+        dem = self._get_dataset_array(ds)
+        if dem is None:
+            messagebox.showerror("Griglia metodi", "Dataset non disponibile.")
+            return
+
+        methods = self.available_methods()
+        if not methods:
+            messagebox.showerror("Griglia metodi", "Nessun metodo RVT disponibile.")
+            return
+
+        res = float(self.data.res)
+        az = float(self.azimuth.get())
+        alt = float(self.altitude.get())
+        z = float(self.z_factor.get())
+        rad = float(self.radius.get())
+        n_dir = int(self.n_dir.get())
+        cmap = "gray_r" if self.invert.get() else "gray"
+        cmap_obj = mpl.colormaps.get_cmap(cmap).copy()
+        cmap_obj.set_bad("black")
+
+        images = []
+        errors = []
+        for method in methods:
+            try:
+                out = compute_method(method, dem, res, az, alt, z, rad, n_dir)
+                out = as_float32(out)
+                if out.ndim == 3:
+                    disp = normalize_rgb01(out)
+                    images.append((method, disp, True))
+                else:
+                    disp = self._stretch_for_display(out)
+                    images.append((method, disp, False))
+            except Exception as e:
+                errors.append(f"{method}: {e}")
+
+        if not images:
+            msg = "Impossibile calcolare i metodi."
+            if errors:
+                msg = f"{msg}\n{errors[0]}"
+            messagebox.showerror("Griglia metodi", msg)
+            return
+
+        n = len(images)
+        cols = int(math.ceil(math.sqrt(n)))
+        rows = int(math.ceil(n / cols))
+
+        win = tk.Toplevel(self)
+        win.title(f"Griglia metodi | {ds}")
+        win.geometry("1280x860")
+        win.minsize(900, 600)
+        win.columnconfigure(0, weight=1)
+        win.rowconfigure(0, weight=1)
+
+        fig = Figure(figsize=(12, 8), dpi=130)
+        fig.patch.set_facecolor("black")
+        fig.subplots_adjust(left=0.02, right=0.98, top=0.94, bottom=0.03, wspace=0.02, hspace=0.10)
+        axes = fig.subplots(rows, cols)
+        axes = np.atleast_1d(axes).ravel()
+
+        for idx, ax in enumerate(axes):
+            ax.set_axis_off()
+            ax.set_facecolor("black")
+            if idx < n:
+                method, disp, is_rgb = images[idx]
+                if is_rgb:
+                    ax.imshow(disp, interpolation="nearest")
+                else:
+                    ax.imshow(np.ma.masked_invalid(disp), cmap=cmap_obj, interpolation="nearest")
+                ax.set_title(method, color="white", fontsize=10, pad=4)
+
+        canvas = FigureCanvasTkAgg(fig, master=win)
+        canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        canvas.draw_idle()
+
+        if errors:
+            self.status.set(f"Griglia metodi: {len(images)} OK, {len(errors)} errori")
+
     def update_view(self):
         self._update_job = None
         if not self.data.loaded:
@@ -755,20 +1214,26 @@ class App(tk.Tk):
             out = compute_method(method, dem, res, az, alt, z, rad, n_dir)
             out = as_float32(out)
 
-            disp_over = self._stretch_for_display(out)
-            cmap = "gray_r" if self.invert.get() else "gray"
-            cmap_obj = mpl.colormaps.get_cmap(cmap).copy()
-            cmap_obj.set_bad("black")
+            if out.ndim == 3 or is_rgb_method(method):
+                disp_rgb = normalize_rgb01(out)
+                self._draw(None, (disp_rgb, None), alpha_over=1.0, reset=False)
+                self.status.set(f"{ds} | {method} | RGB")
+                return
+            else:
+                disp_over = self._stretch_for_display(out)
+                cmap = "gray_r" if self.invert.get() else "gray"
+                cmap_obj = mpl.colormaps.get_cmap(cmap).copy()
+                cmap_obj.set_bad("black")
 
-            base = None
-            alpha_over = 1.0
-            if self.basemap_on.get():
-                base = self._satellite(disp_over.shape[1], disp_over.shape[0])
-                mix = float(self.basemap_mix.get())
-                mix = max(0.0, min(1.0, mix))
-                alpha_over = 1.0 - mix
+                base = None
+                alpha_over = 1.0
+                if self.basemap_on.get():
+                    base = self._satellite(disp_over.shape[1], disp_over.shape[0])
+                    mix = float(self.basemap_mix.get())
+                    mix = max(0.0, min(1.0, mix))
+                    alpha_over = 1.0 - mix
 
-            self._draw(base, (disp_over, cmap_obj), alpha_over=alpha_over, reset=False)
+                self._draw(base, (disp_over, cmap_obj), alpha_over=alpha_over, reset=False)
 
             mn = float(np.nanmin(out)) if np.isfinite(out).any() else np.nan
             mx = float(np.nanmax(out)) if np.isfinite(out).any() else np.nan
@@ -785,6 +1250,7 @@ class App(tk.Tk):
         self.ax.figure.patch.set_facecolor("black")
         self.im_base = None
         self.im_over = None
+        self.im_anno = None
         self.canvas.draw_idle()
 
     def _draw(self, base_rgb01, over_pack, alpha_over=1.0, reset=False):
@@ -799,6 +1265,7 @@ class App(tk.Tk):
         if h is None or w is None:
             self._show_blank()
             return
+        self._ensure_annotation_canvas(h, w)
 
         keep = (not reset) and (self._last_shape == (h, w)) and (self.im_over is not None or self.im_base is not None)
         prev_xlim = self.ax.get_xlim() if keep else None
@@ -811,17 +1278,22 @@ class App(tk.Tk):
 
         if base_rgb01 is not None:
             base_rgb01 = np.asarray(base_rgb01, dtype=np.float32)
-            self.im_base = self.ax.imshow(base_rgb01, interpolation="nearest", alpha=1.0)
+            self.im_base = self.ax.imshow(base_rgb01, interpolation="bilinear", alpha=1.0)
         else:
             self.im_base = None
 
         if over_pack is not None and alpha_over > 0.0:
             over01, cmap_obj = over_pack
             over01 = np.asarray(over01, dtype=np.float32)
-            m1 = np.ma.masked_invalid(over01)
-            self.im_over = self.ax.imshow(m1, cmap=cmap_obj, interpolation="nearest", alpha=alpha_over)
+            if over01.ndim == 3:
+                self.im_over = self.ax.imshow(over01, interpolation="nearest", alpha=alpha_over)
+            else:
+                m1 = np.ma.masked_invalid(over01)
+                self.im_over = self.ax.imshow(m1, cmap=cmap_obj, interpolation="nearest", alpha=alpha_over)
         else:
             self.im_over = None
+
+        self._draw_annotation_artist()
 
         if keep and prev_xlim is not None and prev_ylim is not None:
             self.ax.set_xlim(prev_xlim)
@@ -832,6 +1304,183 @@ class App(tk.Tk):
 
         self._last_shape = (h, w)
         self.canvas.draw_idle()
+
+    def _compose_current_view_rgb01(self):
+        if not self.data.loaded:
+            raise RuntimeError("Input non caricati.")
+
+        ds = self.dataset.get()
+        if ds == "Original":
+            ref = self.data.dtm
+            if ref is None:
+                raise RuntimeError("DTM mancante.")
+            h, w = ref.shape
+            sat = self._satellite(w, h)
+            if sat is None:
+                raise RuntimeError("Satellite non disponibile (rete o area troppo grande).")
+            return self._apply_annotations_rgb(np.asarray(sat, dtype=np.float32))
+
+        dem = self._get_dataset_array(ds)
+        if dem is None:
+            raise RuntimeError("Dataset non disponibile.")
+
+        method = self.method.get()
+        res = float(self.data.res)
+        az = float(self.azimuth.get())
+        alt = float(self.altitude.get())
+        z = float(self.z_factor.get())
+        rad = float(self.radius.get())
+        n_dir = int(self.n_dir.get())
+
+        out = compute_method(method, dem, res, az, alt, z, rad, n_dir)
+        out = as_float32(out)
+
+        if out.ndim == 3 or is_rgb_method(method):
+            return self._apply_annotations_rgb(normalize_rgb01(out))
+
+        disp_over = self._stretch_for_display(out)
+        cmap = "gray_r" if self.invert.get() else "gray"
+        cmap_obj = mpl.colormaps.get_cmap(cmap).copy()
+        rgba = cmap_obj(np.nan_to_num(disp_over, nan=0.0))
+        over_rgb = np.asarray(rgba[:, :, :3], dtype=np.float32)
+        over_rgb[~np.isfinite(disp_over)] = 0.0
+
+        if not self.basemap_on.get():
+            return self._apply_annotations_rgb(over_rgb)
+
+        base = self._satellite(over_rgb.shape[1], over_rgb.shape[0])
+        if base is None:
+            return self._apply_annotations_rgb(over_rgb)
+
+        mix = float(self.basemap_mix.get())
+        mix = max(0.0, min(1.0, mix))
+        alpha_over = 1.0 - mix
+        mixed = np.clip(np.asarray(base, dtype=np.float32) * (1.0 - alpha_over) + over_rgb * alpha_over, 0.0, 1.0)
+        return self._apply_annotations_rgb(mixed)
+
+    def _ensure_annotation_canvas(self, h, w):
+        if self.annotation_alpha is None or self.annotation_alpha.shape != (h, w):
+            self.annotation_alpha = np.zeros((h, w), dtype=np.float32)
+
+    def _annotation_rgba(self):
+        if self.annotation_alpha is None:
+            return None
+        if not np.any(self.annotation_alpha > 0):
+            return None
+        h, w = self.annotation_alpha.shape
+        rgba = np.zeros((h, w, 4), dtype=np.float32)
+        rgba[:, :, 0] = 1.0
+        rgba[:, :, 1] = 1.0
+        rgba[:, :, 2] = 0.0
+        rgba[:, :, 3] = np.clip(self.annotation_alpha, 0.0, 1.0)
+        return rgba
+
+    def _draw_annotation_artist(self):
+        rgba = self._annotation_rgba()
+        if rgba is None:
+            self.im_anno = None
+            return
+        self.im_anno = self.ax.imshow(rgba, interpolation="nearest", alpha=1.0)
+
+    def _update_annotation_artist_live(self):
+        rgba = self._annotation_rgba()
+        if rgba is None:
+            if self.im_anno is not None:
+                try:
+                    self.im_anno.remove()
+                except Exception:
+                    pass
+                self.im_anno = None
+            self.canvas.draw_idle()
+            return
+        if self.im_anno is None:
+            self.im_anno = self.ax.imshow(rgba, interpolation="nearest", alpha=1.0)
+        else:
+            self.im_anno.set_data(rgba)
+        self.canvas.draw_idle()
+
+    def _apply_annotations_rgb(self, rgb01):
+        rgb = np.asarray(rgb01, dtype=np.float32).copy()
+        if rgb.ndim != 3 or rgb.shape[2] < 3:
+            return rgb
+        h, w = rgb.shape[:2]
+        self._ensure_annotation_canvas(h, w)
+        if self.annotation_alpha is None:
+            return rgb
+        a = np.clip(self.annotation_alpha, 0.0, 1.0)
+        if not np.any(a > 0):
+            return rgb
+        yellow = np.array([1.0, 1.0, 0.0], dtype=np.float32)
+        rgb[:, :, :3] = rgb[:, :, :3] * (1.0 - a[:, :, None]) + yellow[None, None, :] * a[:, :, None]
+        return np.clip(rgb, 0.0, 1.0)
+
+    def _paint_at(self, x_data, y_data):
+        if self.annotation_alpha is None:
+            return
+        h, w = self.annotation_alpha.shape
+        cx = int(round(float(x_data)))
+        cy = int(round(float(y_data)))
+        if cx < 0 or cy < 0 or cx >= w or cy >= h:
+            return
+        r = max(1, int(self.brush_size.get()))
+        x0 = max(0, cx - r)
+        x1 = min(w - 1, cx + r)
+        y0 = max(0, cy - r)
+        y1 = min(h - 1, cy + r)
+        yy, xx = np.ogrid[y0 : y1 + 1, x0 : x1 + 1]
+        m = (xx - cx) ** 2 + (yy - cy) ** 2 <= r * r
+        patch = self.annotation_alpha[y0 : y1 + 1, x0 : x1 + 1]
+        patch[m] = np.maximum(patch[m], 0.35)
+
+    def _paint_segment(self, x0, y0, x1, y1):
+        steps = max(1, int(max(abs(x1 - x0), abs(y1 - y0))))
+        for i in range(steps + 1):
+            t = i / steps
+            self._paint_at(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)
+
+    def _on_brush_toggle(self):
+        try:
+            if self.brush_on.get():
+                self.canvas.get_tk_widget().configure(cursor="crosshair")
+            else:
+                self.canvas.get_tk_widget().configure(cursor="")
+        except Exception:
+            pass
+
+    def clear_annotations(self):
+        if self.annotation_alpha is not None:
+            self.annotation_alpha.fill(0.0)
+        self._update_annotation_artist_live()
+        self.status.set("Segni cancellati.")
+
+    def export_current_view_hq(self):
+        try:
+            rgb01 = self._compose_current_view_rgb01()
+            arr = np.clip(np.asarray(rgb01, dtype=np.float32), 0.0, 1.0)
+            img = Image.fromarray((arr * 255.0).astype(np.uint8), mode="RGB")
+
+            h, w = arr.shape[:2]
+            long_side = max(h, w)
+            scale = 1
+            if long_side < 1600:
+                scale = 2
+            if long_side < 900:
+                scale = 3
+            if scale > 1:
+                img = img.resize((w * scale, h * scale), resample=Image.LANCZOS)
+
+            out_dir = self.root_path / "output_rvt_gui" / "export_hq_png"
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            place = self.place_name.get().replace(" ", "_")
+            ds = self.dataset.get().replace(" ", "_")
+            method = self.method.get().replace(" ", "_").replace("-", "_")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            out_path = out_dir / f"{place}__{ds}__{method}__HQ__{ts}.png"
+            img.save(out_path, format="PNG", optimize=True)
+            self.status.set(f"Export PNG HQ: {out_path}")
+        except Exception as e:
+            messagebox.showerror("Export PNG HQ", str(e))
 
     def export_current(self):
         if not self.data.loaded:
@@ -948,29 +1597,69 @@ class App(tk.Tk):
             return
         if event.button != 1:
             return
-        if event.xdata is None or event.ydata is None:
+        if self.brush_on.get():
+            if event.xdata is None or event.ydata is None:
+                return
+            self._brush_state = {"x": float(event.xdata), "y": float(event.ydata)}
+            self._paint_at(event.xdata, event.ydata)
+            self._update_annotation_artist_live()
             return
-        self._pan_state = (event.xdata, event.ydata, self.ax.get_xlim(), self.ax.get_ylim())
+        if event.x is None or event.y is None:
+            return
+        self._pan_state = {
+            "x_px": float(event.x),
+            "y_px": float(event.y),
+            "xlim": self.ax.get_xlim(),
+            "ylim": self.ax.get_ylim(),
+        }
+        try:
+            self.canvas.get_tk_widget().configure(cursor="fleur")
+        except Exception:
+            pass
 
     def _on_motion(self, event):
+        if self._brush_state is not None and self.brush_on.get():
+            if event.xdata is None or event.ydata is None:
+                return
+            p = self._brush_state
+            self._paint_segment(p["x"], p["y"], float(event.xdata), float(event.ydata))
+            p["x"] = float(event.xdata)
+            p["y"] = float(event.ydata)
+            self._update_annotation_artist_live()
+            return
         if self._pan_state is None:
             return
-        if event.inaxes != self.ax:
+        if event.x is None or event.y is None:
             return
-        if event.xdata is None or event.ydata is None:
-            return
+        s = self._pan_state
+        dx_px = float(event.x) - s["x_px"]
+        dy_px = float(event.y) - s["y_px"]
 
-        x0, y0, xlim0, ylim0 = self._pan_state
-        dx = x0 - event.xdata
-        dy = y0 - event.ydata
+        inv = self.ax.transData.inverted()
+        x0d, y0d = inv.transform((0.0, 0.0))
+        x1d, y1d = inv.transform((dx_px, dy_px))
+        dx_data = x1d - x0d
+        dy_data = y1d - y0d
 
-        self.ax.set_xlim(xlim0[0] + dx, xlim0[1] + dx)
-        self.ax.set_ylim(ylim0[0] + dy, ylim0[1] + dy)
+        xlim0 = s["xlim"]
+        ylim0 = s["ylim"]
+        self.ax.set_xlim(xlim0[0] - dx_data, xlim0[1] - dx_data)
+        self.ax.set_ylim(ylim0[0] - dy_data, ylim0[1] - dy_data)
         self.canvas.draw_idle()
 
     def _on_release(self, event):
         if event.button == 1:
+            if self._brush_state is not None:
+                self._brush_state = None
             self._pan_state = None
+            try:
+                if self.brush_on.get():
+                    self.canvas.get_tk_widget().configure(cursor="crosshair")
+                else:
+                    self.canvas.get_tk_widget().configure(cursor="")
+            except Exception:
+                pass
+
 
 if __name__ == "__main__":
     App().mainloop()
