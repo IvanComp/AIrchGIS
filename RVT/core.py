@@ -3,6 +3,7 @@ import zipfile
 import shutil
 import math
 import io
+import json
 import subprocess
 import webbrowser
 from datetime import datetime
@@ -12,6 +13,8 @@ from collections import OrderedDict
 import numpy as np
 import rasterio
 import rasterio.warp
+import rasterio.features
+import rasterio.transform
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -100,6 +103,117 @@ def pick_latest_from_candidates(base: Path, candidates):
             best = p
             best_mtime = mt
     return best
+
+
+def _infer_geojson_crs(geojson_obj):
+    crs_obj = geojson_obj.get("crs")
+    if not crs_obj:
+        return "EPSG:4326"
+    props = crs_obj.get("properties", {})
+    name = props.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return "EPSG:4326"
+
+
+def _collect_polygon_geometries(geojson_obj):
+    geoms = []
+    if geojson_obj.get("type") == "FeatureCollection":
+        for feat in geojson_obj.get("features", []):
+            g = feat.get("geometry")
+            if not g:
+                continue
+            if g.get("type") in {"Polygon", "MultiPolygon"}:
+                geoms.append(g)
+    elif geojson_obj.get("type") in {"Polygon", "MultiPolygon"}:
+        geoms.append(geojson_obj)
+    return geoms
+
+
+def find_place_geojson(place_root: Path):
+    if not place_root.exists() or not place_root.is_dir():
+        return None
+    files = sorted(
+        [p for p in place_root.iterdir() if p.is_file() and p.suffix.lower() in {".geojson", ".json"}],
+        key=lambda p: p.name.lower(),
+    )
+    for p in files:
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if _collect_polygon_geometries(obj):
+            return p
+    return None
+
+
+def clip_tile_to_geojson(tile, geojson_path: Path):
+    if geojson_path is None or not geojson_path.exists():
+        return tile
+    profile = tile.get("profile")
+    if not profile or "transform" not in profile:
+        return tile
+    transform = profile["transform"]
+    h, w = tile["DTM"].shape
+    if h <= 0 or w <= 0:
+        return tile
+
+    obj = json.loads(geojson_path.read_text(encoding="utf-8"))
+    geoms = _collect_polygon_geometries(obj)
+    if not geoms:
+        raise RuntimeError("GeoJSON senza poligoni validi.")
+
+    src_crs = _infer_geojson_crs(obj)
+    dst_crs = tile.get("crs")
+    geoms_dst = []
+    for g in geoms:
+        if dst_crs is not None:
+            try:
+                g2 = rasterio.warp.transform_geom(src_crs, dst_crs, g, precision=6)
+            except Exception:
+                g2 = g
+        else:
+            g2 = g
+        geoms_dst.append(g2)
+
+    inside = rasterio.features.geometry_mask(geoms_dst, out_shape=(h, w), transform=transform, invert=True)
+    if not np.any(inside):
+        raise RuntimeError("L'area GeoJSON non interseca il raster corrente.")
+
+    rows, cols = np.where(inside)
+    r0, r1 = int(rows.min()), int(rows.max())
+    c0, c1 = int(cols.min()), int(cols.max())
+    win_h = r1 - r0 + 1
+    win_w = c1 - c0 + 1
+    inside_win = inside[r0 : r1 + 1, c0 : c1 + 1]
+
+    def _clip_arr(a):
+        b = np.asarray(a, dtype=np.float32)[r0 : r1 + 1, c0 : c1 + 1].copy()
+        b[~inside_win] = np.nan
+        return b
+
+    dtm = _clip_arr(tile["DTM"])
+    dsmf = _clip_arr(tile["DSM_First"])
+    dsml = _clip_arr(tile["DSM_Last"])
+    ndsm = dsmf - dtm
+    diff = dsmf - dsml
+
+    new_transform = transform * rasterio.transform.Affine.translation(c0, r0)
+    new_profile = profile.copy()
+    new_profile.update(width=win_w, height=win_h, transform=new_transform)
+    b = rasterio.transform.array_bounds(win_h, win_w, new_transform)
+    new_bounds = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+
+    out = tile.copy()
+    out["DTM"] = dtm
+    out["DSM_First"] = dsmf
+    out["DSM_Last"] = dsml
+    out["nDSM"] = ndsm
+    out["First-Last"] = diff
+    out["profile"] = new_profile
+    out["bounds"] = new_bounds
+    out["area_geojson"] = str(geojson_path)
+    return out
 
 
 def list_database_places(root: Path):
@@ -624,6 +738,7 @@ class InputData:
         self.profile = None
         self.bounds = None
         self.crs = None
+        self.area_geojson_path = None
 
     def load(self, place_name=None):
         if place_name:
@@ -637,12 +752,14 @@ class InputData:
             p_dtm = pick_latest_raster(base / "DTM")
             p_f = pick_latest_from_candidates(base, FIRST_DIR_CANDIDATES)
             p_l = pick_latest_from_candidates(base, LAST_DIR_CANDIDATES)
+            area_geojson_path = find_place_geojson(base)
         else:
             prepare_inputs(self.root)
             base = self.root / "image"
             p_dtm = pick_latest_raster(base / "DTM")
             p_f = pick_latest_from_candidates(base, FIRST_DIR_CANDIDATES)
             p_l = pick_latest_from_candidates(base, LAST_DIR_CANDIDATES)
+            area_geojson_path = None
 
         if p_dtm is None or p_f is None or p_l is None:
             self.loaded = False
@@ -655,17 +772,30 @@ class InputData:
         dtm, res, prof, _, bounds, crs = load_raster(p_dtm)
         dsmf, _, _, _, _, _ = load_raster(p_f)
         dsml, _, _, _, _, _ = load_raster(p_l)
+        tile = {
+            "DTM": dtm,
+            "DSM_First": dsmf,
+            "DSM_Last": dsml,
+            "nDSM": dsmf - dtm,
+            "First-Last": dsmf - dsml,
+            "res": res,
+            "profile": prof,
+            "bounds": bounds,
+            "crs": crs,
+        }
+        if area_geojson_path:
+            tile = clip_tile_to_geojson(tile, Path(area_geojson_path).expanduser().resolve())
 
-        self.dtm = dtm
-        self.dsmf = dsmf
-        self.dsml = dsml
-        self.ndsm = dsmf - dtm
-        self.diff = dsmf - dsml
-
-        self.res = res
-        self.profile = prof
-        self.bounds = bounds
-        self.crs = crs
+        self.dtm = tile["DTM"]
+        self.dsmf = tile["DSM_First"]
+        self.dsml = tile["DSM_Last"]
+        self.ndsm = tile["nDSM"]
+        self.diff = tile["First-Last"]
+        self.res = tile["res"]
+        self.profile = tile["profile"]
+        self.bounds = tile["bounds"]
+        self.crs = tile["crs"]
+        self.area_geojson_path = str(area_geojson_path) if area_geojson_path else None
 
         self.loaded = True
         self.error = None
@@ -781,10 +911,10 @@ class App(tk.Tk):
         self.place_combo = ttk.Combobox(place_box, textvariable=self.place_name, values=[], state="readonly")
         self.place_combo.grid(row=0, column=1, sticky="ew")
         self.place_combo.bind("<<ComboboxSelected>>", lambda _e: self.reload_inputs())
-        ttk.Button(top, text="Reload", command=self.reload_inputs).grid(row=0, column=1, padx=(8, 0))
-        ttk.Button(top, text="MASE", command=self.open_mase).grid(row=0, column=2, padx=(8, 0))
-        ttk.Button(top, text="GE", command=self.open_ge).grid(row=0, column=3, padx=(8, 0))
-        ttk.Button(top, text="Preset Arch", command=self.apply_archaeology_preset).grid(row=0, column=4, padx=(8, 0))
+        ttk.Button(top, text="MASE", command=self.open_mase).grid(row=0, column=1, padx=(8, 0))
+        ttk.Button(top, text="GE", command=self.open_ge).grid(row=0, column=2, padx=(8, 0))
+        ttk.Button(top, text="Preset Arch", command=self.apply_archaeology_preset).grid(row=0, column=3, padx=(8, 0))
+        ttk.Button(top, text="Preset Rett/Fossati", command=self.apply_rectangles_preset).grid(row=0, column=4, padx=(8, 0))
 
         ds_box = ttk.LabelFrame(left, text="Dataset", padding=8)
         ds_box.grid(row=1, column=0, sticky="ew", pady=(0, 10))
@@ -835,10 +965,9 @@ class App(tk.Tk):
         btn_box = ttk.Frame(left)
         btn_box.grid(row=5, column=0, sticky="ew")
         btn_box.columnconfigure(0, weight=1)
-        ttk.Button(btn_box, text="Export corrente GeoTIFF", command=self.export_current).grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        ttk.Button(btn_box, text="Batch pipeline base", command=self.batch_pipeline).grid(row=1, column=0, sticky="ew", pady=(0, 6))
-        ttk.Button(btn_box, text="Scarica immagine destra HQ (PNG)", command=self.export_current_view_hq).grid(row=2, column=0, sticky="ew")
-
+        btn_box.columnconfigure(1, weight=1)
+        ttk.Button(btn_box, text="Export .TIFF", command=self.export_current).grid(row=0, column=0, sticky="ew", pady=(0, 6), padx=(0, 4))
+        ttk.Button(btn_box, text="Export PNG", command=self.export_current_view_hq).grid(row=0, column=1, sticky="ew", pady=(0, 6), padx=(4, 0))
         self.status = tk.StringVar(value="")
         ttk.Label(left, textvariable=self.status, wraplength=360).grid(row=6, column=0, sticky="ew", pady=(10, 0))
 
@@ -956,6 +1085,41 @@ class App(tk.Tk):
         self.schedule_update()
         self.status.set("Preset archeologia applicato (DTM + contrasto alto).")
 
+    def apply_rectangles_preset(self):
+        methods = self.available_methods()
+        preferred = [
+            "Sky-View Factor",
+            "Anisotropic Sky-View Factor",
+            "Simple Local Relief Model",
+            "Hillshade",
+            "Multi-Hillshade",
+        ]
+        chosen = None
+        for m in preferred:
+            if m in methods:
+                chosen = m
+                break
+        if chosen is None and methods:
+            chosen = methods[0]
+
+        self.dataset.set("DTM")
+        if chosen is not None:
+            self.method.set(chosen)
+        self.basemap_on.set(False)
+        self.invert.set(False)
+
+        self.azimuth.set(330.0)
+        self.altitude.set(18.0)
+        self.z_factor.set(2.2)
+        self.radius.set(24.0)
+        self.n_dir.set(32)
+        self.p_low.set(0.2)
+        self.p_high.set(99.8)
+
+        self.update_param_states()
+        self.schedule_update()
+        self.status.set("Preset rettangoli/fossati applicato (DTM + microrelief boost).")
+
     def refresh_places(self):
         places = list_database_places(self.root_path)
         values = places
@@ -983,7 +1147,10 @@ class App(tk.Tk):
             self._show_blank()
             return
         place_txt = f"Database/{place}"
-        self.status.set(f"OK | sorgente: {place_txt}")
+        if self.data.area_geojson_path:
+            self.status.set(f"OK | sorgente: {place_txt} | area: {Path(self.data.area_geojson_path).name}")
+        else:
+            self.status.set(f"OK | sorgente: {place_txt}")
         self.update_param_states()
         self.schedule_update()
 
