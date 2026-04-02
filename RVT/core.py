@@ -10,10 +10,12 @@ import xml.etree.ElementTree as ET
 import threading
 import hashlib
 from datetime import datetime
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import numpy as np
 import rasterio
@@ -36,7 +38,15 @@ import requests
 
 import rvt.vis
 import rvt.blend
-from scripts.lads_preview import LADS_TARGET_CRS, build_lads_figure, build_lads_point_cloud, export_lads_las
+from scripts.lads_preview import (
+    LADS_BROWSER_MAX_SIDE,
+    LADS_TARGET_CRS,
+    build_browser_terrain_grid,
+    build_lads_figure,
+    build_lads_point_cloud,
+    export_lads_las,
+    write_browser_cloud_viewer,
+)
 
 try:
     from scipy.ndimage import gaussian_filter
@@ -69,6 +79,12 @@ PREPRO_PROFILES = {
 }
 BASE_IMAGE_OPTIONS = ["PrePro 1", "PrePro 2", "PrePro 3"]
 BASE_IMAGE_TO_PROFILE = {"PrePro 1": "prep1", "PrePro 2": "prep2", "PrePro 3": "prep3"}
+CLOUD_SURFACE_OPTIONS = [
+    {"key": "original", "label": "Originale"},
+    {"key": "prep1", "label": "PrePro 1"},
+    {"key": "prep2", "label": "PrePro 2"},
+    {"key": "prep3", "label": "PrePro 3"},
+]
 REPORT_CROP_RADIUS_PX = 140
 REPORT_CROP_OUTPUT_SIZE = 720
 PDF_FONT_CANDIDATES = [
@@ -1056,11 +1072,11 @@ class InputData:
         self.src_original_dsml_path = None
 
     def _set_loaded_tile(self, tile, area_geojson_path, p_dtm, p_f, p_l, p_dtm_orig, p_f_orig, p_l_orig):
-        self.dtm = tile["DTM"]
-        self.dsmf = tile["DSM_First"]
-        self.dsml = tile["DSM_Last"]
-        self.ndsm = tile["nDSM"]
-        self.diff = tile["First-Last"]
+        self.dtm = tile.get("DTM")
+        self.dsmf = tile.get("DSM_First")
+        self.dsml = tile.get("DSM_Last")
+        self.ndsm = tile.get("nDSM")
+        self.diff = tile.get("First-Last")
         self.res = tile["res"]
         self.profile = tile["profile"]
         self.bounds = tile["bounds"]
@@ -1156,20 +1172,24 @@ class InputData:
         p_f, p_f_orig = self._resolve_preprocessed_paths(dsmf_paths, use_preprocessed=use_preprocessed, preprocessed_suffix=preprocessed_suffix)
         p_l, p_l_orig = self._resolve_preprocessed_paths(dsml_paths, use_preprocessed=use_preprocessed, preprocessed_suffix=preprocessed_suffix)
 
-        if not p_dtm or not p_f or not p_l:
+        if not p_dtm:
             self.loaded = False
-            self.error = "Input drag and drop incompleti: servono DTM, DSM First e DSM Last."
+            self.error = "Input drag and drop incompleti: serve almeno un DTM."
             return
 
         dtm, res, prof, _, bounds, crs = load_raster_source(p_dtm)
-        dsmf, _, _, _, _, _ = load_raster_source(p_f)
-        dsml, _, _, _, _, _ = load_raster_source(p_l)
+        dsmf = None
+        dsml = None
+        if p_f:
+            dsmf, _, _, _, _, _ = load_raster_source(p_f)
+        if p_l:
+            dsml, _, _, _, _, _ = load_raster_source(p_l)
         tile = {
             "DTM": dtm,
             "DSM_First": dsmf,
             "DSM_Last": dsml,
-            "nDSM": dsmf - dtm,
-            "First-Last": dsmf - dsml,
+            "nDSM": (dsmf - dtm) if dsmf is not None else None,
+            "First-Last": (dsmf - dsml) if dsmf is not None and dsml is not None else None,
             "res": res,
             "profile": prof,
             "bounds": bounds,
@@ -1216,6 +1236,7 @@ class App(BaseTk):
         self.basemap_year_values_cache = {}
 
         self.param_widgets = {}
+        self.dataset_widgets = {}
 
         self._update_job = None
         self._pan_state = None
@@ -1233,17 +1254,17 @@ class App(BaseTk):
         self.brush_size = tk.IntVar(value=5)
         self.brush_color = tk.StringVar(value="Giallo")
         self.lads_enabled = tk.BooleanVar(value=False)
-        self.lads_button_text = tk.StringVar(value="3D Cloud")
+        self.lads_button_text = tk.StringVar(value="☁️ 3D Cloud")
         self.pick_coords_armed = False
         self.report_pick_pending = None
         self.report_items = []
-        self.report_window = None
         self.lads_window = None
         self.lads_canvas = None
         self.lads_axes = None
         self.lads_home_limits = None
         self.lads_fullscreen = False
         self.lads_windowed_geometry = ""
+        self.report_window = None
         self.lads_info_var = tk.StringVar(value="")
         self.report_name_var = tk.StringVar(value="")
         self.report_status_var = tk.StringVar(value="Nessun punto nel report.")
@@ -1253,13 +1274,18 @@ class App(BaseTk):
         self._satellite_loading_keys = set()
         self._satellite_loading_lock = threading.Lock()
         self.drop_target_label = None
+        self.cloud_http_server = None
+        self.cloud_http_port = None
+        self.cloud_http_root = None
+        self._prepro_cache_thread = None
+        self._prepro_cache_started = False
 
         self._build_ui()
-        self._sync_lads_button_state()
         self._refresh_drop_status()
         self.refresh_basemap_years()
         self.refresh_places()
         self.reload_inputs()
+        self._start_database_prepro_cache()
 
     def open_mase(self):
         url = MASE_URL
@@ -1322,32 +1348,25 @@ class App(BaseTk):
         self.brush_size_scale.grid(row=0, column=4, sticky="w", padx=(0, 20))
         self.brush_size_scale.set(self.brush_size.get())
         right_top.columnconfigure(5, weight=1)
-        ttk.Button(right_top, text="Deriva Coordinate", command=self.arm_coordinate_pick).grid(row=0, column=6, sticky="e", padx=(0, 8))
-        ttk.Button(right_top, text="Misura", command=self.arm_measure_tool).grid(row=0, column=7, sticky="e", padx=(0, 8))
-        ttk.Button(right_top, text="Pulisci segni", command=self.clear_annotations).grid(row=0, column=8, sticky="e", padx=(0, 8))
-        ttk.Button(right_top, text="Griglia metodi", command=self.show_methods_grid).grid(row=0, column=9, sticky="e")
-        ttk.Button(right_top, textvariable=self.lads_button_text, command=self.on_lads_toggle).grid(row=0, column=10, sticky="e", padx=(8, 0))
+        ttk.Button(right_top, text="📍", command=self.arm_coordinate_pick).grid(row=0, column=6, sticky="e", padx=(0, 8))
+        ttk.Button(right_top, text="📏", command=self.arm_measure_tool).grid(row=0, column=7, sticky="e", padx=(0, 8))
+        ttk.Button(right_top, text="🧹", command=self.clear_annotations).grid(row=0, column=8, sticky="e", padx=(0, 8))
+        ttk.Button(right_top, text="🧩 Griglia metodi", command=self.show_methods_grid).grid(row=0, column=9, sticky="e")
+        ttk.Button(right_top, textvariable=self.lads_button_text, command=self.show_3d_cloud_viewer).grid(row=0, column=10, sticky="e", padx=(8, 0))
 
         top = ttk.Frame(left)
         top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         top.columnconfigure(0, weight=1)
-        place_box = ttk.Frame(top)
-        place_box.grid(row=0, column=0, sticky="ew")
-        place_box.columnconfigure(1, weight=1)
-        ttk.Label(place_box, text="Posto").grid(row=0, column=0, sticky="w", padx=(0, 6))
-        self.place_combo = ttk.Combobox(place_box, textvariable=self.place_name, values=[], state="readonly")
-        self.place_combo.grid(row=0, column=1, sticky="ew")
-        self.place_combo.bind("<<ComboboxSelected>>", self.on_place_selected)
         tools_row = ttk.Frame(top)
-        tools_row.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        tools_row.grid(row=0, column=0, sticky="ew")
         for i in range(4):
             tools_row.columnconfigure(i, weight=1)
-        ttk.Button(tools_row, text="MASE", command=self.open_mase).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(tools_row, text="GE", command=self.open_ge).grid(row=0, column=1, sticky="ew", padx=(4, 4))
-        ttk.Button(tools_row, text="Preset Arch", command=self.apply_archaeology_preset).grid(row=0, column=2, sticky="ew", padx=(4, 4))
-        ttk.Button(tools_row, text="Preset Rett/Fossati", command=self.apply_rectangles_preset).grid(row=0, column=3, sticky="ew", padx=(4, 0))
+        ttk.Button(tools_row, text="🛰️ MASE", command=self.open_mase).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(tools_row, text="🌍 GE", command=self.open_ge).grid(row=0, column=1, sticky="ew", padx=(4, 4))
+        ttk.Button(tools_row, text="🏛️ Preset Arch", command=self.apply_archaeology_preset).grid(row=0, column=2, sticky="ew", padx=(4, 4))
+        ttk.Button(tools_row, text="⬛ Preset Rett/Fossati", command=self.apply_rectangles_preset).grid(row=0, column=3, sticky="ew", padx=(4, 0))
         quick_box = ttk.LabelFrame(top, text="Sessione rapida", padding=6)
-        quick_box.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        quick_box.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         quick_box.columnconfigure(0, weight=1)
         self.drop_target_label = ttk.Label(
             quick_box,
@@ -1368,31 +1387,43 @@ class App(BaseTk):
         self._register_drop_widget(quick_box)
         self._register_drop_widget(self.drop_target_label)
 
+        place_box = ttk.Frame(left)
+        place_box.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        place_box.columnconfigure(1, weight=1)
+        ttk.Label(place_box, text="Posto").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.place_combo = ttk.Combobox(place_box, textvariable=self.place_name, values=[], state="readonly")
+        self.place_combo.grid(row=0, column=1, sticky="ew")
+        self.place_combo.bind("<<ComboboxSelected>>", self.on_place_selected)
+
         ds_box = ttk.LabelFrame(left, text="Dataset", padding=8)
-        ds_box.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        ds_box.grid(row=2, column=0, sticky="ew", pady=(0, 10))
         ds_box.columnconfigure(0, weight=1)
         ds_box.columnconfigure(1, weight=1)
         datasets = ["DTM", "DSM_First", "DSM_Last", "nDSM", "First-Last"]
         for i, name in enumerate(datasets):
             r = i // 2
             c = i % 2
-            ttk.Radiobutton(
+            rb = ttk.Radiobutton(
                 ds_box,
                 text=name,
                 value=name,
                 variable=self.dataset,
                 command=lambda: (self.update_param_states(), self.schedule_update()),
-            ).grid(row=r, column=c, sticky="w", padx=(0, 12), pady=(0, 2))
+            )
+            rb.grid(row=r, column=c, sticky="w", padx=(0, 12), pady=(0, 2))
+            self.dataset_widgets[name] = rb
         original_row = 2
         original_frame = ttk.Frame(ds_box)
         original_frame.grid(row=original_row, column=1, sticky="ew")
-        ttk.Radiobutton(
+        original_rb = ttk.Radiobutton(
             original_frame,
             text="Original",
             value="Original",
             variable=self.dataset,
             command=lambda: (self.update_param_states(), self.schedule_update()),
-        ).grid(row=0, column=0, sticky="w", padx=(0, 6), pady=(0, 2))
+        )
+        original_rb.grid(row=0, column=0, sticky="w", padx=(0, 6), pady=(0, 2))
+        self.dataset_widgets["Original"] = original_rb
         self.basemap_year_combo = ttk.Combobox(
             original_frame,
             textvariable=self.basemap_year,
@@ -1404,7 +1435,7 @@ class App(BaseTk):
         self.basemap_year_combo.bind("<<ComboboxSelected>>", lambda _e: self.schedule_update())
 
         basemap_box = ttk.LabelFrame(left, text="Basemap (Satellite)", padding=8)
-        basemap_box.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        basemap_box.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         basemap_box.columnconfigure(1, weight=1)
 
         self.basemap_cb = ttk.Checkbutton(basemap_box, text="Basemap", variable=self.basemap_on, command=lambda: (self.update_param_states(), self.schedule_update()))
@@ -1423,14 +1454,14 @@ class App(BaseTk):
         self.basemap_scale.set(float(self.basemap_mix.get()))
 
         meth_box = ttk.LabelFrame(left, text="Metodo RVT", padding=8)
-        meth_box.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+        meth_box.grid(row=4, column=0, sticky="ew", pady=(0, 10))
         meth_box.columnconfigure(0, weight=1)
         self.method_combo = ttk.Combobox(meth_box, textvariable=self.method, values=self.available_methods(), state="readonly")
         self.method_combo.grid(row=0, column=0, sticky="ew")
         self.method_combo.bind("<<ComboboxSelected>>", lambda e: (self.update_param_states(), self.schedule_update()))
 
         par_box = ttk.LabelFrame(left, text="Parametri", padding=8)
-        par_box.grid(row=4, column=0, sticky="ew", pady=(0, 10))
+        par_box.grid(row=5, column=0, sticky="ew", pady=(0, 10))
         par_box.columnconfigure(0, weight=1)
 
         self._add_slider(par_box, "Azimuth", "azimuth", self.azimuth, 0.0, 360.0, 0)
@@ -1445,7 +1476,7 @@ class App(BaseTk):
         self.invert_cb.grid(row=7, column=0, sticky="w", pady=(6, 0))
 
         btn_box = ttk.Frame(left)
-        btn_box.grid(row=5, column=0, sticky="ew")
+        btn_box.grid(row=6, column=0, sticky="ew")
         btn_box.columnconfigure(0, weight=1)
         btn_box.columnconfigure(1, weight=1)
         btn_box.columnconfigure(2, weight=1)
@@ -1456,9 +1487,9 @@ class App(BaseTk):
         self.base_mode_combo = ttk.Combobox(btn_box, textvariable=self.base_image_mode, values=BASE_IMAGE_OPTIONS, state="readonly")
         self.base_mode_combo.grid(row=0, column=3, sticky="ew", pady=(0, 6))
         self.base_mode_combo.bind("<<ComboboxSelected>>", self.on_base_image_mode_change)
-        ttk.Button(left, text="Crea report di esplorazione", command=self.open_report_window).grid(row=6, column=0, sticky="ew", pady=(0, 6))
+        ttk.Button(left, text="Crea report di esplorazione", command=self.open_report_window).grid(row=7, column=0, sticky="ew", pady=(0, 6))
         self.status = tk.StringVar(value="")
-        ttk.Label(left, textvariable=self.status, wraplength=390).grid(row=7, column=0, sticky="ew", pady=(8, 0))
+        ttk.Label(left, textvariable=self.status, wraplength=390).grid(row=8, column=0, sticky="ew", pady=(8, 0))
 
         fig = Figure(figsize=(6, 5), dpi=150)
         fig.patch.set_facecolor("black")
@@ -1692,7 +1723,7 @@ class App(BaseTk):
         return out
 
     def _drop_session_ready(self):
-        return all(self.drop_sources.get(name) for name in ("DTM", "DSM_First", "DSM_Last"))
+        return bool(self.drop_sources.get("DTM"))
 
     def _drop_session_label(self):
         dtm_paths = self.drop_sources.get("DTM") or []
@@ -1719,17 +1750,16 @@ class App(BaseTk):
         ]
         if not TKDND_AVAILABLE:
             self.drop_status_var.set(
-                "Drag and drop non disponibile in questa installazione.\n"
-                "Installa `tkinterdnd2` per trascinare DTM, DSM First e DSM Last.\n"
+                "DnD non disponibile. Installa `tkinterdnd2`. "
                 + " | ".join(counts)
             )
             return
-        header = "Trascina qui file, cartelle o zip di DTM, DSM First e DSM Last."
+        header = "Trascina qui raster, cartelle o zip."
         if self._drop_session_ready():
             mode_txt = "Sessione rapida pronta."
             if self.active_source_mode == "drop" and self.data.loaded:
                 mode_txt = "Sessione rapida attiva."
-            self.drop_status_var.set(f"{header}\n{mode_txt} {' | '.join(counts)}")
+            self.drop_status_var.set(f"{mode_txt} {header} {' | '.join(counts)}")
             return
         missing = []
         if not self.drop_sources["DTM"]:
@@ -1739,7 +1769,7 @@ class App(BaseTk):
         if not self.drop_sources["DSM_Last"]:
             missing.append("DSM Last")
         missing_txt = ", ".join(missing) if missing else "-"
-        self.drop_status_var.set(f"{header}\nMancano: {missing_txt}. {' | '.join(counts)}")
+        self.drop_status_var.set(f"{header} Mancano: {missing_txt}. {' | '.join(counts)}")
 
     def _register_drop_widget(self, widget):
         if not TKDND_AVAILABLE or DND_FILES is None or widget is None:
@@ -1918,6 +1948,33 @@ class App(BaseTk):
         else:
             self.place_name.set("")
 
+    def _warm_database_prepro_cache(self):
+        db_root = get_database_root(self.root_path)
+        if db_root is None:
+            return
+        for place in list_database_places(self.root_path):
+            try:
+                base = db_root / place
+                prepare_inputs_place(base)
+                src_groups = [
+                    select_rasters(base / "DTM", prefer_preprocessed=False),
+                    select_rasters_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=False),
+                    select_rasters_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=False),
+                ]
+                if not any(src_groups):
+                    continue
+                for profile in PREPRO_PROFILES.values():
+                    self._ensure_preprocessed_groups(src_groups, profile)
+            except Exception:
+                continue
+
+    def _start_database_prepro_cache(self):
+        if self._prepro_cache_started:
+            return
+        self._prepro_cache_started = True
+        self._prepro_cache_thread = threading.Thread(target=self._warm_database_prepro_cache, daemon=True)
+        self._prepro_cache_thread.start()
+
     def load_database_inputs(self):
         self._refresh_drop_status()
         self.refresh_places()
@@ -1935,6 +1992,26 @@ class App(BaseTk):
         if profile_key:
             self.prepro_profile.set(profile_key)
         profile = PREPRO_PROFILES.get(self.prepro_profile.get(), PREPRO_PROFILES["prep1"])
+        if use_preprocessed:
+            try:
+                db_root = get_database_root(self.root_path)
+                if db_root is not None:
+                    base = db_root / place
+                    prepare_inputs_place(base)
+                    p_dtm_orig = select_rasters(base / "DTM", prefer_preprocessed=False)
+                    p_f_orig = select_rasters_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=False)
+                    p_l_orig = select_rasters_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=False)
+                    if p_dtm_orig and p_f_orig and p_l_orig:
+                        self.status.set(f"{profile['label']} in preparazione...")
+                        self.update_idletasks()
+                        self._ensure_preprocessed_groups([p_dtm_orig, p_f_orig, p_l_orig], profile)
+            except Exception as e:
+                self.status.set(f"Errore {profile['label']}: {e}")
+                messagebox.showerror("Preprocess", str(e))
+                self.update_param_states()
+                self.refresh_basemap_years()
+                self._show_blank()
+                return
         self.data.load(
             place_name=place,
             use_preprocessed=use_preprocessed,
@@ -1964,7 +2041,7 @@ class App(BaseTk):
         if not self._drop_session_ready():
             if self.lads_enabled.get():
                 self._close_lads_window()
-            self.status.set("Sessione rapida incompleta: servono DTM, DSM First e DSM Last.")
+            self.status.set("Sessione rapida incompleta: serve almeno un DTM.")
             self.update_param_states()
             self.refresh_basemap_years()
             self._show_blank()
@@ -1975,6 +2052,25 @@ class App(BaseTk):
         if profile_key:
             self.prepro_profile.set(profile_key)
         profile = PREPRO_PROFILES.get(self.prepro_profile.get(), PREPRO_PROFILES["prep1"])
+        if use_preprocessed:
+            try:
+                self.status.set(f"{profile['label']} in preparazione...")
+                self.update_idletasks()
+                self._ensure_preprocessed_groups(
+                    [
+                        self.drop_sources["DTM"],
+                        self.drop_sources["DSM_First"],
+                        self.drop_sources["DSM_Last"],
+                    ],
+                    profile,
+                )
+            except Exception as e:
+                self.status.set(f"Errore {profile['label']}: {e}")
+                messagebox.showerror("Preprocess", str(e))
+                self.update_param_states()
+                self.refresh_basemap_years()
+                self._show_blank()
+                return
         self.data.load_from_paths(
             self.drop_sources["DTM"],
             self.drop_sources["DSM_First"],
@@ -2006,6 +2102,7 @@ class App(BaseTk):
         self.load_database_inputs()
 
     def update_param_states(self):
+        self._update_dataset_availability()
         ds = self.dataset.get()
         is_original = ds == "Original"
         m = self.method.get()
@@ -2252,15 +2349,216 @@ class App(BaseTk):
     def _build_lads_cloud(self):
         if not self.data.loaded or self.data.dtm is None:
             raise RuntimeError("DTM non caricato.")
+        original_dtm, original_profile, original_crs = self._load_original_dtm_surface()
         return build_lads_point_cloud(
-            self.data.dtm,
-            self.data.profile,
-            self.data.crs,
+            original_dtm,
+            original_profile,
+            original_crs,
             target_crs=LADS_TARGET_CRS,
         )
 
+    def _ensure_preprocessed_groups(self, src_groups, profile):
+        groups = []
+        for group in src_groups:
+            items = [Path(p).expanduser().resolve() for p in group if p]
+            if items:
+                groups.append(items)
+        if not groups:
+            return []
+
+        created = []
+        for group in groups:
+            for src in group:
+                dst = prep_output_path(src, suffix=profile["suffix"])
+                if dst.exists():
+                    continue
+                preprocess_raster_file(
+                    src,
+                    dst,
+                    fill_dist=profile["fill_dist"],
+                    fill_smooth_iter=profile["fill_smooth_iter"],
+                    sigma=profile["sigma"],
+                )
+                created.append(dst)
+        return created
+
+    def _dataset_available(self, name):
+        if name == "DTM":
+            return self.data.loaded and self.data.dtm is not None
+        if name == "DSM_First":
+            return self.data.loaded and self.data.dsmf is not None
+        if name == "DSM_Last":
+            return self.data.loaded and self.data.dsml is not None
+        if name == "nDSM":
+            return self.data.loaded and self.data.ndsm is not None
+        if name == "First-Last":
+            return self.data.loaded and self.data.diff is not None
+        if name == "Original":
+            return self.data.loaded and self.data.dtm is not None
+        return False
+
+    def _update_dataset_availability(self):
+        available_now = [name for name in ("DTM", "DSM_First", "DSM_Last", "nDSM", "First-Last", "Original") if self._dataset_available(name)]
+        for name, widget in self.dataset_widgets.items():
+            if self._dataset_available(name):
+                widget.state(["!disabled"])
+            else:
+                widget.state(["disabled"])
+        if available_now and self.dataset.get() not in available_now:
+            fallback = "DTM" if "DTM" in available_now else available_now[0]
+            self.dataset.set(fallback)
+
+    def _current_3d_cloud_variant_key(self):
+        mode = self.base_image_mode.get()
+        return BASE_IMAGE_TO_PROFILE.get(mode, "original")
+
+    def _load_original_dtm_surface(self):
+        return self._load_dtm_surface_variant("original")
+
+    def _load_dtm_surface_variant(self, variant_key="original"):
+        src_paths = self.data.src_original_dtm_paths or self.data.src_dtm_paths
+        if not src_paths:
+            raise RuntimeError("Sorgente DTM originale non disponibile.")
+
+        src_paths = [Path(p).expanduser().resolve() for p in src_paths if p]
+        load_paths = src_paths
+        if variant_key != "original":
+            profile_cfg = PREPRO_PROFILES.get(variant_key)
+            if profile_cfg is None:
+                raise RuntimeError(f"Profilo 3D Cloud non valido: {variant_key}")
+            self._ensure_preprocessed_groups([src_paths], profile_cfg)
+            load_paths = []
+            for src in src_paths:
+                dst = prep_output_path(src, suffix=profile_cfg["suffix"])
+                load_paths.append(dst if dst.exists() else src)
+
+        dtm, _res, profile, _nodata, bounds, crs = load_raster_source(load_paths)
+        if self.data.area_geojson_path:
+            dummy = np.zeros_like(dtm, dtype=np.float32)
+            tile = {
+                "DTM": dtm,
+                "DSM_First": dummy,
+                "DSM_Last": dummy,
+                "nDSM": dummy,
+                "First-Last": dummy,
+                "profile": profile,
+                "bounds": bounds,
+                "crs": crs,
+            }
+            tile = clip_tile_to_geojson(tile, Path(self.data.area_geojson_path).expanduser().resolve())
+            dtm = tile["DTM"]
+            profile = tile["profile"]
+            crs = tile["crs"]
+        return dtm, profile, crs
+
+    def _3d_cloud_output_bundle(self):
+        out_dir = self.root_path / "output_rvt_gui" / "3d_cloud"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        place = self._current_place_label().replace(" ", "_")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        stem = f"{place}__3DCloud__{ts}"
+        return out_dir, stem
+
+    def _ensure_3d_cloud_http_server(self, root_dir):
+        root_dir = Path(root_dir).resolve()
+        if (
+            self.cloud_http_server is not None
+            and self.cloud_http_port is not None
+            and self.cloud_http_root == str(root_dir)
+        ):
+            return int(self.cloud_http_port)
+
+        if self.cloud_http_server is not None:
+            try:
+                self.cloud_http_server.shutdown()
+                self.cloud_http_server.server_close()
+            except Exception:
+                pass
+            self.cloud_http_server = None
+            self.cloud_http_port = None
+            self.cloud_http_root = None
+
+        class QuietHandler(SimpleHTTPRequestHandler):
+            def log_message(self, format, *args):
+                return
+
+        handler = partial(QuietHandler, directory=str(root_dir))
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        server.daemon_threads = True
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.cloud_http_server = server
+        self.cloud_http_port = int(server.server_address[1])
+        self.cloud_http_root = str(root_dir)
+        return self.cloud_http_port
+
+    def show_3d_cloud_viewer(self):
+        if not self.data.loaded or self.data.dtm is None:
+            messagebox.showerror("3D Cloud", "Carica prima un DTM.")
+            return
+        try:
+            out_dir, stem = self._3d_cloud_output_bundle()
+            variant_outputs = []
+            for item in CLOUD_SURFACE_OPTIONS:
+                key = item["key"]
+                label = item["label"]
+                self.status.set(f"3D Cloud in preparazione: {label}...")
+                self.update_idletasks()
+                dtm, profile, crs = self._load_dtm_surface_variant(key)
+                terrain_grid = build_browser_terrain_grid(
+                    dtm,
+                    profile,
+                    crs,
+                    target_crs=LADS_TARGET_CRS,
+                    max_side=LADS_BROWSER_MAX_SIDE,
+                )
+                las_path = out_dir / f"{stem}__{key}.las"
+                html_path = out_dir / f"{stem}__{key}.html"
+                export_lads_las(
+                    dtm,
+                    profile,
+                    crs,
+                    las_path,
+                    target_crs=LADS_TARGET_CRS,
+                )
+                variant_outputs.append(
+                    {
+                        "key": key,
+                        "label": label,
+                        "las_path": las_path,
+                        "html_path": html_path,
+                        "terrain_grid": terrain_grid,
+                    }
+                )
+
+            select_items = [
+                {"key": item["key"], "label": item["label"], "href": quote(item["html_path"].name)}
+                for item in variant_outputs
+            ]
+            for item in variant_outputs:
+                write_browser_cloud_viewer(
+                    item["html_path"],
+                    item["terrain_grid"],
+                    las_href=quote(item["las_path"].name),
+                    variant_options=select_items,
+                    current_variant_key=item["key"],
+                )
+
+            current_key = self._current_3d_cloud_variant_key()
+            chosen = next((item for item in variant_outputs if item["key"] == current_key), variant_outputs[0])
+            port = self._ensure_3d_cloud_http_server(out_dir)
+            url = f"http://127.0.0.1:{port}/{quote(chosen['html_path'].name)}?v={int(datetime.now().timestamp())}"
+            try:
+                subprocess.Popen(["open", "-a", "Google Chrome", url])
+            except Exception:
+                webbrowser.open(url)
+            self.status.set(
+                f"3D Cloud aperto nel browser su localhost | superficie {chosen['label']} | LAS {chosen['las_path'].name}"
+            )
+        except Exception as e:
+            messagebox.showerror("3D Cloud", str(e))
+
     def _sync_lads_button_state(self):
-        self.lads_button_text.set("Chiudi 3D Cloud" if self.lads_enabled.get() else "3D Cloud")
+        self.lads_button_text.set("❌ Chiudi 3D Cloud" if self.lads_enabled.get() else "☁️ 3D Cloud")
 
     def _lads_output_path(self):
         out_dir = self.root_path / "output_rvt_gui" / "lads"
@@ -2274,11 +2572,12 @@ class App(BaseTk):
             messagebox.showerror("3D Cloud", "DTM non caricato.")
             return
         try:
+            original_dtm, original_profile, original_crs = self._load_original_dtm_surface()
             out_path = self._lads_output_path()
             cloud = export_lads_las(
-                self.data.dtm,
-                self.data.profile,
-                self.data.crs,
+                original_dtm,
+                original_profile,
+                original_crs,
                 out_path,
                 target_crs=LADS_TARGET_CRS,
             )
@@ -2386,7 +2685,7 @@ class App(BaseTk):
         self.lads_canvas.mpl_connect("button_press_event", self._on_lads_click)
         self.lads_canvas.draw_idle()
         self.status.set(
-            f"3D Cloud aperto: zoom con rotella | doppio click reset | F11 fullscreen | export .LAS disponibile | {cloud['preview_points']:,} punti"
+            f"3D Cloud aperto: colorazione altimetrica | zoom rotella | export .LAS | {cloud['preview_points']:,} punti"
         )
 
     def _close_lads_window(self):
@@ -3181,23 +3480,11 @@ class App(BaseTk):
             self.data.src_original_dsml_paths or self.data.src_dsml_paths,
         ]
         src_groups = [[Path(p) for p in group if p] for group in src_groups]
-        if any(not group for group in src_groups):
+        if not any(group for group in src_groups):
             messagebox.showerror("Preprocess", "File sorgenti non disponibili per l'esempio corrente.")
             return
         try:
-            outs = []
-            for group in src_groups:
-                for src in group:
-                    dst = prep_output_path(src, suffix=profile["suffix"])
-                    if not dst.exists():
-                        preprocess_raster_file(
-                            src,
-                            dst,
-                            fill_dist=profile["fill_dist"],
-                            fill_smooth_iter=profile["fill_smooth_iter"],
-                            sigma=profile["sigma"],
-                        )
-                        outs.append(dst)
+            outs = self._ensure_preprocessed_groups(src_groups, profile)
             return outs
         except Exception as e:
             messagebox.showerror("Preprocess", str(e))
