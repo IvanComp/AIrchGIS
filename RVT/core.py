@@ -39,6 +39,7 @@ import requests
 import rvt.vis
 import rvt.blend
 from scripts.lads_preview import (
+    CLOUD_PREPROCESS_PROFILES,
     LADS_BROWSER_MAX_SIDE,
     LADS_TARGET_CRS,
     build_browser_terrain_grid,
@@ -203,6 +204,45 @@ def prep_output_path(src_path: Path, suffix="_prep"):
     if src_path.stem.endswith(suffix):
         return src_path
     return src_path.with_name(f"{src_path.stem}{suffix}{src_path.suffix}")
+
+
+def database_place_root_for_source(root: Path, src_path: Path):
+    db_root = get_database_root(root)
+    if db_root is None:
+        return None
+    try:
+        src_resolved = Path(src_path).expanduser().resolve()
+        db_resolved = db_root.expanduser().resolve()
+        rel = src_resolved.relative_to(db_resolved)
+    except Exception:
+        return None
+    if not rel.parts:
+        return None
+    return db_resolved / rel.parts[0]
+
+
+def persistent_prepro_output_path(root: Path, src_path: Path, suffix="_prep"):
+    src = Path(src_path).expanduser().resolve()
+    place_root = database_place_root_for_source(root, src)
+    if place_root is None:
+        return prep_output_path(src, suffix=suffix)
+    try:
+        rel = src.relative_to(place_root)
+    except Exception:
+        return prep_output_path(src, suffix=suffix)
+    cache_dir = place_root / ".prepro_cache" / suffix.lstrip("_") / rel.parent
+    return cache_dir / f"{src.stem}{suffix}{src.suffix}"
+
+
+def has_fresh_preprocessed(root: Path, src_path: Path, suffix="_prep"):
+    src = Path(src_path).expanduser().resolve()
+    dst = persistent_prepro_output_path(root, src, suffix=suffix)
+    if not dst.exists():
+        return False, dst
+    try:
+        return dst.stat().st_mtime_ns >= src.stat().st_mtime_ns, dst
+    except Exception:
+        return True, dst
 
 
 def preprocess_raster_file(src_path: Path, dst_path: Path, fill_dist=100, fill_smooth_iter=1, sigma=0.8):
@@ -1103,8 +1143,8 @@ class InputData:
             return original, original
         resolved = []
         for p in original:
-            candidate = prep_output_path(p, suffix=preprocessed_suffix)
-            resolved.append(candidate if candidate.exists() else p)
+            is_fresh, candidate = has_fresh_preprocessed(self.root, p, suffix=preprocessed_suffix)
+            resolved.append(candidate if is_fresh else p)
         return resolved, original
 
     def load(self, place_name=None, use_preprocessed=False, preprocessed_suffix="_prep1"):
@@ -1119,12 +1159,9 @@ class InputData:
             p_dtm_orig = select_rasters(base / "DTM", prefer_preprocessed=False)
             p_f_orig = select_rasters_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=False)
             p_l_orig = select_rasters_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=False)
-            if use_preprocessed:
-                p_dtm = select_rasters(base / "DTM", prefer_preprocessed=preprocessed_suffix) or p_dtm_orig
-                p_f = select_rasters_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=preprocessed_suffix) or p_f_orig
-                p_l = select_rasters_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=preprocessed_suffix) or p_l_orig
-            else:
-                p_dtm, p_f, p_l = p_dtm_orig, p_f_orig, p_l_orig
+            p_dtm, _ = self._resolve_preprocessed_paths(p_dtm_orig, use_preprocessed=use_preprocessed, preprocessed_suffix=preprocessed_suffix)
+            p_f, _ = self._resolve_preprocessed_paths(p_f_orig, use_preprocessed=use_preprocessed, preprocessed_suffix=preprocessed_suffix)
+            p_l, _ = self._resolve_preprocessed_paths(p_l_orig, use_preprocessed=use_preprocessed, preprocessed_suffix=preprocessed_suffix)
             area_geojson_path = find_place_geojson(base)
         else:
             prepare_inputs(self.root)
@@ -1132,12 +1169,9 @@ class InputData:
             p_dtm_orig = select_rasters(base / "DTM", prefer_preprocessed=False)
             p_f_orig = select_rasters_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=False)
             p_l_orig = select_rasters_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=False)
-            if use_preprocessed:
-                p_dtm = select_rasters(base / "DTM", prefer_preprocessed=preprocessed_suffix) or p_dtm_orig
-                p_f = select_rasters_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=preprocessed_suffix) or p_f_orig
-                p_l = select_rasters_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=preprocessed_suffix) or p_l_orig
-            else:
-                p_dtm, p_f, p_l = p_dtm_orig, p_f_orig, p_l_orig
+            p_dtm, _ = self._resolve_preprocessed_paths(p_dtm_orig, use_preprocessed=use_preprocessed, preprocessed_suffix=preprocessed_suffix)
+            p_f, _ = self._resolve_preprocessed_paths(p_f_orig, use_preprocessed=use_preprocessed, preprocessed_suffix=preprocessed_suffix)
+            p_l, _ = self._resolve_preprocessed_paths(p_l_orig, use_preprocessed=use_preprocessed, preprocessed_suffix=preprocessed_suffix)
             area_geojson_path = None
 
         if not p_dtm or not p_f or not p_l:
@@ -1348,9 +1382,9 @@ class App(BaseTk):
         self.brush_size_scale.grid(row=0, column=4, sticky="w", padx=(0, 20))
         self.brush_size_scale.set(self.brush_size.get())
         right_top.columnconfigure(5, weight=1)
-        ttk.Button(right_top, text="📍", command=self.arm_coordinate_pick).grid(row=0, column=6, sticky="e", padx=(0, 8))
-        ttk.Button(right_top, text="📏", command=self.arm_measure_tool).grid(row=0, column=7, sticky="e", padx=(0, 8))
-        ttk.Button(right_top, text="🧹", command=self.clear_annotations).grid(row=0, column=8, sticky="e", padx=(0, 8))
+        ttk.Button(right_top, text="📍", width=2, command=self.arm_coordinate_pick).grid(row=0, column=6, sticky="e", padx=(0, 4))
+        ttk.Button(right_top, text="📏", width=2, command=self.arm_measure_tool).grid(row=0, column=7, sticky="e", padx=(0, 4))
+        ttk.Button(right_top, text="🗑", width=2, command=self.clear_annotations).grid(row=0, column=8, sticky="e", padx=(0, 8))
         ttk.Button(right_top, text="🧩 Griglia metodi", command=self.show_methods_grid).grid(row=0, column=9, sticky="e")
         ttk.Button(right_top, textvariable=self.lads_button_text, command=self.show_3d_cloud_viewer).grid(row=0, column=10, sticky="e", padx=(8, 0))
 
@@ -1395,7 +1429,7 @@ class App(BaseTk):
         self.place_combo.grid(row=0, column=1, sticky="ew")
         self.place_combo.bind("<<ComboboxSelected>>", self.on_place_selected)
 
-        ds_box = ttk.LabelFrame(left, text="Dataset", padding=8)
+        ds_box = ttk.LabelFrame(left, text="", padding=8)
         ds_box.grid(row=2, column=0, sticky="ew", pady=(0, 10))
         ds_box.columnconfigure(0, weight=1)
         ds_box.columnconfigure(1, weight=1)
@@ -1434,16 +1468,16 @@ class App(BaseTk):
         self.basemap_year_combo.grid(row=0, column=1, sticky="w", pady=(0, 2))
         self.basemap_year_combo.bind("<<ComboboxSelected>>", lambda _e: self.schedule_update())
 
-        basemap_box = ttk.LabelFrame(left, text="Basemap (Satellite)", padding=8)
-        basemap_box.grid(row=3, column=0, sticky="ew", pady=(0, 10))
-        basemap_box.columnconfigure(1, weight=1)
+        basemap_row = ttk.Frame(ds_box)
+        basemap_row.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        basemap_row.columnconfigure(1, weight=1)
 
-        self.basemap_cb = ttk.Checkbutton(basemap_box, text="Basemap", variable=self.basemap_on, command=lambda: (self.update_param_states(), self.schedule_update()))
+        self.basemap_cb = ttk.Checkbutton(basemap_row, text="Basemap", variable=self.basemap_on, command=lambda: (self.update_param_states(), self.schedule_update()))
         self.basemap_cb.grid(row=0, column=0, sticky="w")
 
-        self.basemap_scale = ttk.Scale(basemap_box, from_=0.0, to=1.0, command=lambda v: self._set_float(self.basemap_mix, v))
+        self.basemap_scale = ttk.Scale(basemap_row, from_=0.0, to=1.0, command=lambda v: self._set_float(self.basemap_mix, v))
         self.basemap_scale.grid(row=0, column=1, sticky="ew", padx=(8, 8))
-        self.basemap_mix_lbl = ttk.Label(basemap_box, text="")
+        self.basemap_mix_lbl = ttk.Label(basemap_row, text="")
         self.basemap_mix_lbl.grid(row=0, column=2, sticky="e")
 
         def sync_mix(*_):
@@ -1454,14 +1488,14 @@ class App(BaseTk):
         self.basemap_scale.set(float(self.basemap_mix.get()))
 
         meth_box = ttk.LabelFrame(left, text="Metodo RVT", padding=8)
-        meth_box.grid(row=4, column=0, sticky="ew", pady=(0, 10))
+        meth_box.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         meth_box.columnconfigure(0, weight=1)
         self.method_combo = ttk.Combobox(meth_box, textvariable=self.method, values=self.available_methods(), state="readonly")
         self.method_combo.grid(row=0, column=0, sticky="ew")
         self.method_combo.bind("<<ComboboxSelected>>", lambda e: (self.update_param_states(), self.schedule_update()))
 
         par_box = ttk.LabelFrame(left, text="Parametri", padding=8)
-        par_box.grid(row=5, column=0, sticky="ew", pady=(0, 10))
+        par_box.grid(row=4, column=0, sticky="ew", pady=(0, 10))
         par_box.columnconfigure(0, weight=1)
 
         self._add_slider(par_box, "Azimuth", "azimuth", self.azimuth, 0.0, 360.0, 0)
@@ -1476,7 +1510,7 @@ class App(BaseTk):
         self.invert_cb.grid(row=7, column=0, sticky="w", pady=(6, 0))
 
         btn_box = ttk.Frame(left)
-        btn_box.grid(row=6, column=0, sticky="ew")
+        btn_box.grid(row=5, column=0, sticky="ew")
         btn_box.columnconfigure(0, weight=1)
         btn_box.columnconfigure(1, weight=1)
         btn_box.columnconfigure(2, weight=1)
@@ -1487,9 +1521,9 @@ class App(BaseTk):
         self.base_mode_combo = ttk.Combobox(btn_box, textvariable=self.base_image_mode, values=BASE_IMAGE_OPTIONS, state="readonly")
         self.base_mode_combo.grid(row=0, column=3, sticky="ew", pady=(0, 6))
         self.base_mode_combo.bind("<<ComboboxSelected>>", self.on_base_image_mode_change)
-        ttk.Button(left, text="Crea report di esplorazione", command=self.open_report_window).grid(row=7, column=0, sticky="ew", pady=(0, 6))
+        ttk.Button(left, text="Crea report di esplorazione", command=self.open_report_window).grid(row=6, column=0, sticky="ew", pady=(0, 6))
         self.status = tk.StringVar(value="")
-        ttk.Label(left, textvariable=self.status, wraplength=390).grid(row=8, column=0, sticky="ew", pady=(8, 0))
+        ttk.Label(left, textvariable=self.status, wraplength=390).grid(row=7, column=0, sticky="ew", pady=(8, 0))
 
         fig = Figure(figsize=(6, 5), dpi=150)
         fig.patch.set_facecolor("black")
@@ -2369,8 +2403,8 @@ class App(BaseTk):
         created = []
         for group in groups:
             for src in group:
-                dst = prep_output_path(src, suffix=profile["suffix"])
-                if dst.exists():
+                is_fresh, dst = has_fresh_preprocessed(self.root_path, src, suffix=profile["suffix"])
+                if is_fresh:
                     continue
                 preprocess_raster_file(
                     src,
@@ -2409,8 +2443,10 @@ class App(BaseTk):
             self.dataset.set(fallback)
 
     def _current_3d_cloud_variant_key(self):
-        mode = self.base_image_mode.get()
-        return BASE_IMAGE_TO_PROFILE.get(mode, "original")
+        return "original"
+
+    def _current_cloud_preprocess_key(self):
+        return "original"
 
     def _load_original_dtm_surface(self):
         return self._load_dtm_surface_variant("original")
@@ -2429,8 +2465,8 @@ class App(BaseTk):
             self._ensure_preprocessed_groups([src_paths], profile_cfg)
             load_paths = []
             for src in src_paths:
-                dst = prep_output_path(src, suffix=profile_cfg["suffix"])
-                load_paths.append(dst if dst.exists() else src)
+                is_fresh, dst = has_fresh_preprocessed(self.root_path, src, suffix=profile_cfg["suffix"])
+                load_paths.append(dst if is_fresh else src)
 
         dtm, _res, profile, _nodata, bounds, crs = load_raster_source(load_paths)
         if self.data.area_geojson_path:
@@ -2497,54 +2533,98 @@ class App(BaseTk):
             return
         try:
             out_dir, stem = self._3d_cloud_output_bundle()
-            variant_outputs = []
+            data_outputs = []
+            combo_outputs = []
             for item in CLOUD_SURFACE_OPTIONS:
-                key = item["key"]
-                label = item["label"]
-                self.status.set(f"3D Cloud in preparazione: {label}...")
+                data_key = item["key"]
+                data_label = item["label"]
+                self.status.set(f"3D Cloud in preparazione: dato {data_label}...")
                 self.update_idletasks()
-                dtm, profile, crs = self._load_dtm_surface_variant(key)
-                terrain_grid = build_browser_terrain_grid(
-                    dtm,
-                    profile,
-                    crs,
-                    target_crs=LADS_TARGET_CRS,
-                    max_side=LADS_BROWSER_MAX_SIDE,
-                )
-                las_path = out_dir / f"{stem}__{key}.las"
-                html_path = out_dir / f"{stem}__{key}.html"
+                dtm, profile, crs = self._load_dtm_surface_variant(data_key)
+                las_path = out_dir / f"{stem}__{data_key}.las"
                 export_lads_las(
                     dtm,
                     profile,
                     crs,
                     las_path,
                     target_crs=LADS_TARGET_CRS,
+                    cloud_preprocess_key="original",
                 )
-                variant_outputs.append(
+                data_outputs.append(
                     {
-                        "key": key,
-                        "label": label,
+                        "key": data_key,
+                        "label": data_label,
                         "las_path": las_path,
-                        "html_path": html_path,
-                        "terrain_grid": terrain_grid,
                     }
                 )
 
-            select_items = [
-                {"key": item["key"], "label": item["label"], "href": quote(item["html_path"].name)}
-                for item in variant_outputs
+                for cloud_key, cloud_cfg in CLOUD_PREPROCESS_PROFILES.items():
+                    cloud_label = cloud_cfg["label"]
+                    self.status.set(f"3D Cloud in preparazione: dato {data_label} | {cloud_label}...")
+                    self.update_idletasks()
+                    terrain_grid = build_browser_terrain_grid(
+                        dtm,
+                        profile,
+                        crs,
+                        target_crs=LADS_TARGET_CRS,
+                        max_side=LADS_BROWSER_MAX_SIDE,
+                        cloud_preprocess_key=cloud_key,
+                    )
+                    html_path = out_dir / f"{stem}__{data_key}__{cloud_key}.html"
+                    combo_outputs.append(
+                        {
+                            "data_key": data_key,
+                            "data_label": data_label,
+                            "cloud_key": cloud_key,
+                            "cloud_label": cloud_label,
+                            "las_path": las_path,
+                            "html_path": html_path,
+                            "terrain_grid": terrain_grid,
+                        }
+                    )
+
+            combo_index = {(item["data_key"], item["cloud_key"]): item for item in combo_outputs}
+            cloud_options = [
+                {
+                    "key": key,
+                    "label": cfg["label"],
+                    "description": cfg.get("description", ""),
+                }
+                for key, cfg in CLOUD_PREPROCESS_PROFILES.items()
             ]
-            for item in variant_outputs:
+
+            for item in combo_outputs:
+                variant_items = [
+                    {
+                        "key": data_item["key"],
+                        "label": data_item["label"],
+                        "href": quote(combo_index[(data_item["key"], item["cloud_key"])]["html_path"].name),
+                    }
+                    for data_item in data_outputs
+                ]
+                cloud_items = [
+                    {
+                        "key": cloud_item["key"],
+                        "label": cloud_item["label"],
+                        "href": quote(combo_index[(item["data_key"], cloud_item["key"])]["html_path"].name),
+                    }
+                    for cloud_item in cloud_options
+                ]
                 write_browser_cloud_viewer(
                     item["html_path"],
                     item["terrain_grid"],
                     las_href=quote(item["las_path"].name),
-                    variant_options=select_items,
-                    current_variant_key=item["key"],
+                    variant_options=variant_items,
+                    current_variant_key=item["data_key"],
+                    cloud_preprocess_options=cloud_items,
+                    current_cloud_preprocess_key=item["cloud_key"],
                 )
 
-            current_key = self._current_3d_cloud_variant_key()
-            chosen = next((item for item in variant_outputs if item["key"] == current_key), variant_outputs[0])
+            current_data_key = self._current_3d_cloud_variant_key()
+            current_cloud_key = self._current_cloud_preprocess_key()
+            chosen = combo_index.get((current_data_key, current_cloud_key))
+            if chosen is None:
+                chosen = combo_outputs[0]
             port = self._ensure_3d_cloud_http_server(out_dir)
             url = f"http://127.0.0.1:{port}/{quote(chosen['html_path'].name)}?v={int(datetime.now().timestamp())}"
             try:
@@ -2552,7 +2632,7 @@ class App(BaseTk):
             except Exception:
                 webbrowser.open(url)
             self.status.set(
-                f"3D Cloud aperto nel browser su localhost | superficie {chosen['label']} | LAS {chosen['las_path'].name}"
+                f"3D Cloud aperto nel browser su localhost | dato {chosen['data_label']} | cloud {chosen['cloud_label']} | LAS {chosen['las_path'].name}"
             )
         except Exception as e:
             messagebox.showerror("3D Cloud", str(e))
