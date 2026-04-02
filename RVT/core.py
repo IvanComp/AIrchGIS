@@ -36,6 +36,7 @@ import requests
 
 import rvt.vis
 import rvt.blend
+from scripts.lads_preview import LADS_TARGET_CRS, build_lads_figure, build_lads_point_cloud, export_lads_las
 
 try:
     from scipy.ndimage import gaussian_filter
@@ -1231,10 +1232,19 @@ class App(BaseTk):
         self.brush_on = tk.BooleanVar(value=False)
         self.brush_size = tk.IntVar(value=5)
         self.brush_color = tk.StringVar(value="Giallo")
+        self.lads_enabled = tk.BooleanVar(value=False)
+        self.lads_button_text = tk.StringVar(value="3D Cloud")
         self.pick_coords_armed = False
         self.report_pick_pending = None
         self.report_items = []
         self.report_window = None
+        self.lads_window = None
+        self.lads_canvas = None
+        self.lads_axes = None
+        self.lads_home_limits = None
+        self.lads_fullscreen = False
+        self.lads_windowed_geometry = ""
+        self.lads_info_var = tk.StringVar(value="")
         self.report_name_var = tk.StringVar(value="")
         self.report_status_var = tk.StringVar(value="Nessun punto nel report.")
         self.report_list_var = tk.StringVar(value=[])
@@ -1245,6 +1255,7 @@ class App(BaseTk):
         self.drop_target_label = None
 
         self._build_ui()
+        self._sync_lads_button_state()
         self._refresh_drop_status()
         self.refresh_basemap_years()
         self.refresh_places()
@@ -1315,6 +1326,7 @@ class App(BaseTk):
         ttk.Button(right_top, text="Misura", command=self.arm_measure_tool).grid(row=0, column=7, sticky="e", padx=(0, 8))
         ttk.Button(right_top, text="Pulisci segni", command=self.clear_annotations).grid(row=0, column=8, sticky="e", padx=(0, 8))
         ttk.Button(right_top, text="Griglia metodi", command=self.show_methods_grid).grid(row=0, column=9, sticky="e")
+        ttk.Button(right_top, textvariable=self.lads_button_text, command=self.on_lads_toggle).grid(row=0, column=10, sticky="e", padx=(8, 0))
 
         top = ttk.Frame(left)
         top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
@@ -1911,6 +1923,8 @@ class App(BaseTk):
         self.refresh_places()
         selected = self.place_name.get()
         if not selected:
+            if self.lads_enabled.get():
+                self._close_lads_window()
             self.status.set("Nessun posto trovato in Database.")
             self._show_blank()
             return
@@ -1927,6 +1941,8 @@ class App(BaseTk):
             preprocessed_suffix=profile["suffix"],
         )
         if not self.data.loaded:
+            if self.lads_enabled.get():
+                self._close_lads_window()
             self.status.set(self.data.error or "Errore input.")
             self.update_param_states()
             self.refresh_basemap_years()
@@ -1941,10 +1957,13 @@ class App(BaseTk):
             self.status.set(f"OK | sorgente: {place_txt} ({src_mode})")
         self.update_param_states()
         self.schedule_update()
+        self._refresh_lads_if_open()
 
     def load_dropped_inputs(self):
         self._refresh_drop_status()
         if not self._drop_session_ready():
+            if self.lads_enabled.get():
+                self._close_lads_window()
             self.status.set("Sessione rapida incompleta: servono DTM, DSM First e DSM Last.")
             self.update_param_states()
             self.refresh_basemap_years()
@@ -1964,6 +1983,8 @@ class App(BaseTk):
             preprocessed_suffix=profile["suffix"],
         )
         if not self.data.loaded:
+            if self.lads_enabled.get():
+                self._close_lads_window()
             self.status.set(self.data.error or "Errore input drag and drop.")
             self.update_param_states()
             self.refresh_basemap_years()
@@ -1976,6 +1997,7 @@ class App(BaseTk):
         self.update_param_states()
         self.schedule_update()
         self._refresh_drop_status()
+        self._refresh_lads_if_open()
 
     def reload_inputs(self):
         if self.active_source_mode == "drop":
@@ -2226,6 +2248,231 @@ class App(BaseTk):
 
         if errors:
             self.status.set(f"Griglia metodi: {len(images)} OK, {len(errors)} errori")
+
+    def _build_lads_cloud(self):
+        if not self.data.loaded or self.data.dtm is None:
+            raise RuntimeError("DTM non caricato.")
+        return build_lads_point_cloud(
+            self.data.dtm,
+            self.data.profile,
+            self.data.crs,
+            target_crs=LADS_TARGET_CRS,
+        )
+
+    def _sync_lads_button_state(self):
+        self.lads_button_text.set("Chiudi 3D Cloud" if self.lads_enabled.get() else "3D Cloud")
+
+    def _lads_output_path(self):
+        out_dir = self.root_path / "output_rvt_gui" / "lads"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        place = self._current_place_label().replace(" ", "_")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return out_dir / f"{place}__3DCloud__{ts}.las"
+
+    def export_lads_file(self):
+        if not self.data.loaded or self.data.dtm is None:
+            messagebox.showerror("3D Cloud", "DTM non caricato.")
+            return
+        try:
+            out_path = self._lads_output_path()
+            cloud = export_lads_las(
+                self.data.dtm,
+                self.data.profile,
+                self.data.crs,
+                out_path,
+                target_crs=LADS_TARGET_CRS,
+            )
+            self.status.set(f"3D Cloud esportato: {out_path} | punti {cloud['total_points']:,}")
+        except Exception as e:
+            messagebox.showerror("3D Cloud", str(e))
+
+    def _toggle_lads_fullscreen(self, _event=None):
+        if self.lads_window is None or not self.lads_window.winfo_exists():
+            return
+        enable = not self.lads_fullscreen
+        if enable:
+            try:
+                self.lads_windowed_geometry = self.lads_window.geometry()
+            except Exception:
+                self.lads_windowed_geometry = ""
+        try:
+            self.lads_window.attributes("-fullscreen", enable)
+            self.lads_fullscreen = enable
+        except Exception:
+            self.lads_fullscreen = enable
+            if enable:
+                w = self.lads_window.winfo_screenwidth()
+                h = self.lads_window.winfo_screenheight()
+                self.lads_window.geometry(f"{w}x{h}+0+0")
+            elif self.lads_windowed_geometry:
+                self.lads_window.geometry(self.lads_windowed_geometry)
+
+    def _exit_lads_fullscreen(self, _event=None):
+        if not self.lads_fullscreen or self.lads_window is None or not self.lads_window.winfo_exists():
+            return
+        try:
+            self.lads_window.attributes("-fullscreen", False)
+        except Exception:
+            pass
+        self.lads_fullscreen = False
+        if self.lads_windowed_geometry:
+            try:
+                self.lads_window.geometry(self.lads_windowed_geometry)
+            except Exception:
+                pass
+
+    def _render_lads_window(self):
+        cloud = self._build_lads_cloud()
+        if self.lads_window is None or not self.lads_window.winfo_exists():
+            win = tk.Toplevel(self)
+            win.title("3D Cloud")
+            screen_w = max(960, int(self.winfo_screenwidth()) - 40)
+            screen_h = max(720, int(self.winfo_screenheight()) - 90)
+            self.lads_windowed_geometry = f"{screen_w}x{screen_h}+20+20"
+            win.geometry(self.lads_windowed_geometry)
+            win.minsize(840, 640)
+            win.columnconfigure(0, weight=1)
+            win.rowconfigure(1, weight=1)
+            win.protocol("WM_DELETE_WINDOW", self._close_lads_window)
+            win.bind("<F11>", self._toggle_lads_fullscreen)
+            win.bind("<Escape>", self._exit_lads_fullscreen)
+            try:
+                win.configure(bg="black")
+            except Exception:
+                pass
+            self.lads_window = win
+        else:
+            win = self.lads_window
+            for child in win.winfo_children():
+                child.destroy()
+            win.columnconfigure(0, weight=1)
+            win.rowconfigure(1, weight=1)
+            try:
+                win.configure(bg="black")
+            except Exception:
+                pass
+        toolbar = tk.Frame(win, bg="black")
+        toolbar.grid(row=0, column=0, sticky="ew")
+        tk.Button(
+            toolbar,
+            text="Esporta .LAS",
+            command=self.export_lads_file,
+            bg="#111111",
+            fg="white",
+            activebackground="#222222",
+            activeforeground="white",
+            relief="flat",
+            padx=10,
+            pady=5,
+            highlightthickness=0,
+            bd=0,
+        ).pack(side="left", padx=8, pady=8)
+        fig = build_lads_figure(cloud, title=f"3D Cloud | {self._current_place_label()}")
+        self.lads_canvas = FigureCanvasTkAgg(fig, master=win)
+        canvas_widget = self.lads_canvas.get_tk_widget()
+        canvas_widget.grid(row=1, column=0, sticky="nsew")
+        try:
+            canvas_widget.configure(borderwidth=0, highlightthickness=0, bg="black")
+        except Exception:
+            pass
+        self.lads_axes = fig.axes[0] if fig.axes else None
+        if self.lads_axes is not None:
+            self.lads_home_limits = (
+                self.lads_axes.get_xlim3d(),
+                self.lads_axes.get_ylim3d(),
+                self.lads_axes.get_zlim3d(),
+            )
+        self.lads_canvas.mpl_connect("scroll_event", self._on_lads_scroll)
+        self.lads_canvas.mpl_connect("button_press_event", self._on_lads_click)
+        self.lads_canvas.draw_idle()
+        self.status.set(
+            f"3D Cloud aperto: zoom con rotella | doppio click reset | F11 fullscreen | export .LAS disponibile | {cloud['preview_points']:,} punti"
+        )
+
+    def _close_lads_window(self):
+        win = self.lads_window
+        self.lads_window = None
+        self.lads_canvas = None
+        self.lads_axes = None
+        self.lads_home_limits = None
+        self.lads_fullscreen = False
+        self.lads_info_var.set("")
+        if self.lads_enabled.get():
+            self.lads_enabled.set(False)
+        self._sync_lads_button_state()
+        if win is not None and win.winfo_exists():
+            win.destroy()
+
+    def _on_lads_scroll(self, event):
+        if self.lads_axes is None or event.inaxes != self.lads_axes:
+            return
+        base = 1.2
+        btn = getattr(event, "button", None)
+        scale = 1 / base if btn in ("up", 1) else base
+
+        xlim = self.lads_axes.get_xlim3d()
+        ylim = self.lads_axes.get_ylim3d()
+        zlim = self.lads_axes.get_zlim3d()
+
+        xmid = (xlim[0] + xlim[1]) * 0.5
+        ymid = (ylim[0] + ylim[1]) * 0.5
+        zmid = (zlim[0] + zlim[1]) * 0.5
+
+        xspan = max(1e-6, (xlim[1] - xlim[0]) * scale)
+        yspan = max(1e-6, (ylim[1] - ylim[0]) * scale)
+        zspan = max(1e-6, (zlim[1] - zlim[0]) * scale)
+
+        self.lads_axes.set_xlim3d(xmid - xspan * 0.5, xmid + xspan * 0.5)
+        self.lads_axes.set_ylim3d(ymid - yspan * 0.5, ymid + yspan * 0.5)
+        self.lads_axes.set_zlim3d(zmid - zspan * 0.5, zmid + zspan * 0.5)
+        if self.lads_canvas is not None:
+            self.lads_canvas.draw_idle()
+
+    def _on_lads_click(self, event):
+        if self.lads_axes is None or event.inaxes != self.lads_axes:
+            return
+        if not getattr(event, "dblclick", False) or self.lads_home_limits is None:
+            return
+        xlim, ylim, zlim = self.lads_home_limits
+        self.lads_axes.set_xlim3d(xlim)
+        self.lads_axes.set_ylim3d(ylim)
+        self.lads_axes.set_zlim3d(zlim)
+        if self.lads_canvas is not None:
+            self.lads_canvas.draw_idle()
+
+    def _refresh_lads_if_open(self):
+        if not self.lads_enabled.get():
+            return
+        try:
+            self._render_lads_window()
+        except Exception as e:
+            if self.lads_window is not None and self.lads_window.winfo_exists():
+                self.lads_window.destroy()
+            self.lads_window = None
+            self.lads_canvas = None
+            self.lads_info_var.set("")
+            self.lads_enabled.set(False)
+            self._sync_lads_button_state()
+            messagebox.showerror("3D Cloud", str(e))
+
+    def on_lads_toggle(self):
+        if self.lads_enabled.get():
+            self._close_lads_window()
+            self.status.set("3D Cloud disattivato.")
+            return
+        self.lads_enabled.set(True)
+        self._sync_lads_button_state()
+        if not self.data.loaded:
+            self.lads_enabled.set(False)
+            self._sync_lads_button_state()
+            messagebox.showerror("3D Cloud", "Carica prima un DTM.")
+            return
+        try:
+            self._render_lads_window()
+        except Exception as e:
+            self.lads_enabled.set(False)
+            self._sync_lads_button_state()
+            messagebox.showerror("3D Cloud", str(e))
 
     def update_view(self):
         self._update_job = None
