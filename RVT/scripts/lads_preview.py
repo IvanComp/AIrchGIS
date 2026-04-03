@@ -15,6 +15,17 @@ from matplotlib.figure import Figure
 from matplotlib import colormaps
 
 try:
+    import cv2
+except Exception:
+    cv2 = None
+
+try:
+    from osgeo import gdal
+    gdal.UseExceptions()
+except Exception:
+    gdal = None
+
+try:
     import laspy
 except Exception:
     laspy = None
@@ -25,14 +36,16 @@ except Exception:
     pyproj = None
 
 try:
-    from scipy.ndimage import gaussian_filter, label as ndi_label
+    from scipy.ndimage import gaussian_filter, label as ndi_label, distance_transform_edt as ndi_distance_transform
 except Exception:
     gaussian_filter = None
     ndi_label = None
+    ndi_distance_transform = None
 
 LADS_TARGET_CRS = "EPSG:32632"
 LADS_MAX_POINTS = 85000
 LADS_BROWSER_MAX_SIDE = 1400
+LADS_ANALYSIS_MAX_SIDE = 720
 LADS_Z_EXAGGERATION = 2.5
 CLOUD_PREPROCESS_PROFILES = {
     "original": {
@@ -520,6 +533,507 @@ def detect_archaeology_candidates(x, y, z_source, z_display, valid, max_items=8)
     return selected
 
 
+def _normalize_metric(values, valid_mask):
+    arr = np.asarray(values, dtype=np.float32)
+    valid = np.asarray(valid_mask, dtype=bool) & np.isfinite(arr)
+    out = np.zeros(arr.shape, dtype=np.float32)
+    if not valid.any():
+        return out
+    vals = arr[valid]
+    lo = float(np.nanpercentile(vals, 5.0))
+    hi = float(np.nanpercentile(vals, 97.0))
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo + 1e-6:
+        lo = float(np.nanmin(vals))
+        hi = float(np.nanmax(vals))
+    if hi <= lo + 1e-6:
+        out[valid] = 1.0
+        return out
+    out[valid] = np.clip((arr[valid] - lo) / (hi - lo), 0.0, 1.0)
+    return out
+
+
+def _normalize_to_u8(values, valid_mask):
+    norm = _normalize_metric(values, valid_mask)
+    out = np.zeros(norm.shape, dtype=np.uint8)
+    valid = np.asarray(valid_mask, dtype=bool)
+    out[valid] = np.clip(np.round(norm[valid] * 255.0), 0, 255).astype(np.uint8)
+    return out
+
+
+def _select_distinct_candidates(results, max_items=8):
+    if not results:
+        return []
+    shape_priority = {"enclosure": 3, "linear": 2, "regular": 1}
+    results.sort(key=lambda item: (shape_priority.get(item.get("shape", ""), 0), item["score"]), reverse=True)
+    selected = []
+    for item in results:
+        too_close = False
+        for keep in selected:
+            dist = math.hypot(item["x"] - keep["x"], item["y"] - keep["y"])
+            min_dist = max(8.0, 0.35 * max(item.get("length_m", 1.0), keep.get("length_m", 1.0), 1.0))
+            if dist < min_dist:
+                too_close = True
+                break
+        if too_close:
+            continue
+        selected.append(item)
+        if len(selected) >= int(max_items):
+            break
+    for idx, item in enumerate(selected, start=1):
+        item["id"] = int(idx)
+    return selected
+
+
+def _candidate_too_close(item, selected):
+    for keep in selected:
+        dist = math.hypot(item["x"] - keep["x"], item["y"] - keep["y"])
+        min_dist = max(8.0, 0.35 * max(item.get("length_m", 1.0), keep.get("length_m", 1.0), 1.0))
+        if dist < min_dist:
+            return True
+    return False
+
+
+def _distance_to_invalid_cells(valid_mask):
+    valid = np.asarray(valid_mask, dtype=bool)
+    if not valid.any():
+        return np.zeros(valid.shape, dtype=np.float32)
+    invalid = ~valid
+    if not invalid.any():
+        return np.full(valid.shape, np.inf, dtype=np.float32)
+
+    outer_invalid = np.zeros_like(invalid, dtype=bool)
+    if ndi_label is not None:
+        labels, _n = ndi_label(invalid.astype(np.uint8), structure=np.ones((3, 3), dtype=np.uint8))
+        border_labels = set(np.unique(np.concatenate([labels[0, :], labels[-1, :], labels[:, 0], labels[:, -1]])))
+        border_labels.discard(0)
+        if border_labels:
+            outer_invalid = np.isin(labels, list(border_labels))
+    else:
+        h, w = invalid.shape
+        queue = deque()
+        for c in range(w):
+            if invalid[0, c]:
+                queue.append((0, c))
+            if invalid[h - 1, c]:
+                queue.append((h - 1, c))
+        for r in range(1, h - 1):
+            if invalid[r, 0]:
+                queue.append((r, 0))
+            if invalid[r, w - 1]:
+                queue.append((r, w - 1))
+        while queue:
+            r, c = queue.popleft()
+            if r < 0 or c < 0 or r >= h or c >= w:
+                continue
+            if not invalid[r, c] or outer_invalid[r, c]:
+                continue
+            outer_invalid[r, c] = True
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    if dr == 0 and dc == 0:
+                        continue
+                    queue.append((r + dr, c + dc))
+
+    if not outer_invalid.any():
+        return np.full(valid.shape, np.inf, dtype=np.float32)
+    distance_source = ~outer_invalid
+    if ndi_distance_transform is not None:
+        return ndi_distance_transform(distance_source).astype(np.float32)
+    if cv2 is not None:
+        return cv2.distanceTransform(distance_source.astype(np.uint8), cv2.DIST_L2, 3).astype(np.float32)
+    return distance_source.astype(np.float32)
+
+
+def _filter_candidates_by_invalid_distance(candidates, x_arr, y_arr, valid_mask, min_distance_cells=16.0):
+    if not candidates:
+        return []
+    x = np.asarray(x_arr, dtype=np.float32)
+    y = np.asarray(y_arr, dtype=np.float32)
+    valid = np.asarray(valid_mask, dtype=bool)
+    if not valid.any():
+        return list(candidates)
+    dist_to_invalid = _distance_to_invalid_cells(valid)
+    kept = []
+    for item in candidates:
+        cx = float(item.get("x", 0.0))
+        cy = float(item.get("y", 0.0))
+        d2 = (x - cx) ** 2 + (y - cy) ** 2
+        rr, cc = np.unravel_index(int(np.argmin(d2)), d2.shape)
+        if float(dist_to_invalid[rr, cc]) < float(min_distance_cells):
+            continue
+        item["invalid_distance_cells"] = float(dist_to_invalid[rr, cc])
+        kept.append(item)
+    return kept
+
+
+def _merge_opencv_candidates(line_candidates, enclosure_candidates, max_items=10):
+    line_pool = sorted((dict(item) for item in line_candidates), key=lambda item: item.get("score", 0.0), reverse=True)
+    enclosure_pool = sorted((dict(item) for item in enclosure_candidates), key=lambda item: item.get("score", 0.0), reverse=True)
+    selected = []
+
+    while len(selected) < int(max_items) and (line_pool or enclosure_pool):
+        progressed = False
+        for pool in (line_pool, enclosure_pool):
+            while pool and len(selected) < int(max_items):
+                item = pool.pop(0)
+                if _candidate_too_close(item, selected):
+                    continue
+                selected.append(item)
+                progressed = True
+                break
+        if not progressed:
+            break
+
+    leftovers = sorted(line_pool + enclosure_pool, key=lambda item: item.get("score", 0.0), reverse=True)
+    for item in leftovers:
+        if len(selected) >= int(max_items):
+            break
+        if _candidate_too_close(item, selected):
+            continue
+        selected.append(item)
+
+    for idx, item in enumerate(selected, start=1):
+        item["id"] = int(idx)
+    return selected
+
+
+def _line_distance_score(item, keep):
+    angle_diff = abs((item.get("orientation_deg", 0.0) - keep.get("orientation_deg", 0.0) + 90.0) % 180.0 - 90.0)
+    dist = math.hypot(item["x"] - keep["x"], item["y"] - keep["y"])
+    return dist, angle_diff
+
+
+def _select_distinct_line_candidates(results, max_items=8):
+    if not results:
+        return []
+    results.sort(key=lambda item: item["score"], reverse=True)
+    selected = []
+    for item in results:
+        duplicate = False
+        for keep in selected:
+            dist, angle_diff = _line_distance_score(item, keep)
+            min_dist = max(6.0, 0.28 * max(item.get("length_m", 1.0), keep.get("length_m", 1.0), 1.0))
+            if dist < min_dist and angle_diff < 18.0:
+                duplicate = True
+                break
+        if duplicate:
+            continue
+        selected.append(item)
+        if len(selected) >= int(max_items):
+            break
+    for idx, item in enumerate(selected, start=1):
+        item["id"] = int(idx)
+    return selected
+
+
+def _gdal_dem_metric(z_values, valid_mask, dx, dy, processing):
+    if gdal is None:
+        return None
+    arr = np.asarray(z_values, dtype=np.float32)
+    valid = np.asarray(valid_mask, dtype=bool)
+    if arr.ndim != 2 or not valid.any():
+        return None
+    fill = arr.copy()
+    fill[~valid] = float(np.nanmedian(arr[valid]))
+    mem = gdal.GetDriverByName("MEM").Create("", arr.shape[1], arr.shape[0], 1, gdal.GDT_Float32)
+    mem.GetRasterBand(1).WriteArray(fill)
+    mem.GetRasterBand(1).SetNoDataValue(float(np.nanmedian(fill)))
+    mem.SetGeoTransform((0.0, float(max(dx, 1e-6)), 0.0, 0.0, 0.0, -float(max(dy, 1e-6))))
+    try:
+        out = gdal.DEMProcessing("", mem, processing, format="MEM")
+        metric = out.ReadAsArray().astype(np.float32)
+        metric[~valid] = np.nan
+        return metric
+    except Exception:
+        return None
+
+
+def detect_gdal_terrain_candidates(x, y, z_source, z_display, valid, max_items=8):
+    valid_mask = np.asarray(valid, dtype=bool)
+    if gdal is None or not valid_mask.any():
+        return []
+
+    x_arr = np.asarray(x, dtype=np.float32)
+    y_arr = np.asarray(y, dtype=np.float32)
+    z_base = np.asarray(z_source, dtype=np.float32)
+    z_vis = np.asarray(z_display, dtype=np.float32)
+    col_step, row_step = _grid_spacing(x_arr, y_arr)
+    cell_area = max(1e-3, float(col_step * row_step))
+    sigma = float(np.clip(min(z_base.shape) / 150.0, 3.0, 9.0))
+    trend = _gaussian_blur_nan(z_base, sigma=sigma)
+    residual = np.where(valid_mask & np.isfinite(trend), z_base - trend, np.nan).astype(np.float32)
+    if not np.isfinite(residual[valid_mask]).any():
+        return []
+
+    slope = _gdal_dem_metric(z_base, valid_mask, col_step, row_step, "slope")
+    roughness = _gdal_dem_metric(z_base, valid_mask, col_step, row_step, "roughness")
+    if slope is None or roughness is None:
+        return []
+
+    relief_norm = _normalize_metric(np.abs(residual), valid_mask)
+    slope_norm = _normalize_metric(slope, valid_mask)
+    rough_norm = _normalize_metric(roughness, valid_mask)
+    composite = (relief_norm * 0.58 + slope_norm * 0.24 + rough_norm * 0.18).astype(np.float32)
+    threshold = float(np.nanpercentile(composite[valid_mask], 92.0))
+    if not np.isfinite(threshold):
+        return []
+
+    labels, n_labels = _label_components((composite >= threshold) & valid_mask)
+    min_cells = max(6, int(round(6.0 / cell_area)))
+    results = []
+    for label_id in range(1, n_labels + 1):
+        mask = labels == label_id
+        cell_count = int(mask.sum())
+        if cell_count < min_cells:
+            continue
+        area_m2 = float(cell_count * cell_area)
+        if area_m2 < 6.0 or area_m2 > 7200.0:
+            continue
+
+        mean_relief = float(np.nanmean(residual[mask]))
+        max_comp = float(np.nanmax(composite[mask]))
+        xs = x_arr[mask]
+        ys = y_arr[mask]
+        length_m, width_m, ratio, angle_deg = _principal_shape_metrics(xs, ys)
+        shape_info = _component_shape_scores(mask, x_arr, y_arr, area_m2, length_m, width_m, ratio)
+        shape = str(shape_info["shape"])
+        shape_score = float(shape_info["shape_score"])
+        if shape_score < 0.16:
+            continue
+
+        kind = "negative" if mean_relief < 0 else "positive"
+        if shape == "linear":
+            title = "GDAL: possibile linea di terreno"
+            summary = "La combinazione di pendenza, rugosita e rilievo locale segnala una rottura lineare abbastanza continua. Puo valere un controllo come fossato, bordo o strada."
+        elif shape == "enclosure":
+            title = "GDAL: possibile recinto o cinta"
+            summary = "Le derivate del terreno evidenziano una forma chiusa o quasi chiusa. Puo essere utile per cercare recinti, cinte o fossati ad anello."
+        else:
+            title = "GDAL: possibile anomalia regolare"
+            summary = "La superficie mostra una zona piu ordinata del contesto. Non e una prova, ma puo meritare un controllo sul terreno."
+
+        center_dist = (x_arr[mask] - float(shape_info["center_x"])) ** 2 + (y_arr[mask] - float(shape_info["center_y"])) ** 2
+        rr, cc = np.where(mask)
+        center_idx = int(np.nanargmin(center_dist))
+        fr = int(rr[center_idx])
+        fc = int(cc[center_idx])
+        score = float(max_comp * (1.0 + shape_score * 1.2) * max(0.8, math.log1p(area_m2) / 2.7))
+        if shape == "enclosure":
+            score *= 1.12
+        results.append(
+            {
+                "title": title,
+                "summary": summary,
+                "kind": kind,
+                "confidence": _score_to_confidence(score),
+                "score": score,
+                "shape": shape,
+                "x": float(shape_info["center_x"]),
+                "y": float(shape_info["center_y"]),
+                "z": float(z_vis[fr, fc]),
+                "area_m2": area_m2,
+                "length_m": float(length_m),
+                "width_m": float(width_m),
+                "relief_m": mean_relief,
+                "orientation_deg": float(angle_deg),
+                "shape_score": shape_score,
+            }
+        )
+    return _select_distinct_candidates(results, max_items=max_items)
+
+
+def detect_opencv_line_candidates(x, y, z_source, z_display, valid, max_items=8):
+    valid_mask = np.asarray(valid, dtype=bool)
+    if cv2 is None or not valid_mask.any():
+        return []
+
+    x_arr = np.asarray(x, dtype=np.float32)
+    y_arr = np.asarray(y, dtype=np.float32)
+    z_base = np.asarray(z_source, dtype=np.float32)
+    z_vis = np.asarray(z_display, dtype=np.float32)
+    col_step, row_step = _grid_spacing(x_arr, y_arr)
+    sigma = float(np.clip(min(z_base.shape) / 150.0, 3.0, 7.0))
+    trend = _gaussian_blur_nan(z_base, sigma=sigma)
+    residual = np.where(valid_mask & np.isfinite(trend), z_base - trend, np.nan).astype(np.float32)
+    if not np.isfinite(residual[valid_mask]).any():
+        return []
+
+    img = _normalize_to_u8(np.abs(residual), valid_mask)
+    img = cv2.GaussianBlur(img, (0, 0), 1.1)
+    edges = cv2.Canny(img, 50, 140, apertureSize=3)
+    edges[~valid_mask] = 0
+    min_px = max(12, int(round(10.0 / max(col_step, row_step, 1e-6))))
+    max_gap = max(3, int(round(3.0 / max(col_step, row_step, 1e-6))))
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180.0, threshold=28, minLineLength=min_px, maxLineGap=max_gap)
+    if lines is None:
+        return []
+
+    residual_threshold = max(0.12, float(np.nanpercentile(np.abs(residual[valid_mask]), 82.0)))
+    results = []
+    for entry in lines[:, 0, :]:
+        c1, r1, c2, r2 = [int(v) for v in entry]
+        pix_length = math.hypot(c2 - c1, r2 - r1)
+        if pix_length < min_px:
+            continue
+        sample_n = max(18, int(round(pix_length * 1.4)))
+        rr = np.clip(np.round(np.linspace(r1, r2, sample_n)).astype(np.int32), 0, z_base.shape[0] - 1)
+        cc = np.clip(np.round(np.linspace(c1, c2, sample_n)).astype(np.int32), 0, z_base.shape[1] - 1)
+        line_valid = valid_mask[rr, cc]
+        if int(line_valid.sum()) < max(8, sample_n // 3):
+            continue
+        line_resid = residual[rr[line_valid], cc[line_valid]]
+        contrast = float(np.nanpercentile(np.abs(line_resid), 75.0))
+        if contrast < residual_threshold:
+            continue
+
+        x1 = float(x_arr[r1, c1])
+        y1 = float(y_arr[r1, c1])
+        x2 = float(x_arr[r2, c2])
+        y2 = float(y_arr[r2, c2])
+        length_m = float(math.hypot(x2 - x1, y2 - y1))
+        if length_m < 8.0:
+            continue
+        center_r = int(rr[sample_n // 2])
+        center_c = int(cc[sample_n // 2])
+        mean_relief = float(np.nanmean(line_resid))
+        angle_deg = (math.degrees(math.atan2(y2 - y1, x2 - x1)) + 180.0) % 180.0
+        score = float((length_m / 10.0) * max(0.9, contrast / max(residual_threshold, 1e-6)))
+        title = "OpenCV: possibile linea artificiale"
+        summary = "OpenCV ha trovato un bordo lineare continuo. E utile per cercare fossati, strade, muri sepolti o margini regolari."
+        results.append(
+            {
+                "title": title,
+                "summary": summary,
+                "kind": "negative" if mean_relief < 0 else "positive",
+                "confidence": _score_to_confidence(score),
+                "score": score,
+                "shape": "linear",
+                "x": float((x1 + x2) * 0.5),
+                "y": float((y1 + y2) * 0.5),
+                "z": float(z_vis[center_r, center_c]),
+                "area_m2": float(length_m * max(col_step, row_step, 1.0)),
+                "length_m": length_m,
+                "width_m": float(max(col_step, row_step, 1.0) * 2.0),
+                "relief_m": mean_relief,
+                "orientation_deg": float(angle_deg),
+                "shape_score": 1.0,
+                "bbox_min_x": float(min(x1, x2) - max(col_step, row_step, 1.0) * 1.5),
+                "bbox_max_x": float(max(x1, x2) + max(col_step, row_step, 1.0) * 1.5),
+                "bbox_min_y": float(min(y1, y2) - max(col_step, row_step, 1.0) * 1.5),
+                "bbox_max_y": float(max(y1, y2) + max(col_step, row_step, 1.0) * 1.5),
+            }
+        )
+    return _select_distinct_line_candidates(results, max_items=max_items)
+
+
+def detect_opencv_enclosure_candidates(x, y, z_source, z_display, valid, max_items=8):
+    valid_mask = np.asarray(valid, dtype=bool)
+    if cv2 is None or not valid_mask.any():
+        return []
+
+    x_arr = np.asarray(x, dtype=np.float32)
+    y_arr = np.asarray(y, dtype=np.float32)
+    z_base = np.asarray(z_source, dtype=np.float32)
+    z_vis = np.asarray(z_display, dtype=np.float32)
+    col_step, row_step = _grid_spacing(x_arr, y_arr)
+    px_size = max(col_step, row_step, 1e-6)
+    cell_area = max(1e-3, float(col_step * row_step))
+    sigma = float(np.clip(min(z_base.shape) / 155.0, 3.0, 8.0))
+    trend = _gaussian_blur_nan(z_base, sigma=sigma)
+    residual = np.where(valid_mask & np.isfinite(trend), z_base - trend, np.nan).astype(np.float32)
+    if not np.isfinite(residual[valid_mask]).any():
+        return []
+
+    results = []
+    kernelsize = max(3, int(round(4.0 / px_size)))
+    if kernelsize % 2 == 0:
+        kernelsize += 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernelsize, kernelsize))
+    for kind, field in (("positive", np.maximum(residual, 0.0)), ("negative", np.maximum(-residual, 0.0))):
+        img = _normalize_to_u8(field, valid_mask)
+        if int(img.max()) == 0:
+            continue
+        blur = cv2.GaussianBlur(img, (0, 0), 1.1)
+        _thr, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
+        binary[~valid_mask] = 0
+        contours, _hier = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in contours:
+            area_px = float(cv2.contourArea(cnt))
+            if area_px < 18.0:
+                continue
+            area_m2 = area_px * cell_area
+            if area_m2 < 12.0 or area_m2 > 6200.0:
+                continue
+            perimeter = float(cv2.arcLength(cnt, True))
+            if perimeter <= 1e-3:
+                continue
+            circularity = float(4.0 * math.pi * area_px / max(perimeter * perimeter, 1e-6))
+            rect = cv2.minAreaRect(cnt)
+            (cx, cy), (rw, rh), angle = rect
+            length_m = float(max(rw, rh) * px_size)
+            width_m = float(max(min(rw, rh) * px_size, px_size))
+            ratio = float(length_m / max(width_m, 1e-6))
+            hull = cv2.convexHull(cnt)
+            hull_area = float(cv2.contourArea(hull))
+            solidity = float(area_px / max(hull_area, 1e-6))
+            occupancy = float(area_px / max(rw * rh, 1e-6))
+
+            enclosure_score = max(0.0, circularity) * max(0.0, min(1.0, solidity)) * max(0.2, 1.0 - abs(ratio - 1.0) / 1.1)
+            regular_score = max(0.0, min(1.0, occupancy)) * max(0.0, min(1.0, solidity)) * max(0.2, 1.0 - abs(ratio - 1.6) / 1.2)
+            shape = "enclosure" if enclosure_score >= regular_score else "regular"
+            shape_score = float(max(enclosure_score, regular_score))
+            if shape_score < 0.20:
+                continue
+
+            contour_mask = np.zeros(binary.shape, dtype=np.uint8)
+            cv2.drawContours(contour_mask, [cnt], -1, 1, thickness=-1)
+            contour_mask = contour_mask.astype(bool) & valid_mask
+            if not contour_mask.any():
+                continue
+            xs = x_arr[contour_mask]
+            ys = y_arr[contour_mask]
+            mean_relief = float(np.nanmean(residual[contour_mask]))
+            if abs(mean_relief) < max(0.10, float(np.nanpercentile(np.abs(residual[valid_mask]), 72.0))):
+                continue
+
+            rr, cc = np.where(contour_mask)
+            center_r = int(np.clip(round(cy), 0, z_base.shape[0] - 1))
+            center_c = int(np.clip(round(cx), 0, z_base.shape[1] - 1))
+            score = float(shape_score * max(1.0, math.log1p(area_m2) / 2.2) * (1.0 + abs(mean_relief)))
+            if shape == "enclosure":
+                title = "OpenCV: possibile recinto o forma chiusa"
+                summary = "OpenCV ha trovato un contorno chiuso abbastanza regolare. Puo essere utile per cercare cinte, recinti, tombe o fossati ad anello."
+            else:
+                title = "OpenCV: possibile struttura regolare"
+                summary = "OpenCV ha trovato una forma chiusa ordinata rispetto al contesto. Non e una prova, ma puo meritare un controllo."
+            results.append(
+                {
+                    "title": title,
+                    "summary": summary,
+                    "kind": kind,
+                    "confidence": _score_to_confidence(score),
+                    "score": score,
+                    "shape": shape,
+                    "x": float(x_arr[center_r, center_c]),
+                    "y": float(y_arr[center_r, center_c]),
+                    "z": float(z_vis[center_r, center_c]),
+                    "area_m2": float(area_m2),
+                    "length_m": length_m,
+                    "width_m": width_m,
+                    "relief_m": mean_relief,
+                    "orientation_deg": float((angle + 180.0) % 180.0),
+                    "shape_score": shape_score,
+                    "bbox_min_x": float(np.nanmin(xs)),
+                    "bbox_max_x": float(np.nanmax(xs)),
+                    "bbox_min_y": float(np.nanmin(ys)),
+                    "bbox_max_y": float(np.nanmax(ys)),
+                }
+            )
+    return _select_distinct_candidates(results, max_items=max_items)
+
+
 def apply_cloud_preprocessing(dtm, cloud_preprocess_key="cloud1"):
     key = cloud_preprocess_key or "cloud1"
     cfg = CLOUD_PREPROCESS_PROFILES.get(key)
@@ -852,7 +1366,34 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
     dy = _mean_abs_step(y, axis=0)
     colors = _height_shaded_colors_u8(z_fill, valid, dx=dx, dy=dy)
     colors[~valid] = 0
-    archaeology_candidates = detect_archaeology_candidates(x, y, z_source, z_fill, valid)
+    analysis_rows = np.arange(0, z_fill.shape[0], max(1, int(math.ceil(z_fill.shape[0] / float(LADS_ANALYSIS_MAX_SIDE)))), dtype=np.int32)
+    analysis_cols = np.arange(0, z_fill.shape[1], max(1, int(math.ceil(z_fill.shape[1] / float(LADS_ANALYSIS_MAX_SIDE)))), dtype=np.int32)
+    if analysis_rows[-1] != z_fill.shape[0] - 1:
+        analysis_rows = np.append(analysis_rows, z_fill.shape[0] - 1)
+    if analysis_cols[-1] != z_fill.shape[1] - 1:
+        analysis_cols = np.append(analysis_cols, z_fill.shape[1] - 1)
+    z_source_analysis = z_source[np.ix_(analysis_rows, analysis_cols)]
+    z_fill_analysis = z_fill[np.ix_(analysis_rows, analysis_cols)]
+    valid_analysis = valid[np.ix_(analysis_rows, analysis_cols)]
+    x_analysis = x[np.ix_(analysis_rows, analysis_cols)]
+    y_analysis = y[np.ix_(analysis_rows, analysis_cols)]
+
+    opencv_line_candidates = detect_opencv_line_candidates(x_analysis, y_analysis, z_source_analysis, z_fill_analysis, valid_analysis)
+    opencv_enclosure_candidates = detect_opencv_enclosure_candidates(x_analysis, y_analysis, z_source_analysis, z_fill_analysis, valid_analysis)
+    opencv_candidates = _merge_opencv_candidates(opencv_line_candidates, opencv_enclosure_candidates, max_items=10)
+    opencv_candidates = _filter_candidates_by_invalid_distance(opencv_candidates, x_analysis, y_analysis, valid_analysis, min_distance_cells=16.0)
+    for idx, item in enumerate(opencv_candidates, start=1):
+        item["id"] = int(idx)
+    analysis_profiles = [
+        {
+            "key": "opencv",
+            "label": "OpenCV",
+            "button_label": "OpenCV",
+            "accent": "#3da5ff",
+            "note": "Usa OpenCV per cercare sia linee continue sia forme chiuse o regolari. E la modalita piu orientata a fossati, strade, cinte e recinti.",
+            "candidates": opencv_candidates,
+        },
+    ]
     x_span = float(np.nanmax(x[valid]) - np.nanmin(x[valid]))
     y_span = float(np.nanmax(y[valid]) - np.nanmin(y[valid]))
     z_span = float(np.nanmax(z_render[valid]) - np.nanmin(z_render[valid]))
@@ -875,7 +1416,8 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
         "total_points": int(np.isfinite(arr).sum()),
         "z_scale": float(z_scale),
         "cloud_preprocess_key": str(cloud_preprocess_key),
-        "archaeology_candidates": archaeology_candidates,
+        "archaeology_candidates": opencv_candidates,
+        "analysis_profiles": analysis_profiles,
         "render_mode": str(cfg.get("render_mode", "mesh")),
         "flat_shading": bool(cfg.get("flat_shading", False)),
         "wireframe_overlay": bool(cfg.get("wireframe_overlay", False)),
@@ -914,7 +1456,16 @@ def write_browser_cloud_viewer(
     flat_shading = bool(terrain.get("flat_shading", False))
     wireframe_overlay = bool(terrain.get("wireframe_overlay", False))
     mesh_opacity = float(terrain["mesh_opacity"]) if terrain.get("mesh_opacity") is not None else 1.0
-    archaeology_candidates = terrain.get("archaeology_candidates", []) or []
+    analysis_profiles = terrain.get("analysis_profiles") or [
+        {
+            "key": "opencv",
+            "label": "OpenCV",
+            "button_label": "OpenCV",
+            "accent": "#3da5ff",
+            "note": "Usa OpenCV per cercare sia linee continue sia forme chiuse o regolari. E la modalita piu orientata a fossati, strade, cinte e recinti.",
+            "candidates": terrain.get("archaeology_candidates", []) or [],
+        }
+    ]
 
     x_span = max(1.0, float(np.nanmax(x) - np.nanmin(x)))
     y_span = max(1.0, float(np.nanmax(y) - np.nanmin(y)))
@@ -926,11 +1477,14 @@ def write_browser_cloud_viewer(
     color_b64 = _encode_u8_triplets_base64(colors.reshape(-1, 3))
     valid_b64 = _encode_u8_base64(valid.reshape(-1))
     exag = float(z_scale)
-    archaeology_json = json.dumps(archaeology_candidates, ensure_ascii=False)
+    analysis_profiles_json = json.dumps(analysis_profiles, ensure_ascii=False)
     las_button = ""
     if las_href:
         las_button = f'<a class="toolbar-btn" href="{las_href}" download>Esporta .LAS</a>'
-    analysis_button_html = '<button id="analysis-toggle" class="toolbar-btn toolbar-btn--button" type="button">Stima archeologica</button>'
+    analysis_button_html = "".join(
+        f'<button class="toolbar-btn toolbar-btn--button analysis-mode-btn" type="button" data-analysis-key="{escape(str(item.get("key", "")), quote=True)}">{escape(str(item.get("button_label", item.get("label", "Analisi"))))}</button>'
+        for item in analysis_profiles
+    )
     variant_html = ""
     if variant_options:
         options_markup = []
@@ -1014,6 +1568,10 @@ def write_browser_cloud_viewer(
     }}
     .toolbar-btn--button {{
       cursor: pointer;
+    }}
+    .toolbar-btn--active {{
+      border-color: rgba(255,255,255,0.32);
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.08) inset;
     }}
     .toolbar-select-wrap {{
       display: inline-flex;
@@ -1100,7 +1658,7 @@ def write_browser_cloud_viewer(
       min-width: 22px;
       height: 22px;
       border-radius: 999px;
-      background: #d44b4b;
+      background: var(--analysis-accent, #d44b4b);
       color: #fff;
       display: inline-flex;
       align-items: center;
@@ -1135,8 +1693,8 @@ def write_browser_cloud_viewer(
   <div id="toolbar">{las_button}{analysis_button_html}{variant_html}{cloud_preprocess_html}{cloud_preprocess_desc_html}</div>
   <div id="app"></div>
   <aside id="analysis-panel">
-    <h3>Stima archeologica</h3>
-    <p class="analysis-note">Analisi sperimentale basata sulle irregolarita del terreno. Non identifica siti certi: evidenzia solo zone che meritano un controllo.</p>
+    <h3 id="analysis-title">Analisi</h3>
+    <p id="analysis-note" class="analysis-note"></p>
     <div id="analysis-list" class="analysis-list"></div>
   </aside>
   <div id="errorbox" style="display:none; position:fixed; right:14px; top:14px; max-width:520px; padding:12px 14px; background:rgba(120,0,0,0.9); color:#fff; font:13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; z-index:30; border-radius:10px; white-space:pre-wrap;"></div>
@@ -1183,7 +1741,7 @@ def write_browser_cloud_viewer(
     const FLAT_SHADING = {"true" if flat_shading else "false"};
     const WIREFRAME_OVERLAY = {"true" if wireframe_overlay else "false"};
     const MESH_OPACITY = {mesh_opacity:.6f};
-    const ARCH_CANDIDATES = {archaeology_json};
+    const ANALYSIS_PROFILES = {analysis_profiles_json};
 
     function base64ToUint8Array(base64) {{
       const binary = atob(base64);
@@ -1232,8 +1790,10 @@ def write_browser_cloud_viewer(
     const colorBytes = base64ToUint8Array(COLOR_B64);
     const validBytes = base64ToUint8Array(VALID_B64);
     const analysisPanel = document.getElementById('analysis-panel');
+    const analysisTitle = document.getElementById('analysis-title');
+    const analysisNote = document.getElementById('analysis-note');
     const analysisList = document.getElementById('analysis-list');
-    const analysisToggle = document.getElementById('analysis-toggle');
+    const analysisButtons = Array.from(document.querySelectorAll('.analysis-mode-btn'));
 
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
@@ -1291,13 +1851,13 @@ def write_browser_cloud_viewer(
       return pointsGeometry;
     }}
 
-    function badgeTexture(label) {{
+    function badgeTexture(label, colorValue) {{
       const size = 128;
       const canvas = document.createElement('canvas');
       canvas.width = size;
       canvas.height = size;
       const ctx = canvas.getContext('2d');
-      ctx.fillStyle = 'rgba(212,75,75,0.96)';
+      ctx.fillStyle = colorValue || '#d44b4b';
       ctx.beginPath();
       ctx.arc(size * 0.5, size * 0.5, size * 0.34, 0, Math.PI * 2);
       ctx.fill();
@@ -1389,10 +1949,9 @@ def write_browser_cloud_viewer(
       }}
     }}
 
-    const analysisGroup = new THREE.Group();
-    analysisGroup.visible = false;
-    scene.add(analysisGroup);
-    const analysisMarkers = [];
+    const analysisGroups = new Map();
+    const analysisMarkers = new Map();
+    let activeAnalysisKey = '';
 
     function focusCandidate(marker) {{
       if (!marker) return;
@@ -1406,16 +1965,26 @@ def write_browser_cloud_viewer(
       controls.update();
     }}
 
-    function buildAnalysisUI() {{
+    function buildAnalysisUI(profile) {{
       if (!analysisList) return;
-      if (!ARCH_CANDIDATES.length) {{
+      if (analysisTitle) {{
+        analysisTitle.textContent = (profile && profile.label) || 'Analisi';
+      }}
+      if (analysisNote) {{
+        analysisNote.textContent = (profile && profile.note) || '';
+      }}
+      const candidates = (profile && profile.candidates) || [];
+      const markers = analysisMarkers.get((profile && profile.key) || '') || [];
+      if (!candidates.length) {{
         analysisList.innerHTML = '<div class="analysis-item"><div class="analysis-summary">Nessuna anomalia abbastanza chiara da segnalare in questa vista.</div></div>';
         return;
       }}
       const frag = document.createDocumentFragment();
-      ARCH_CANDIDATES.forEach((candidate, index) => {{
+      candidates.forEach((candidate, index) => {{
         const item = document.createElement('div');
         item.className = 'analysis-item';
+        const accent = (profile && profile.accent) || '#d44b4b';
+        item.style.setProperty('--analysis-accent', accent);
         item.innerHTML = `
           <div class="analysis-head">
             <span class="analysis-id">${{candidate.id}}</span>
@@ -1426,70 +1995,95 @@ def write_browser_cloud_viewer(
           <div class="analysis-meta">
             Forma: ${{shapeLabel(candidate.shape)}}<br />
             Rilievo: ${{formatMeters(candidate.relief_m)}}<br />
+            Bordo: ${{Number(candidate.invalid_distance_cells || 0).toFixed(1)}} celle<br />
             Estensione: ${{Number(candidate.length_m || 0).toFixed(1)}} x ${{Number(candidate.width_m || 0).toFixed(1)}} m<br />
             Area stimata: ${{Number(candidate.area_m2 || 0).toFixed(1)}} m²
           </div>
         `;
-        item.addEventListener('click', () => focusCandidate(analysisMarkers[index]));
+        item.addEventListener('click', () => focusCandidate(markers[index]));
         frag.appendChild(item);
       }});
       analysisList.innerHTML = '';
       analysisList.appendChild(frag);
     }}
 
-    ARCH_CANDIDATES.forEach((candidate) => {{
-      const px = Number(candidate.x || 0) - centerX;
-      const py = Number(candidate.y || 0) - centerY;
-      const pz = Number(candidate.z || 0) * Z_EXAGGERATION - centerZ;
-      const marker = new THREE.Group();
-      const lineHeight = Math.max(6, radius * 0.045);
-      const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(px, py, pz),
-        new THREE.Vector3(px, py, pz + lineHeight),
-      ]);
-      const line = new THREE.Line(
-        lineGeometry,
-        new THREE.LineBasicMaterial({{
-          color: 0xff6666,
-          transparent: true,
-          opacity: 0.95,
-        }})
-      );
-      const head = new THREE.Mesh(
-        new THREE.SphereGeometry(Math.max(1.1, radius * 0.007), 18, 18),
-        new THREE.MeshBasicMaterial({{ color: 0xff6666 }})
-      );
-      head.position.set(px, py, pz + lineHeight);
-      const sprite = new THREE.Sprite(
-        new THREE.SpriteMaterial({{
-          map: badgeTexture(candidate.id),
-          transparent: true,
-          depthTest: false,
-          depthWrite: false,
-        }})
-      );
-      const spriteSize = Math.max(8, radius * 0.05);
-      sprite.scale.set(spriteSize, spriteSize, 1);
-      sprite.position.set(px, py, pz + lineHeight + spriteSize * 0.42);
-      marker.add(line);
-      marker.add(head);
-      marker.add(sprite);
-      marker.userData.focus = new THREE.Vector3(px, py, pz + lineHeight * 0.35);
-      analysisGroup.add(marker);
-      analysisMarkers.push(marker);
+    ANALYSIS_PROFILES.forEach((profile) => {{
+      const group = new THREE.Group();
+      group.visible = false;
+      scene.add(group);
+      const markers = [];
+      const accent = (profile && profile.accent) || '#d44b4b';
+      const accentColor = new THREE.Color(accent);
+      ((profile && profile.candidates) || []).forEach((candidate) => {{
+        const px = Number(candidate.x || 0) - centerX;
+        const py = Number(candidate.y || 0) - centerY;
+        const pz = Number(candidate.z || 0) * Z_EXAGGERATION - centerZ;
+        const marker = new THREE.Group();
+        const lineHeight = Math.max(6, radius * 0.045);
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(px, py, pz),
+          new THREE.Vector3(px, py, pz + lineHeight),
+        ]);
+        const line = new THREE.Line(
+          lineGeometry,
+          new THREE.LineBasicMaterial({{
+            color: accentColor,
+            transparent: true,
+            opacity: 0.95,
+          }})
+        );
+        const head = new THREE.Mesh(
+          new THREE.SphereGeometry(Math.max(1.1, radius * 0.007), 18, 18),
+          new THREE.MeshBasicMaterial({{ color: accentColor }})
+        );
+        head.position.set(px, py, pz + lineHeight);
+        const sprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({{
+            map: badgeTexture(candidate.id, accent),
+            transparent: true,
+            depthTest: false,
+            depthWrite: false,
+          }})
+        );
+        const spriteSize = Math.max(8, radius * 0.05);
+        sprite.scale.set(spriteSize, spriteSize, 1);
+        sprite.position.set(px, py, pz + lineHeight + spriteSize * 0.42);
+        marker.add(line);
+        marker.add(head);
+        marker.add(sprite);
+        marker.userData.focus = new THREE.Vector3(px, py, pz + lineHeight * 0.35);
+        group.add(marker);
+        markers.push(marker);
+      }});
+      analysisGroups.set(profile.key, group);
+      analysisMarkers.set(profile.key, markers);
     }});
 
-    buildAnalysisUI();
-    if (analysisToggle) {{
-      analysisToggle.addEventListener('click', function() {{
-        const nextVisible = !analysisGroup.visible;
-        analysisGroup.visible = nextVisible;
-        if (analysisPanel) {{
-          analysisPanel.classList.toggle('visible', nextVisible);
-        }}
-        this.textContent = nextVisible ? 'Nascondi stima' : 'Stima archeologica';
+    function setActiveAnalysis(nextKey) {{
+      activeAnalysisKey = nextKey || '';
+      analysisGroups.forEach((group, key) => {{
+        group.visible = key === activeAnalysisKey;
       }});
+      analysisButtons.forEach((button) => {{
+        const isActive = button.dataset.analysisKey === activeAnalysisKey;
+        button.classList.toggle('toolbar-btn--active', isActive);
+      }});
+      if (analysisPanel) {{
+        analysisPanel.classList.toggle('visible', Boolean(activeAnalysisKey));
+      }}
+      if (!activeAnalysisKey) {{
+        return;
+      }}
+      const profile = ANALYSIS_PROFILES.find((item) => item.key === activeAnalysisKey) || null;
+      buildAnalysisUI(profile);
     }}
+
+    analysisButtons.forEach((button) => {{
+      button.addEventListener('click', function() {{
+        const key = this.dataset.analysisKey || '';
+        setActiveAnalysis(activeAnalysisKey === key ? '' : key);
+      }});
+    }});
 
     controls.target.set(0, 0, 0);
     camera.near = 0.1;

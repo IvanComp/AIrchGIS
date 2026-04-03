@@ -16,6 +16,7 @@ from pathlib import Path
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, unquote, urlparse
+from xml.sax.saxutils import escape as xml_escape
 
 import numpy as np
 import rasterio
@@ -428,6 +429,12 @@ def list_database_places(root: Path):
     out = []
     for p in sorted([x for x in db.iterdir() if x.is_dir()], key=lambda x: x.name.lower()):
         if p.name.startswith("."):
+            continue
+        if not (p / "DTM").exists():
+            continue
+        if find_dir(p, FIRST_DIR_CANDIDATES) is None:
+            continue
+        if find_dir(p, LAST_DIR_CANDIDATES) is None:
             continue
         out.append(p.name)
     return out
@@ -919,6 +926,10 @@ def decimal_to_dms(value, positive_ref, negative_ref):
     return f"{deg}°{minutes:02d}'{seconds:02d}\"{ref}"
 
 
+def google_maps_point_url(lat, lon):
+    return f"https://www.google.com/maps/search/?api=1&query={float(lat):.8f},{float(lon):.8f}"
+
+
 def wrap_text_lines(draw, text, font, max_width):
     words = (text or "").split()
     if not words:
@@ -1318,8 +1329,11 @@ class App(BaseTk):
         self._refresh_drop_status()
         self.refresh_basemap_years()
         self.refresh_places()
-        self.reload_inputs()
-        self._start_database_prepro_cache()
+        try:
+            self.reload_inputs()
+        except Exception as e:
+            self.status.set(f"Errore caricamento iniziale: {e}")
+            self._show_blank()
 
     def open_mase(self):
         url = MASE_URL
@@ -2035,10 +2049,11 @@ class App(BaseTk):
                     p_dtm_orig = select_rasters(base / "DTM", prefer_preprocessed=False)
                     p_f_orig = select_rasters_from_candidates(base, FIRST_DIR_CANDIDATES, prefer_preprocessed=False)
                     p_l_orig = select_rasters_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=False)
-                    if p_dtm_orig and p_f_orig and p_l_orig:
+                    src_groups = [p_dtm_orig, p_f_orig, p_l_orig]
+                    if p_dtm_orig and p_f_orig and p_l_orig and self._preprocessed_groups_missing(src_groups, profile):
                         self.status.set(f"{profile['label']} in preparazione...")
                         self.update_idletasks()
-                        self._ensure_preprocessed_groups([p_dtm_orig, p_f_orig, p_l_orig], profile)
+                        self._ensure_preprocessed_groups(src_groups, profile)
             except Exception as e:
                 self.status.set(f"Errore {profile['label']}: {e}")
                 messagebox.showerror("Preprocess", str(e))
@@ -2088,16 +2103,15 @@ class App(BaseTk):
         profile = PREPRO_PROFILES.get(self.prepro_profile.get(), PREPRO_PROFILES["prep1"])
         if use_preprocessed:
             try:
-                self.status.set(f"{profile['label']} in preparazione...")
-                self.update_idletasks()
-                self._ensure_preprocessed_groups(
-                    [
-                        self.drop_sources["DTM"],
-                        self.drop_sources["DSM_First"],
-                        self.drop_sources["DSM_Last"],
-                    ],
-                    profile,
-                )
+                src_groups = [
+                    self.drop_sources["DTM"],
+                    self.drop_sources["DSM_First"],
+                    self.drop_sources["DSM_Last"],
+                ]
+                if self._preprocessed_groups_missing(src_groups, profile):
+                    self.status.set(f"{profile['label']} in preparazione...")
+                    self.update_idletasks()
+                    self._ensure_preprocessed_groups(src_groups, profile)
             except Exception as e:
                 self.status.set(f"Errore {profile['label']}: {e}")
                 messagebox.showerror("Preprocess", str(e))
@@ -2416,6 +2430,21 @@ class App(BaseTk):
                 created.append(dst)
         return created
 
+    def _preprocessed_groups_missing(self, src_groups, profile):
+        groups = []
+        for group in src_groups:
+            items = [Path(p).expanduser().resolve() for p in group if p]
+            if items:
+                groups.append(items)
+        if not groups:
+            return False
+        for group in groups:
+            for src in group:
+                is_fresh, _dst = has_fresh_preprocessed(self.root_path, src, suffix=profile["suffix"])
+                if not is_fresh:
+                    return True
+        return False
+
     def _dataset_available(self, name):
         if name == "DTM":
             return self.data.loaded and self.data.dtm is not None
@@ -2533,57 +2562,23 @@ class App(BaseTk):
             return
         try:
             out_dir, stem = self._3d_cloud_output_bundle()
+            current_data_key = self._current_3d_cloud_variant_key()
+            current_cloud_key = self._current_cloud_preprocess_key()
             data_outputs = []
-            combo_outputs = []
+            data_outputs_by_key = {}
+            surface_cache = {}
             for item in CLOUD_SURFACE_OPTIONS:
                 data_key = item["key"]
                 data_label = item["label"]
                 self.status.set(f"3D Cloud in preparazione: dato {data_label}...")
                 self.update_idletasks()
                 dtm, profile, crs = self._load_dtm_surface_variant(data_key)
+                surface_cache[data_key] = (dtm, profile, crs)
                 las_path = out_dir / f"{stem}__{data_key}.las"
-                export_lads_las(
-                    dtm,
-                    profile,
-                    crs,
-                    las_path,
-                    target_crs=LADS_TARGET_CRS,
-                    cloud_preprocess_key="original",
-                )
-                data_outputs.append(
-                    {
-                        "key": data_key,
-                        "label": data_label,
-                        "las_path": las_path,
-                    }
-                )
+                payload = {"key": data_key, "label": data_label, "las_path": las_path}
+                data_outputs.append(payload)
+                data_outputs_by_key[data_key] = payload
 
-                for cloud_key, cloud_cfg in CLOUD_PREPROCESS_PROFILES.items():
-                    cloud_label = cloud_cfg["label"]
-                    self.status.set(f"3D Cloud in preparazione: dato {data_label} | {cloud_label}...")
-                    self.update_idletasks()
-                    terrain_grid = build_browser_terrain_grid(
-                        dtm,
-                        profile,
-                        crs,
-                        target_crs=LADS_TARGET_CRS,
-                        max_side=LADS_BROWSER_MAX_SIDE,
-                        cloud_preprocess_key=cloud_key,
-                    )
-                    html_path = out_dir / f"{stem}__{data_key}__{cloud_key}.html"
-                    combo_outputs.append(
-                        {
-                            "data_key": data_key,
-                            "data_label": data_label,
-                            "cloud_key": cloud_key,
-                            "cloud_label": cloud_label,
-                            "las_path": las_path,
-                            "html_path": html_path,
-                            "terrain_grid": terrain_grid,
-                        }
-                    )
-
-            combo_index = {(item["data_key"], item["cloud_key"]): item for item in combo_outputs}
             cloud_options = [
                 {
                     "key": key,
@@ -2592,39 +2587,77 @@ class App(BaseTk):
                 }
                 for key, cfg in CLOUD_PREPROCESS_PROFILES.items()
             ]
+            combo_index = {}
+            combo_order = []
+            for data_item in data_outputs:
+                for cloud_item in cloud_options:
+                    payload = {
+                        "data_key": data_item["key"],
+                        "data_label": data_item["label"],
+                        "cloud_key": cloud_item["key"],
+                        "cloud_label": cloud_item["label"],
+                        "las_path": data_item["las_path"],
+                        "html_path": out_dir / f"{stem}__{data_item['key']}__{cloud_item['key']}.html",
+                    }
+                    combo_index[(data_item["key"], cloud_item["key"])] = payload
+                    combo_order.append(payload)
 
-            for item in combo_outputs:
-                variant_items = [
+            chosen = combo_index.get((current_data_key, current_cloud_key))
+            if chosen is None:
+                chosen = combo_order[0]
+                current_data_key = chosen["data_key"]
+                current_cloud_key = chosen["cloud_key"]
+
+            def build_variant_items(cloud_key):
+                return [
                     {
                         "key": data_item["key"],
                         "label": data_item["label"],
-                        "href": quote(combo_index[(data_item["key"], item["cloud_key"])]["html_path"].name),
+                        "href": quote(combo_index[(data_item["key"], cloud_key)]["html_path"].name),
                     }
                     for data_item in data_outputs
                 ]
-                cloud_items = [
+
+            def build_cloud_items(data_key):
+                return [
                     {
                         "key": cloud_item["key"],
                         "label": cloud_item["label"],
-                        "href": quote(combo_index[(item["data_key"], cloud_item["key"])]["html_path"].name),
+                        "description": cloud_item.get("description", ""),
+                        "href": quote(combo_index[(data_key, cloud_item["key"])]["html_path"].name),
                     }
                     for cloud_item in cloud_options
                 ]
-                write_browser_cloud_viewer(
-                    item["html_path"],
-                    item["terrain_grid"],
-                    las_href=quote(item["las_path"].name),
-                    variant_options=variant_items,
-                    current_variant_key=item["data_key"],
-                    cloud_preprocess_options=cloud_items,
-                    current_cloud_preprocess_key=item["cloud_key"],
-                )
 
-            current_data_key = self._current_3d_cloud_variant_key()
-            current_cloud_key = self._current_cloud_preprocess_key()
-            chosen = combo_index.get((current_data_key, current_cloud_key))
-            if chosen is None:
-                chosen = combo_outputs[0]
+            chosen_dtm, chosen_profile, chosen_crs = surface_cache[chosen["data_key"]]
+            self.status.set(f"3D Cloud in preparazione: dato {chosen['data_label']} | {chosen['cloud_label']}...")
+            self.update_idletasks()
+            export_lads_las(
+                chosen_dtm,
+                chosen_profile,
+                chosen_crs,
+                chosen["las_path"],
+                target_crs=LADS_TARGET_CRS,
+                cloud_preprocess_key="original",
+            )
+            chosen_grid = build_browser_terrain_grid(
+                chosen_dtm,
+                chosen_profile,
+                chosen_crs,
+                target_crs=LADS_TARGET_CRS,
+                max_side=LADS_BROWSER_MAX_SIDE,
+                cloud_preprocess_key=chosen["cloud_key"],
+            )
+            write_browser_cloud_viewer(
+                chosen["html_path"],
+                chosen_grid,
+                las_href=quote(chosen["las_path"].name),
+                variant_options=build_variant_items(chosen["cloud_key"]),
+                current_variant_key=chosen["data_key"],
+                cloud_preprocess_options=build_cloud_items(chosen["data_key"]),
+                current_cloud_preprocess_key=chosen["cloud_key"],
+            )
+
             port = self._ensure_3d_cloud_http_server(out_dir)
             url = f"http://127.0.0.1:{port}/{quote(chosen['html_path'].name)}?v={int(datetime.now().timestamp())}"
             try:
@@ -2632,8 +2665,66 @@ class App(BaseTk):
             except Exception:
                 webbrowser.open(url)
             self.status.set(
-                f"3D Cloud aperto nel browser su localhost | dato {chosen['data_label']} | cloud {chosen['cloud_label']} | LAS {chosen['las_path'].name}"
+                f"3D Cloud aperto nel browser | dato {chosen['data_label']} | cloud {chosen['cloud_label']} | altre varianti in preparazione"
             )
+
+            def background_generate_remaining():
+                try:
+                    las_ready = {chosen["data_key"]}
+                    ordered_keys = []
+                    for cloud_item in cloud_options:
+                        key = (chosen["data_key"], cloud_item["key"])
+                        if key != (chosen["data_key"], chosen["cloud_key"]):
+                            ordered_keys.append(key)
+                    for data_item in data_outputs:
+                        key = (data_item["key"], chosen["cloud_key"])
+                        if key != (chosen["data_key"], chosen["cloud_key"]) and key not in ordered_keys:
+                            ordered_keys.append(key)
+                    for payload in combo_order:
+                        key = (payload["data_key"], payload["cloud_key"])
+                        if key != (chosen["data_key"], chosen["cloud_key"]) and key not in ordered_keys:
+                            ordered_keys.append(key)
+
+                    for data_key, cloud_key in ordered_keys:
+                        item = combo_index[(data_key, cloud_key)]
+                        dtm, profile, crs = surface_cache[data_key]
+                        if data_key not in las_ready:
+                            export_lads_las(
+                                dtm,
+                                profile,
+                                crs,
+                                item["las_path"],
+                                target_crs=LADS_TARGET_CRS,
+                                cloud_preprocess_key="original",
+                            )
+                            las_ready.add(data_key)
+                        terrain_grid = build_browser_terrain_grid(
+                            dtm,
+                            profile,
+                            crs,
+                            target_crs=LADS_TARGET_CRS,
+                            max_side=LADS_BROWSER_MAX_SIDE,
+                            cloud_preprocess_key=cloud_key,
+                        )
+                        write_browser_cloud_viewer(
+                            item["html_path"],
+                            terrain_grid,
+                            las_href=quote(item["las_path"].name),
+                            variant_options=build_variant_items(cloud_key),
+                            current_variant_key=data_key,
+                            cloud_preprocess_options=build_cloud_items(data_key),
+                            current_cloud_preprocess_key=cloud_key,
+                        )
+                    self.after(
+                        0,
+                        lambda: self.status.set(
+                            f"3D Cloud pronto | dato {chosen['data_label']} | cloud {chosen['cloud_label']}"
+                        ),
+                    )
+                except Exception:
+                    pass
+
+            threading.Thread(target=background_generate_remaining, daemon=True).start()
         except Exception as e:
             messagebox.showerror("3D Cloud", str(e))
 
@@ -3243,12 +3334,13 @@ class App(BaseTk):
 
         actions = ttk.Frame(win, padding=(10, 0, 10, 10))
         actions.grid(row=3, column=0, sticky="ew")
-        for idx in range(4):
+        for idx in range(5):
             actions.columnconfigure(idx, weight=1)
         ttk.Button(actions, text="Aggiungi da mappa", command=self.start_report_point_pick).grid(row=0, column=0, sticky="ew", padx=(0, 4))
         ttk.Button(actions, text="Rimuovi selezionato", command=self.remove_selected_report_item).grid(row=0, column=1, sticky="ew", padx=4)
         ttk.Button(actions, text="Svuota tutto", command=self.clear_report_items).grid(row=0, column=2, sticky="ew", padx=4)
-        ttk.Button(actions, text="Genera PDF", command=self.generate_exploration_report_pdf).grid(row=0, column=3, sticky="ew", padx=(4, 0))
+        ttk.Button(actions, text="Genera PDF", command=self.generate_exploration_report_pdf).grid(row=0, column=3, sticky="ew", padx=4)
+        ttk.Button(actions, text="Esporta KML", command=self.export_report_kml).grid(row=0, column=4, sticky="ew", padx=(4, 0))
 
         ttk.Label(win, textvariable=self.report_status_var, wraplength=720, padding=(10, 0, 10, 10)).grid(row=4, column=0, sticky="ew")
         win.protocol("WM_DELETE_WINDOW", self._close_report_window)
@@ -3437,6 +3529,76 @@ class App(BaseTk):
             self.status.set(f"Report PDF creato: {out_path}")
         except Exception as e:
             messagebox.showerror("Report", str(e))
+
+    def export_report_kml(self):
+        if not self.report_items:
+            messagebox.showerror("KML", "Aggiungi almeno un punto al report prima di esportare.")
+            return
+        try:
+            out_dir = self.root_path / "output_rvt_gui" / "maps"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            place = (self._current_place_label() or "report").replace(" ", "_")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            out_path = out_dir / f"poi_mymaps__{place}__{ts}.kml"
+            doc_name = xml_escape(f"Punti di interesse - {self._current_place_label()}")
+
+            placemarks = []
+            for idx, item in enumerate(self.report_items, start=1):
+                name = xml_escape(item.get("name") or f"Punto {idx}")
+                notes = item.get("notes") or "-"
+                coords_dms = item.get("coords_dms") or "-"
+                lat = float(item.get("lat"))
+                lon = float(item.get("lon"))
+                dataset = item.get("dataset") or "-"
+                method = item.get("method") or "-"
+                place_label = item.get("place") or self._current_place_label()
+                maps_url = google_maps_point_url(lat, lon)
+                description_lines = [
+                    f"Coordinate: {coords_dms}",
+                    f"Lat/Lon: {lat:.8f}, {lon:.8f}",
+                    f"Scenario: {place_label} | {dataset} | {method}",
+                    f"Google Maps: {maps_url}",
+                    "",
+                    f"Note: {notes}",
+                ]
+                description = xml_escape("\n".join(description_lines))
+                placemarks.append(
+                    f"""
+    <Placemark>
+      <name>{name}</name>
+      <styleUrl>#poi-red</styleUrl>
+      <description>{description}</description>
+      <Point>
+        <coordinates>{lon:.8f},{lat:.8f},0</coordinates>
+      </Point>
+    </Placemark>""".rstrip()
+                )
+
+            kml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>{doc_name}</name>
+    <Style id="poi-red">
+      <IconStyle>
+        <scale>1.2</scale>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/paddle/red-circle.png</href>
+        </Icon>
+      </IconStyle>
+      <LabelStyle>
+        <scale>1.0</scale>
+      </LabelStyle>
+    </Style>
+{chr(10).join(placemarks)}
+  </Document>
+</kml>
+"""
+            out_path.write_text(kml, encoding="utf-8")
+            msg = f"KML creato: {out_path} | importalo in Google My Maps per condividerlo."
+            self.report_status_var.set(msg)
+            self.status.set(msg)
+        except Exception as e:
+            messagebox.showerror("KML", str(e))
 
     def _paint_at(self, x_data, y_data):
         if self.annotation_alpha is None:
