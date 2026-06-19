@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import ee
 import folium
 import pandas as pd
@@ -10,6 +12,29 @@ st.set_page_config(page_title="Sentinel-2 Crop Marks", layout="wide")
 BANDS = ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B11", "B12"]
 INDEX_BANDS = ["NDVI", "GNDVI", "SAVI", "SR", "Crop_band", "Soil_band", "NDMI", "MSI", "TCT_brightness", "TCT_greenness", "TCT_wetness"]
 PCA_BANDS = ["B2", "B3", "B4", "B8", "B11", "B12", "NDVI", "GNDVI", "SAVI", "SR", "Crop_band", "Soil_band", "NDMI", "MSI", "TCT_brightness", "TCT_greenness", "TCT_wetness"]
+
+
+
+def default_project():
+    env = os.environ.get("EE_PROJECT", "").strip()
+    if env:
+        return env
+    f = Path(__file__).with_name(".ee_project")
+    if f.exists():
+        return f.read_text().strip()
+    return ""
+
+def add_base_tiles(m, esri_show=True):
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="Esri World Imagery",
+        overlay=False,
+        control=True,
+        show=esri_show
+    ).add_to(m)
+    folium.TileLayer("OpenStreetMap", name="OpenStreetMap", overlay=False, control=True, show=not esri_show).add_to(m)
+    folium.TileLayer("CartoDB positron", name="CartoDB Positron", overlay=False, control=True, show=False).add_to(m)
 
 for k, v in {"analysis_result": None, "analysis_geometry": None}.items():
     if k not in st.session_state:
@@ -188,7 +213,7 @@ st.title("Sentinel-2 crop marks enhancement")
 st.write("Disegna un poligono o un rettangolo sulla mappa, imposta periodo e nuvole, poi avvia l'analisi.")
 
 with st.sidebar:
-    project = st.text_input("Google Earth Engine project", "")
+    project = st.text_input("Google Earth Engine project", default_project())
     start = st.date_input("Da", pd.to_datetime("2016-01-01"))
     end = st.date_input("A", pd.to_datetime("2019-12-31"))
     cloud = st.slider("Cloud cover massimo metadata (%)", 0, 100, 10)
@@ -203,8 +228,10 @@ if reset:
     st.session_state.analysis_result = None
     st.session_state.analysis_geometry = None
 
-m = folium.Map(location=[41.5, 15.5], zoom_start=9, tiles="OpenStreetMap")
+m = folium.Map(location=[41.5, 15.5], zoom_start=9, tiles=None)
+add_base_tiles(m, esri_show=True)
 Draw(export=False, draw_options={"polyline": False, "polygon": True, "rectangle": True, "circle": False, "marker": False, "circlemarker": False}, edit_options={"edit": True}).add_to(m)
+folium.LayerControl(collapsed=False).add_to(m)
 draw = st_folium(m, width=1200, height=520, key="draw_map", returned_objects=["all_drawings"])
 
 if run:
@@ -228,9 +255,8 @@ if r:
     st.dataframe(r["df"], width="stretch")
     st.info("La tabella ordina le date con maggiore contrasto spettrale. Lo score non e una probabilita archeologica.")
     st.subheader("Mappa dei layer generati")
-    rm = folium.Map(location=r["center"], zoom_start=14, tiles="OpenStreetMap")
-    folium.TileLayer("CartoDB positron", name="CartoDB Positron", control=True, show=False).add_to(rm)
-    folium.TileLayer("Esri.WorldImagery", name="Esri World Imagery", attr="Esri", control=True, show=False).add_to(rm)
+    rm = folium.Map(location=r["center"], zoom_start=14, tiles=None)
+    add_base_tiles(rm, esri_show=True)
     folium.GeoJson(r["geometry"], name="AOI", style_function=lambda x: {"color": "yellow", "weight": 2, "fillOpacity": 0}).add_to(rm)
     for i, (name, url) in enumerate(r["layers"].items()):
         add_layer(rm, url, name, show=(name == "False color 8-4-3"))
