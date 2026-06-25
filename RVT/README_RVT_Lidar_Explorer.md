@@ -1,11 +1,12 @@
 # RVT Lidar Explorer (GUI) — README
 
-Questo progetto fornisce uno script Python con interfaccia grafica (`rvt_gui.py`) per esplorare ed esportare trasformazioni RVT su dati LiDAR scaricati come tripletta:
+Questo progetto fornisce uno script Python con interfaccia grafica (`core.py`) per esplorare ed esportare trasformazioni RVT su dati LiDAR scaricati come tripletta:
 - DTM
 - DSM first return
 - DSM last return
 
 Lo script mostra un’anteprima aggiornata in tempo reale e permette di esportare il risultato corrente come GeoTIFF georiferito.
+Include anche un generatore DTM da mappa basato sul GeoTIFF regionale locale `data/regional_dtm/HRDTM5m_Umbria_Marche_Abruzzo.tif`: selezioni un rettangolo su una mappa web zoomabile e il tool crea un DTM ritagliato per Marche, Abruzzo e Umbria, poi lo carica nella sessione rapida.
 
 ## 1) Requisiti
 
@@ -22,7 +23,10 @@ Nel progetto deve esistere questa struttura:
 
 ```
 project/
-  rvt_gui.py
+  core.py
+  data/
+    regional_dtm/
+      HRDTM5m_Umbria_Marche_Abruzzo.tif
   image/
     DTM/
     DSMfirst/
@@ -94,8 +98,20 @@ deactivate
    ```
 6) Avvia la GUI:
    ```bash
-   python rvt_gui.py
+   python core.py
    ```
+
+## 5.1) Generare un DTM dalla mappa regionale
+
+Il pulsante `DTM da mappa` nella sezione `Sessione rapida` apre nel browser una mappa Leaflet zoomabile dell'estensione coperta dal raster regionale di Marche, Abruzzo e Umbria. La mappa usa un layer satellitare come base e permette di disegnare/modificare un rettangolo.
+
+Workflow:
+1) premi `DTM da mappa`;
+2) usa lo strumento rettangolo sulla mappa e zooma fino all'area desiderata;
+3) premi `Genera DTM e carica`;
+4) il GeoTIFF viene creato in `generated_dtm/DTM/` a risoluzione nativa 5 m x 5 m e caricato come DTM nella sessione rapida.
+
+Il raster sorgente resta invariato. La selezione usa solo i dati locali delle tre regioni forniti nel progetto.
 
 ## 6) Funzioni della GUI
 
@@ -149,5 +165,5 @@ Riduci la dimensione del tile (area più piccola) o lavora su downsample esterno
 ```bash
 source ~/venvs/rvt/bin/activate
 cd /percorso/del/progetto
-python rvt_gui.py
+python core.py
 ```

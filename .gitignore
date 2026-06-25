@@ -1,5 +1,7 @@
 # Ignore full dataset folder content
 /data/
+/RVT/data/
+/RVT/generated_dtm/
 
 # Optional: keep folder tracked if you add an empty placeholder file
 #!data/.gitkeep

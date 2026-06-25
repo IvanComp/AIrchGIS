@@ -24,6 +24,7 @@ import rasterio.merge
 import rasterio.warp
 import rasterio.features
 import rasterio.transform
+import rasterio.windows
 from rasterio.fill import fillnodata
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -68,6 +69,10 @@ BaseTk = TkinterDnD.Tk if TKDND_AVAILABLE and TkinterDnD is not None else tk.Tk
 EXTS = {".tif", ".tiff", ".asc"}
 PREPROCESSED_SUFFIXES = ("_prep", "_prep1", "_prep2", "_prep3")
 SAT_ZOOMS_TRY = (19, 18, 17, 16, 15, 14, 13, 12)
+REGIONAL_DTM_RELATIVE_PATH = Path("data") / "regional_dtm" / "HRDTM5m_Umbria_Marche_Abruzzo.tif"
+GENERATED_DTM_OUTPUT_RELATIVE = Path("generated_dtm") / "DTM"
+REGIONAL_DTM_PREVIEW_ZOOMS = (10, 9, 8, 7, 6)
+REGIONAL_DTM_MAX_RECOMMENDED_CELLS = 80_000_000
 MASE_URL = "https://sim.mase.gov.it/portalediaccesso/mappe/#/viewer/new/"
 GE_URL = "https://earth.google.com/web/@42.06329556,13.44458279,859.60342866a,1982377.06794083d,35y,0h,0t,0r/data=CgRCAggBOgMKATBCAggASg0I____________ARAA"
 ARCGIS_CURRENT_TILE_TEMPLATE = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -79,7 +84,7 @@ PREPRO_PROFILES = {
     "prep2": {"label": "PrePro 2", "suffix": "_prep2", "fill_dist": 100, "fill_smooth_iter": 1, "sigma": 0.8},
     "prep3": {"label": "PrePro 3", "suffix": "_prep3", "fill_dist": 140, "fill_smooth_iter": 2, "sigma": 1.2},
 }
-BASE_IMAGE_OPTIONS = ["PrePro 1", "PrePro 2", "PrePro 3"]
+BASE_IMAGE_OPTIONS = ["Originale", "PrePro 1", "PrePro 2", "PrePro 3"]
 BASE_IMAGE_TO_PROFILE = {"PrePro 1": "prep1", "PrePro 2": "prep2", "PrePro 3": "prep3"}
 CLOUD_SURFACE_OPTIONS = [
     {"key": "original", "label": "Originale"},
@@ -1092,6 +1097,336 @@ def build_satellite_rgb(bounds_lonlat, zoom, tile_template=ARCGIS_CURRENT_TILE_T
     return mosaic.crop((crop_l, crop_t, crop_r, crop_b))
 
 
+def regional_dtm_source_path(root: Path):
+    return Path(root).expanduser().resolve() / REGIONAL_DTM_RELATIVE_PATH
+
+
+def regional_dtm_output_dir(root: Path):
+    return Path(root).expanduser().resolve() / GENERATED_DTM_OUTPUT_RELATIVE
+
+
+def tile_count_for_lonlat_bounds(bounds_lonlat, zoom):
+    left, bottom, right, top = bounds_lonlat
+    px0, py0 = latlon_to_global_px(top, left, zoom)
+    px1, py1 = latlon_to_global_px(bottom, right, zoom)
+    min_px = min(px0, px1)
+    max_px = max(px0, px1)
+    min_py = min(py0, py1)
+    max_py = max(py0, py1)
+    n = 2**zoom
+    tx0 = clamp_int(math.floor(min_px / 256.0), 0, n - 1)
+    tx1 = clamp_int(math.floor((max_px - 1.0) / 256.0), 0, n - 1)
+    ty0 = clamp_int(math.floor(min_py / 256.0), 0, n - 1)
+    ty1 = clamp_int(math.floor((max_py - 1.0) / 256.0), 0, n - 1)
+    return max(0, tx1 - tx0 + 1) * max(0, ty1 - ty0 + 1)
+
+
+def choose_regional_preview_zoom(bounds_lonlat):
+    for zoom in REGIONAL_DTM_PREVIEW_ZOOMS:
+        if tile_count_for_lonlat_bounds(bounds_lonlat, zoom) <= 64:
+            return zoom
+    return REGIONAL_DTM_PREVIEW_ZOOMS[-1]
+
+
+def raster_bounds_lonlat(path: Path):
+    with rasterio.open(path) as src:
+        bounds = src.bounds
+        crs = src.crs
+        if crs is None:
+            raise RuntimeError("CRS del raster regionale non disponibile.")
+        if crs.to_string() == "EPSG:4326":
+            return (float(bounds.left), float(bounds.bottom), float(bounds.right), float(bounds.top))
+        b = rasterio.warp.transform_bounds(crs, "EPSG:4326", bounds.left, bounds.bottom, bounds.right, bounds.top, densify_pts=21)
+        return (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+
+
+def normalize_lonlat_bounds(bounds_lonlat):
+    left, bottom, right, top = [float(v) for v in bounds_lonlat]
+    left, right = sorted((left, right))
+    bottom, top = sorted((bottom, top))
+    return left, bottom, right, top
+
+
+def create_regional_dtm_crop(root: Path, bounds_lonlat, max_recommended_cells=REGIONAL_DTM_MAX_RECOMMENDED_CELLS):
+    src_path = regional_dtm_source_path(root)
+    if not src_path.exists():
+        raise RuntimeError(f"Raster regionale non trovato: {src_path}")
+
+    left, bottom, right, top = normalize_lonlat_bounds(bounds_lonlat)
+    if right <= left or top <= bottom:
+        raise RuntimeError("Area selezionata non valida.")
+
+    with rasterio.open(src_path) as src:
+        if src.crs is None:
+            raise RuntimeError("CRS del raster regionale non disponibile.")
+        src_bounds = src.bounds
+        sel_bounds = rasterio.warp.transform_bounds("EPSG:4326", src.crs, left, bottom, right, top, densify_pts=21)
+        sel_left = max(float(src_bounds.left), float(sel_bounds[0]))
+        sel_bottom = max(float(src_bounds.bottom), float(sel_bounds[1]))
+        sel_right = min(float(src_bounds.right), float(sel_bounds[2]))
+        sel_top = min(float(src_bounds.top), float(sel_bounds[3]))
+        if sel_right <= sel_left or sel_top <= sel_bottom:
+            raise RuntimeError("L'area selezionata non interseca il DTM delle tre regioni.")
+
+        raw_window = rasterio.windows.from_bounds(sel_left, sel_bottom, sel_right, sel_top, src.transform)
+        col_off = max(0, int(math.floor(raw_window.col_off)))
+        row_off = max(0, int(math.floor(raw_window.row_off)))
+        col_max = min(src.width, int(math.ceil(raw_window.col_off + raw_window.width)))
+        row_max = min(src.height, int(math.ceil(raw_window.row_off + raw_window.height)))
+        width = col_max - col_off
+        height = row_max - row_off
+        if width < 2 or height < 2:
+            raise RuntimeError("Area selezionata troppo piccola per generare un DTM.")
+
+        cells = int(width) * int(height)
+        if max_recommended_cells and cells > int(max_recommended_cells):
+            raise RuntimeError(
+                f"Area troppo grande: {cells:,} celle. Seleziona un'area piu piccola "
+                f"(consigliato massimo {int(max_recommended_cells):,} celle)."
+            )
+
+        window = rasterio.windows.Window(col_off, row_off, width, height)
+        data = src.read(1, window=window, out_dtype="float32")
+        nodata_val = src.nodata if src.nodata is not None else -9999.0
+        profile = src.profile.copy()
+        profile.update(
+            driver="GTiff",
+            height=height,
+            width=width,
+            transform=rasterio.windows.transform(window, src.transform),
+            dtype=rasterio.float32,
+            count=1,
+            nodata=nodata_val,
+            tiled=True,
+            blockxsize=256,
+            blockysize=256,
+            compress="deflate",
+            predictor=3,
+            BIGTIFF="IF_SAFER",
+        )
+
+    out_dir = regional_dtm_output_dir(root)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = out_dir / f"regional_selection_{ts}_DTM.tif"
+    with rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(data.astype(np.float32, copy=False), 1)
+
+    meta_path = out_path.with_suffix(".json")
+    meta = {
+        "source": str(src_path),
+        "output": str(out_path),
+        "bounds_lonlat": [left, bottom, right, top],
+        "width": int(width),
+        "height": int(height),
+        "cells": cells,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return out_path, meta
+
+
+def regional_dtm_map_html(bounds_lonlat, max_cells=REGIONAL_DTM_MAX_RECOMMENDED_CELLS):
+    left, bottom, right, top = normalize_lonlat_bounds(bounds_lonlat)
+    payload = {
+        "bounds": [[bottom, left], [top, right]],
+        "flatBounds": [left, bottom, right, top],
+        "maxCells": int(max_cells),
+    }
+    cfg = json.dumps(payload)
+    return f"""<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RVT - DTM da mappa</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <style>
+    html, body, #map {{ height: 100%; margin: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    #panel {{
+      position: absolute;
+      z-index: 1000;
+      top: 14px;
+      left: 58px;
+      max-width: 520px;
+      background: rgba(255, 255, 255, 0.94);
+      color: #1f2933;
+      border-radius: 8px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.22);
+      padding: 12px 14px;
+      line-height: 1.35;
+    }}
+    #panel h1 {{ font-size: 16px; margin: 0 0 6px; }}
+    #panel p {{ margin: 0 0 8px; font-size: 13px; }}
+    #status {{ font-size: 13px; margin-top: 8px; white-space: pre-line; }}
+    .actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }}
+    button {{
+      border: 1px solid #b8c0cc;
+      background: white;
+      color: #111827;
+      border-radius: 6px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-weight: 600;
+    }}
+    button.primary {{ background: #155eef; color: white; border-color: #155eef; }}
+    button:disabled {{ opacity: .55; cursor: default; }}
+    .hint {{ color: #4b5563; }}
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="panel">
+    <h1>Genera DTM da mappa</h1>
+    <p>Usa gli strumenti a sinistra per disegnare un rettangolo. Il DTM viene ritagliato dai dati locali di Marche, Abruzzo e Umbria.</p>
+    <p class="hint">Output: GeoTIFF DTM alla risoluzione nativa di 5 m x 5 m, poi caricato automaticamente in RVT.</p>
+    <div class="actions">
+      <button id="generate" class="primary" disabled>Genera DTM e carica</button>
+      <button id="clear" disabled>Cancella rettangolo</button>
+      <button id="fit">Torna alle 3 regioni</button>
+    </div>
+    <div id="status">Disegna un rettangolo sulla mappa.</div>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <script>
+    const CONFIG = {cfg};
+    const dtmBounds = L.latLngBounds(CONFIG.bounds);
+    const map = L.map('map', {{
+      maxBounds: dtmBounds.pad(0.28),
+      maxBoundsViscosity: 0.45,
+      zoomControl: true
+    }}).fitBounds(dtmBounds);
+
+    const imagery = L.tileLayer(
+      'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}',
+      {{ maxZoom: 20, attribution: 'Imagery Esri' }}
+    ).addTo(map);
+    const osm = L.tileLayer(
+      'https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
+      {{ maxZoom: 20, attribution: 'OpenStreetMap' }}
+    );
+    L.control.layers({{ 'Satellite': imagery, 'OpenStreetMap': osm }}).addTo(map);
+
+    L.rectangle(dtmBounds, {{
+      color: '#10b981',
+      weight: 2,
+      fillOpacity: 0.02,
+      interactive: false
+    }}).addTo(map).bindTooltip('Copertura DTM Marche, Abruzzo, Umbria');
+
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+    const drawControl = new L.Control.Draw({{
+      draw: {{
+        polyline: false,
+        polygon: false,
+        circle: false,
+        marker: false,
+        circlemarker: false,
+        rectangle: {{
+          shapeOptions: {{
+            color: '#ffdf4d',
+            weight: 3,
+            fillColor: '#ffdf4d',
+            fillOpacity: 0.12
+          }}
+        }}
+      }},
+      edit: {{
+        featureGroup: drawnItems,
+        remove: true
+      }}
+    }});
+    map.addControl(drawControl);
+
+    let activeLayer = null;
+    const generateBtn = document.getElementById('generate');
+    const clearBtn = document.getElementById('clear');
+    const fitBtn = document.getElementById('fit');
+    const statusEl = document.getElementById('status');
+
+    function setStatus(text) {{
+      statusEl.textContent = text;
+    }}
+
+    function selectedBounds() {{
+      if (!activeLayer) return null;
+      const b = activeLayer.getBounds();
+      return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    }}
+
+    function updateStatusFromLayer() {{
+      const b = selectedBounds();
+      if (!b) {{
+        generateBtn.disabled = true;
+        clearBtn.disabled = true;
+        setStatus('Disegna un rettangolo sulla mappa.');
+        return;
+      }}
+      generateBtn.disabled = false;
+      clearBtn.disabled = false;
+      setStatus(
+        'Area selezionata:\\n' +
+        `lon ${{b[0].toFixed(6)}} - ${{b[2].toFixed(6)}}\\n` +
+        `lat ${{b[1].toFixed(6)}} - ${{b[3].toFixed(6)}}`
+      );
+    }}
+
+    map.on(L.Draw.Event.CREATED, function (event) {{
+      drawnItems.clearLayers();
+      activeLayer = event.layer;
+      drawnItems.addLayer(activeLayer);
+      updateStatusFromLayer();
+    }});
+    map.on(L.Draw.Event.EDITED, function () {{
+      const layers = drawnItems.getLayers();
+      activeLayer = layers.length ? layers[0] : null;
+      updateStatusFromLayer();
+    }});
+    map.on(L.Draw.Event.DELETED, function () {{
+      activeLayer = null;
+      updateStatusFromLayer();
+    }});
+
+    clearBtn.addEventListener('click', () => {{
+      drawnItems.clearLayers();
+      activeLayer = null;
+      updateStatusFromLayer();
+    }});
+    fitBtn.addEventListener('click', () => map.fitBounds(dtmBounds));
+
+    generateBtn.addEventListener('click', async () => {{
+      const b = selectedBounds();
+      if (!b) return;
+      generateBtn.disabled = true;
+      setStatus('Generazione DTM in corso... puoi lasciare aperta questa pagina.');
+      try {{
+        const response = await fetch('/generate', {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ bounds: b }})
+        }});
+        const data = await response.json();
+        if (!response.ok || !data.ok) {{
+          throw new Error(data.error || 'Generazione non riuscita.');
+        }}
+        setStatus(
+          `DTM creato e caricato in RVT.\\n${{data.file}}\\n` +
+          `${{data.width}} x ${{data.height}} px, risoluzione 5 m.`
+        );
+      }} catch (err) {{
+        setStatus('Errore: ' + err.message);
+        generateBtn.disabled = false;
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+
 class InputData:
     def __init__(self, root: Path):
         self.root = root
@@ -1322,6 +1657,7 @@ class App(BaseTk):
         self.cloud_http_server = None
         self.cloud_http_port = None
         self.cloud_http_root = None
+        self.regional_dtm_map_server = None
         self._prepro_cache_thread = None
         self._prepro_cache_started = False
 
@@ -1358,6 +1694,97 @@ class App(BaseTk):
             webbrowser.open(url)
         except Exception:
             pass
+
+    def open_regional_dtm_selector(self):
+        src_path = regional_dtm_source_path(self.root_path)
+        if not src_path.exists():
+            messagebox.showerror("DTM da mappa", f"Raster regionale non trovato:\n{src_path}")
+            return
+
+        try:
+            bounds_ll = raster_bounds_lonlat(src_path)
+        except Exception as e:
+            messagebox.showerror("DTM da mappa", str(e))
+            return
+
+        app = self
+        html = regional_dtm_map_html(bounds_ll)
+
+        class RegionalMapHandler(SimpleHTTPRequestHandler):
+            def log_message(self, format, *args):
+                return
+
+            def _send_bytes(self, body, content_type="text/html; charset=utf-8", status=200):
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _send_json(self, payload, status=200):
+                body = json.dumps(payload).encode("utf-8")
+                self._send_bytes(body, "application/json; charset=utf-8", status=status)
+
+            def do_GET(self):
+                if self.path in ("/", "/index.html"):
+                    self._send_bytes(html.encode("utf-8"))
+                    return
+                self.send_error(404)
+
+            def do_POST(self):
+                if self.path != "/generate":
+                    self.send_error(404)
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                    bounds = payload.get("bounds")
+                    if not isinstance(bounds, list) or len(bounds) != 4:
+                        raise RuntimeError("Bounds non validi.")
+                    out_path, meta = create_regional_dtm_crop(app.root_path, bounds)
+
+                    def load_generated():
+                        app.drop_sources = {"DTM": [str(out_path)], "DSM_First": [], "DSM_Last": []}
+                        app.active_source_mode = "drop"
+                        app.base_image_mode.set("Originale")
+                        app.load_dropped_inputs()
+                        app.status.set(
+                            f"DTM generato e caricato: {out_path.name} "
+                            f"({meta['width']} x {meta['height']} px, 5 m)"
+                        )
+
+                    app.after(0, load_generated)
+                    self._send_json(
+                        {
+                            "ok": True,
+                            "file": out_path.name,
+                            "path": str(out_path),
+                            "width": meta["width"],
+                            "height": meta["height"],
+                            "cells": meta["cells"],
+                        }
+                    )
+                except Exception as e:
+                    self._send_json({"ok": False, "error": str(e)}, status=400)
+
+        if self.regional_dtm_map_server is not None:
+            try:
+                self.regional_dtm_map_server.shutdown()
+                self.regional_dtm_map_server.server_close()
+            except Exception:
+                pass
+            self.regional_dtm_map_server = None
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), RegionalMapHandler)
+        server.daemon_threads = True
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.regional_dtm_map_server = server
+        url = f"http://127.0.0.1:{int(server.server_address[1])}/"
+        self.status.set(f"DTM da mappa aperto nel browser: {url}")
+        try:
+            subprocess.Popen(["open", "-a", "Google Chrome", url])
+        except Exception:
+            webbrowser.open(url)
 
     def _build_ui(self):
         self.columnconfigure(0, weight=1)
@@ -1430,8 +1857,10 @@ class App(BaseTk):
         quick_actions.grid(row=1, column=0, sticky="ew", pady=(6, 0))
         quick_actions.columnconfigure(0, weight=1)
         quick_actions.columnconfigure(1, weight=1)
+        quick_actions.columnconfigure(2, weight=1)
         ttk.Button(quick_actions, text="Usa posto selezionato", command=self.use_database_selection).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(quick_actions, text="Svuota sessione", command=self.clear_drop_inputs).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        ttk.Button(quick_actions, text="DTM da mappa", command=self.open_regional_dtm_selector).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(quick_actions, text="Svuota sessione", command=self.clear_drop_inputs).grid(row=0, column=2, sticky="ew", padx=(4, 0))
         self._register_drop_widget(quick_box)
         self._register_drop_widget(self.drop_target_label)
 
