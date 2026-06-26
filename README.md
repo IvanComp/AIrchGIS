@@ -1,6 +1,6 @@
 # ArchaeoScope
 
-Tool unico per analisi territoriale e archeologica preliminare. ArchaeoScope organizza in un solo workspace le due linee operative del progetto:
+Tool unico per analisi territoriale e archeologica preliminare. ArchaeoScope mette nella stessa pagina le due applicazioni del progetto:
 
 - screening multispettrale Sentinel-2 per crop marks e soil marks;
 - esplorazione LiDAR/DTM con RVT, report e viewer 3D.
@@ -26,11 +26,8 @@ streamlit run archaeoscope_app.py
 
 ## Cosa trovi nell'app unica
 
-- `Command Center`: stato del workspace, accesso rapido ai due motori e output recenti.
+- `RVT LiDAR`: launcher della GUI RVT esistente, con accesso a cartella/output e verifica dipendenze.
 - `Sentinel-2 Crop Marks`: AOI su mappa, ranking date, indici, Tasseled Cap, PCA, anomaly score, download GeoTIFF ed export Drive.
-- `RVT LiDAR`: launcher della GUI RVT, check dipendenze, inventario dataset e accesso ai viewer 3D recenti.
-- `Workflow Integrato`: sequenza operativa unica per passare dallo screening satellite alla verifica LiDAR e agli output.
-- `Impostazioni`: configurazione Earth Engine e interprete Python RVT.
 
 ## Struttura
 
