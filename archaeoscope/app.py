@@ -1,7 +1,8 @@
 import os
 import subprocess
 import sys
-from datetime import date
+import time
+from datetime import date, datetime
 
 import folium
 import streamlit as st
@@ -29,6 +30,7 @@ def init_state():
         "as_crop_result": None,
         "as_crop_geometry": None,
         "as_rvt_process": None,
+        "as_rvt_error": None,
     }.items():
         if key not in st.session_state:
             st.session_state[key] = value
@@ -45,12 +47,26 @@ def render_header():
 def render_rvt():
     st.subheader("RVT")
     running = process_running(st.session_state.as_rvt_process)
+    if st.session_state.as_rvt_error:
+        st.error(st.session_state.as_rvt_error)
     if st.button("RVT", type="primary", width="stretch", disabled=running):
-        st.session_state.as_rvt_process = launch_rvt()
+        st.session_state.as_rvt_error = None
+        try:
+            process = launch_rvt()
+            time.sleep(0.8)
+            if process.poll() is None:
+                st.session_state.as_rvt_process = process
+            else:
+                st.session_state.as_rvt_process = None
+                st.session_state.as_rvt_error = "RVT non si e avviato."
+        except Exception:
+            st.session_state.as_rvt_process = None
+            st.session_state.as_rvt_error = "RVT non si e avviato."
         st.rerun()
     if running and st.button("Chiudi RVT", width="stretch"):
         stop_process(st.session_state.as_rvt_process)
         st.session_state.as_rvt_process = None
+        st.session_state.as_rvt_error = None
         st.rerun()
 
 
@@ -165,11 +181,14 @@ def process_running(proc):
 def launch_rvt():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(PROJECT_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    log = open(PROJECT_ROOT / ".rvt_launch.log", "a", encoding="utf-8")
+    log.write(f"\n--- {datetime.now().isoformat(timespec='seconds')} ---\n")
+    log.flush()
     return subprocess.Popen(
         [default_rvt_python(), str(RVT_ENTRYPOINT)],
         cwd=str(RVT_DIR),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log,
+        stderr=log,
         env=env,
         start_new_session=True,
     )
@@ -177,19 +196,48 @@ def launch_rvt():
 
 def default_rvt_python():
     env = os.environ.get("RVT_PYTHON", "").strip()
-    if env:
+    if env and rvt_python_works(env):
         return env
     candidates = [
+        str(PROJECT_ROOT / ".venv-rvt" / "bin" / "python"),
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12",
+        "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+        "/usr/local/bin/python3",
+        os.path.expanduser("~/.pyenv/shims/python3"),
+        "/usr/local/bin/python",
+        "/usr/bin/python3",
+        os.path.expanduser("~/.pyenv/shims/python"),
+        "/opt/homebrew/bin/python3.13",
+        sys.executable,
         os.path.expanduser("~/venvs/rvt/bin/python"),
         os.path.expanduser("~/.venvs/rvt/bin/python"),
         "/opt/homebrew/bin/python3.11",
-        "/usr/local/bin/python3.11",
-        sys.executable,
     ]
     for candidate in candidates:
-        if candidate and os.path.exists(candidate) and os.access(candidate, os.X_OK):
+        if rvt_python_works(candidate):
             return candidate
     return sys.executable
+
+
+def rvt_python_works(candidate):
+    if not candidate or not os.path.exists(candidate) or not os.access(candidate, os.X_OK):
+        return False
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(PROJECT_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    code = "import tkinter, numpy, rasterio, matplotlib, PIL, requests, rvt.vis, rvt.blend"
+    try:
+        subprocess.run(
+            [candidate, "-c", code],
+            cwd=str(RVT_DIR),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+            timeout=15,
+            check=True,
+        )
+    except Exception:
+        return False
+    return True
 
 
 def stop_process(proc):
