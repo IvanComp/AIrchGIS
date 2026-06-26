@@ -1,11 +1,9 @@
 # ArchaeoScope
 
-Tool unico per analisi territoriale e archeologica preliminare. ArchaeoScope integra le due applicazioni del progetto:
+Tool unico per analisi territoriale e archeologica preliminare. ArchaeoScope integra le due applicazioni del progetto in un'unica app web:
 
 - screening multispettrale Sentinel-2 per crop marks e soil marks;
-- esplorazione LiDAR/DTM con RVT, report e viewer 3D.
-
-I due motori originali restano disponibili e non sono stati smontati: `RVT/core.py` continua a essere la GUI LiDAR completa, mentre `Crop marks Tool/s2_cropmarks_gui.py` resta avviabile come tool Streamlit standalone.
+- esplorazione LiDAR/DTM con RVT, filtri, export, report e viewer 3D.
 
 ## Avvio consigliato
 
@@ -26,7 +24,7 @@ streamlit run archaeoscope_app.py
 
 ## Cosa trovi nell'app unica
 
-- `RVT`: il tool RVT.
+- `RVT`: schermata web per Database, upload raster, DTM da mappa, metodi RVT, preset, basemap, export TIFF/PNG, griglia metodi, 3D Cloud, report PDF/KML.
 - `Sentinel-2 Crop Marks`: AOI su mappa, ranking date, indici, Tasseled Cap, PCA, anomaly score, download GeoTIFF ed export Drive.
 
 ## Struttura
@@ -51,16 +49,7 @@ ArchaeoScope/
     README.md
 ```
 
-## Avvio legacy RVT
-
-```bash
-cd "/Users/ivan/Desktop/ArchaeoScope/RVT"
-python core.py
-```
-
-Dettagli: `RVT/README_RVT_Lidar_Explorer.md`.
-
-## Avvio legacy Crop Marks
+## Crop Marks standalone
 
 ```bash
 cd "/Users/ivan/Desktop/ArchaeoScope/Crop marks Tool"

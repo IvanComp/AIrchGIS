@@ -23,5 +23,6 @@ env/
 /RVT/output_rvt_gui/
 /RVT/output_rvt_batch/
 /RVT/.dragdrop_cache/
+/RVT/.streamlit_uploads/
 /RVT/image/Database/
 /RVT/image/Database/**/.prepro_cache/
