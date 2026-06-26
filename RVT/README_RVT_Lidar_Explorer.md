@@ -1,5 +1,14 @@
 # RVT Lidar Explorer (GUI) — README
 
+> Nota: RVT ora e collegato all'app unica `ArchaeoScope`.
+> Avvio consigliato dalla root del repository:
+>
+> ```bash
+> ./start_archaeoscope.command
+> ```
+>
+> La GUI descritta qui resta invariata e puo essere avviata anche direttamente con `python core.py`.
+
 Questo progetto fornisce uno script Python con interfaccia grafica (`core.py`) per esplorare ed esportare trasformazioni RVT su dati LiDAR scaricati come tripletta:
 - DTM
 - DSM first return

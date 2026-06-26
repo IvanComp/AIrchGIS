@@ -1,5 +1,14 @@
 # Sentinel-2 Crop Marks GUI
 
+> Nota: questo tool ora e integrato nell'app unica `ArchaeoScope`.
+> Avvio consigliato dalla root del repository:
+>
+> ```bash
+> ./start_archaeoscope.command
+> ```
+>
+> Le istruzioni sotto restano valide per l'avvio standalone.
+
 Tool locale in Python/Streamlit per analisi automatizzata di crop marks e soil marks da immagini Sentinel-2, seguendo una pipeline compatibile con il paper su Sentinel-2 multitemporale, indici spettrali, Tasseled Cap e PCA.
 
 Il tool non conferma siti archeologici. Serve per screening preliminare: evidenzia anomalie candidate che devono essere controllate con ortofoto storiche, Google Earth, dati locali, sopralluogo, drone o geofisica.

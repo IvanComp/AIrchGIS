@@ -1,7 +1,27 @@
-# Ignore full dataset folder content
+# macOS / Python
+.DS_Store
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local virtual environments and credentials
+.venv/
+venv/
+env/
+.ee_project
+.gradio/
+
+# Logs and temporary files
+*.log
+*.tmp
+/.rvt_launch.log
+
+# Large local data and generated outputs
 /data/
 /RVT/data/
 /RVT/generated_dtm/
-
-# Optional: keep folder tracked if you add an empty placeholder file
-#!data/.gitkeep
+/RVT/output_rvt_gui/
+/RVT/output_rvt_batch/
+/RVT/.dragdrop_cache/
+/RVT/image/Database/
+/RVT/image/Database/**/.prepro_cache/

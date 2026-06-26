@@ -1,44 +1,77 @@
-# Neural Detecting v0.5
+# ArchaeoScope
 
-## MASE
+Tool unico per analisi territoriale e archeologica preliminare. ArchaeoScope organizza in un solo workspace le due linee operative del progetto:
 
-<https://sim.mase.gov.it/portalediaccesso/mappe/#/viewer/new>
+- screening multispettrale Sentinel-2 per crop marks e soil marks;
+- esplorazione LiDAR/DTM con RVT, report e viewer 3D.
 
-## iPhone / Chrome mobile (modo semplice)
+I due motori originali restano disponibili e non sono stati smontati: `RVT/core.py` continua a essere la GUI LiDAR completa, mentre `Crop marks Tool/s2_cropmarks_gui.py` resta avviabile come tool Streamlit standalone.
 
-Avvio standard con link HTTPS Gradio:
-
-```bash
-cd '/Users/ivan/Desktop/Neural-Detecting'
-pip install gradio torch torchaudio numpy
-python3 yesno_live_web.py
-```
-
-Apri SOLO il link `https://...gradio.live` stampato nel terminale.
-Non usare `https://IP:7860` (quello genera `Invalid HTTP request`).
-
-## Se il link gradio.live non funziona
-
-Usa tunnel HTTPS alternativo (`localhost.run`):
-
-Terminale A:
+## Avvio consigliato
 
 ```bash
-cd '/Users/ivan/Desktop/Neural-Detecting'
-YESNO_SHARE=0 python3 yesno_live_web.py
+cd "/Users/ivan/Desktop/ArchaeoScope"
+./start_archaeoscope.command
 ```
 
-Terminale B:
+In alternativa:
 
 ```bash
-ssh -o StrictHostKeyChecking=no -R 80:127.0.0.1:7860 nokey@localhost.run
+cd "/Users/ivan/Desktop/ArchaeoScope"
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+streamlit run archaeoscope_app.py
 ```
 
-Apri sul telefono l'URL `https://...localhost.run` mostrato dal comando SSH.
+## Cosa trovi nell'app unica
 
-## Script
+- `Command Center`: stato del workspace, accesso rapido ai due motori e output recenti.
+- `Sentinel-2 Crop Marks`: AOI su mappa, ranking date, indici, Tasseled Cap, PCA, anomaly score, download GeoTIFF ed export Drive.
+- `RVT LiDAR`: launcher della GUI RVT, check dipendenze, inventario dataset e accesso ai viewer 3D recenti.
+- `Workflow Integrato`: sequenza operativa unica per passare dallo screening satellite alla verifica LiDAR e agli output.
+- `Impostazioni`: configurazione Earth Engine e interprete Python RVT.
 
-- `yesno_live_web.py`: web app per iPhone/Android (Safari/Chrome)
-- `yesno_live_inference.py`: GUI desktop locale
-- `asr_yesno_benchmark.py`: benchmark ASR su YESNO
-- `train_audio_compare.py`: training pipeline custom
+## Struttura
+
+```text
+ArchaeoScope/
+  archaeoscope_app.py
+  start_archaeoscope.command
+  archaeoscope/
+    app.py
+    cropmarks_engine.py
+    paths.py
+    assets/logo.svg
+  RVT/
+    core.py
+    scripts/lads_preview.py
+    README_RVT_Lidar_Explorer.md
+  Crop marks Tool/
+    s2_cropmarks_gui.py
+    requirements.txt
+    start_mac.command
+    README.md
+```
+
+## Avvio legacy RVT
+
+```bash
+cd "/Users/ivan/Desktop/ArchaeoScope/RVT"
+python core.py
+```
+
+Dettagli: `RVT/README_RVT_Lidar_Explorer.md`.
+
+## Avvio legacy Crop Marks
+
+```bash
+cd "/Users/ivan/Desktop/ArchaeoScope/Crop marks Tool"
+./start_mac.command
+```
+
+Dettagli: `Crop marks Tool/README.md`.
+
+## Note
+
+La cartella `.venv`, gli output RVT, i dati raster locali, i DTM generati e le credenziali/progetti Earth Engine sono locali e non dovrebbero essere versionati.
