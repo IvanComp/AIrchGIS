@@ -1,6 +1,4 @@
-import base64
 from datetime import date
-from html import escape
 
 import folium
 import streamlit as st
@@ -47,74 +45,18 @@ def render_app_styles():
             .block-container {
                 padding-top: 1rem;
             }
-            .as-nav {
-                align-items: center;
-                border-bottom: 1px solid rgba(130, 145, 170, 0.22);
-                display: flex;
-                gap: 0.7rem;
-                margin-bottom: 1.35rem;
-                min-height: 2.8rem;
-                padding-bottom: 0.7rem;
-                width: 100%;
-            }
-            .as-logo {
-                height: 2rem;
-                width: 2rem;
-            }
             .as-brand {
                 color: inherit;
-                font-size: 1.45rem;
+                font-size: 1.35rem;
                 font-weight: 800;
                 line-height: 1;
                 letter-spacing: 0;
-                margin-right: 0.25rem;
+                margin: 0;
                 white-space: nowrap;
             }
-            .as-tabs {
-                border: 1px solid rgba(130, 145, 170, 0.34);
-                border-radius: 0.45rem;
-                display: inline-flex;
-                overflow: hidden;
-            }
-            .as-tab,
-            .as-link {
-                align-items: center;
-                color: rgba(245, 245, 245, 0.9);
-                display: inline-flex;
-                font-size: 0.88rem;
-                font-weight: 700;
-                height: 2rem;
-                justify-content: center;
-                line-height: 1;
-                text-decoration: none;
-                white-space: nowrap;
-            }
-            .as-tab {
-                min-width: 6.2rem;
-                padding: 0 0.85rem;
-            }
-            .as-tab + .as-tab {
-                border-left: 1px solid rgba(130, 145, 170, 0.24);
-            }
-            .as-tab-active {
-                background: rgba(255, 75, 75, 0.14);
-                color: rgb(255, 87, 87);
-            }
-            .as-spacer {
-                flex: 1 1 auto;
-            }
-            .as-link {
-                border: 1px solid rgba(130, 145, 170, 0.34);
-                border-radius: 0.45rem;
-                padding: 0 0.85rem;
-            }
-            @media (max-width: 760px) {
-                .as-nav {
-                    flex-wrap: wrap;
-                }
-                .as-spacer {
-                    display: none;
-                }
+            .as-nav-rule {
+                border-bottom: 1px solid rgba(130, 145, 170, 0.22);
+                margin: 0.35rem 0 1.1rem;
             }
         </style>
         """,
@@ -122,59 +64,41 @@ def render_app_styles():
     )
 
 
-@st.cache_data(show_spinner=False)
-def logo_data_uri():
-    suffix = LOGO_PATH.suffix.lstrip(".") or "png"
-    encoded = base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
-    return f"data:image/{suffix};base64,{encoded}"
-
-
-def active_tool_from_query():
-    query_tool = st.query_params.get("tool")
-    if isinstance(query_tool, list):
-        query_tool = query_tool[0] if query_tool else None
-    if query_tool == "crop-marks":
-        st.session_state.as_active_tool = "Crop Marks"
-    elif query_tool == "rvt":
-        st.session_state.as_active_tool = "RVT"
-    return st.session_state.as_active_tool
-
-
 def render_navbar():
     render_app_styles()
-    tool = active_tool_from_query()
-    rvt_class = " as-tab-active" if tool == "RVT" else ""
-    crop_class = " as-tab-active" if tool == "Crop Marks" else ""
-    st.markdown(
-        f"""
-        <nav class="as-nav" aria-label="ArchaeoScope navigation">
-            <img class="as-logo" src="{logo_data_uri()}" alt="">
-            <div class="as-brand">ArchaeoScope</div>
-            <div class="as-tabs" role="tablist" aria-label="Tools">
-                <a class="as-tab{rvt_class}" href="?tool=rvt" role="tab">RVT</a>
-                <a class="as-tab{crop_class}" href="?tool=crop-marks" role="tab">Crop Marks</a>
-            </div>
-            <div class="as-spacer"></div>
-            <a class="as-link" href="{escape(MASE_URL)}" target="_blank" rel="noreferrer">🛰️ MASE</a>
-            <a class="as-link" href="{escape(GOOGLE_EARTH_URL)}" target="_blank" rel="noreferrer">🌍 Google Earth</a>
-        </nav>
-        """,
-        unsafe_allow_html=True,
+    logo_col, title_col, tool_col, mase_col, earth_col, _spacer = st.columns(
+        [0.04, 0.18, 0.25, 0.11, 0.16, 0.26],
+        gap="small",
+        vertical_alignment="center",
     )
+    with logo_col:
+        st.image(str(LOGO_PATH), width=32)
+    with title_col:
+        st.markdown('<div class="as-brand">ArchaeoScope</div>', unsafe_allow_html=True)
+    with tool_col:
+        tool = st.segmented_control(
+            "Tool",
+            ["RVT", "Crop Marks"],
+            key="as_active_tool",
+            label_visibility="collapsed",
+            width="content",
+        )
+    with mase_col:
+        st.link_button("🛰️ MASE", MASE_URL, width="content")
+    with earth_col:
+        st.link_button("🌍 Google Earth", GOOGLE_EARTH_URL, width="content")
+    st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
     return tool
 
 
 def render_header():
     render_app_styles()
-    st.markdown(
-        f"""
-        <nav class="as-nav" aria-label="ArchaeoScope">
-            <img class="as-logo" src="{logo_data_uri()}" alt="">
-            <div class="as-brand">ArchaeoScope</div>
-        </nav>
-        """,
-        unsafe_allow_html=True,
-    )
+    logo_col, title_col = st.columns([0.04, 0.96], vertical_alignment="center")
+    with logo_col:
+        st.image(str(LOGO_PATH), width=32)
+    with title_col:
+        st.markdown('<div class="as-brand">ArchaeoScope</div>', unsafe_allow_html=True)
+    st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
 
 
 def render_cropmarks(standalone=False):

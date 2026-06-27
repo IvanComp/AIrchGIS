@@ -86,6 +86,7 @@ def init_rvt_state(core):
         "as_rvt_basemap_year": "Current",
         "as_rvt_image_tool": "coordinate",
         "as_rvt_last_click_info": None,
+        "as_rvt_dtm_map_view": "Satellite attuale",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -231,11 +232,19 @@ def render_regional_dtm_selector(core):
     if st.session_state.as_rvt_method not in method_values:
         st.session_state.as_rvt_method = "Hillshade" if "Hillshade" in method_values else method_values[0]
     st.session_state.as_rvt_dataset = "DTM"
-    st.selectbox(
-        "Tipo di mappa da generare dal DTM",
-        method_values,
-        key="as_rvt_method",
-    )
+    selector_cols = st.columns([0.56, 0.44], gap="medium")
+    with selector_cols[0]:
+        st.selectbox(
+            "Tipo di mappa da generare dal DTM",
+            method_values,
+            key="as_rvt_method",
+        )
+    with selector_cols[1]:
+        map_view = st.selectbox(
+            "Visualizzazione mappa",
+            ["Satellite attuale", "Citta e strade"],
+            key="as_rvt_dtm_map_view",
+        )
 
     center = [(bounds[1] + bounds[3]) / 2.0, (bounds[0] + bounds[2]) / 2.0]
     fmap = folium.Map(location=center, zoom_start=8, tiles=None, control_scale=True)
@@ -243,13 +252,12 @@ def render_regional_dtm_selector(core):
         tiles=core.ARCGIS_CURRENT_TILE_TEMPLATE,
         attr="Esri",
         name="Satellite attuale",
-        show=True,
+        show=map_view == "Satellite attuale",
     ).add_to(fmap)
     folium.TileLayer(
-        tiles="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-        attr="CartoDB",
-        name="Mappa con citta",
-        show=False,
+        tiles="OpenStreetMap",
+        name="Citta e strade",
+        show=map_view == "Citta e strade",
     ).add_to(fmap)
     folium.Rectangle(
         bounds=[[bounds[1], bounds[0]], [bounds[3], bounds[2]]],
@@ -271,11 +279,12 @@ def render_regional_dtm_selector(core):
         edit_options={"edit": True},
     ).add_to(fmap)
     folium.LayerControl(collapsed=False).add_to(fmap)
+    map_key = "city" if map_view == "Citta e strade" else "satellite"
     draw = st_folium(
         fmap,
         width=1200,
         height=720,
-        key="as_rvt_regional_map",
+        key=f"as_rvt_regional_map_{map_key}",
         returned_objects=["all_drawings"],
     )
 
