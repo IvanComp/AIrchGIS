@@ -1,5 +1,7 @@
+import base64
 import hashlib
 import importlib.util
+import io
 import json
 import math
 import sys
@@ -12,7 +14,7 @@ import folium
 import numpy as np
 import streamlit as st
 import streamlit.components.v1 as components
-from folium.plugins import Draw
+from folium.plugins import Draw, MeasureControl
 from PIL import Image, ImageDraw
 from streamlit_folium import st_folium
 from xml.sax.saxutils import escape as xml_escape
@@ -80,6 +82,8 @@ def init_rvt_state(core):
         "as_rvt_basemap_on": False,
         "as_rvt_basemap_mix": 0.35,
         "as_rvt_basemap_year": "Current",
+        "as_rvt_image_tool": "coordinate",
+        "as_rvt_last_click_info": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -124,9 +128,9 @@ def render_rvt_controls(core):
 
     quick_cols = st.columns(2)
     with quick_cols[0]:
-        st.link_button("MASE", core.MASE_URL, width="stretch")
+        st.link_button("🛰️ MASE", core.MASE_URL, width="stretch")
     with quick_cols[1]:
-        st.link_button("Google Earth", core.GE_URL, width="stretch")
+        st.link_button("🌍 Google Earth", core.GE_URL, width="stretch")
 
     mode = st.selectbox("Base", core.BASE_IMAGE_OPTIONS, index=1, key="as_rvt_base_mode")
 
@@ -407,8 +411,7 @@ def render_rvt_viewer(core, data, params):
         return
 
     st.caption(status)
-    display_img = rgb_to_image(rgb)
-    st.image(display_img, width="stretch")
+    render_view_toolbar(core, data, rgb)
 
     action_tabs = st.tabs(["Export", "Griglia metodi", "3D Cloud", "Report"])
     with action_tabs[0]:
@@ -419,6 +422,111 @@ def render_rvt_viewer(core, data, params):
         render_3d_cloud(core, data, params)
     with action_tabs[3]:
         render_report(core, data, params, rgb)
+
+
+def render_view_toolbar(core, data, rgb):
+    tool_cols = st.columns([0.08, 0.08, 0.84])
+    with tool_cols[0]:
+        if st.button(
+            "📍",
+            key="as_rvt_coordinate_tool_button",
+            help="Coordinate",
+            type="primary" if st.session_state.as_rvt_image_tool == "coordinate" else "secondary",
+            width="stretch",
+        ):
+            st.session_state.as_rvt_image_tool = "coordinate"
+            st.rerun()
+    with tool_cols[1]:
+        if st.button(
+            "📏",
+            key="as_rvt_measure_tool_button",
+            help="Misura",
+            type="primary" if st.session_state.as_rvt_image_tool == "measure" else "secondary",
+            width="stretch",
+        ):
+            st.session_state.as_rvt_image_tool = "measure"
+            st.rerun()
+
+    render_view_map(core, data, rgb)
+
+    info = st.session_state.get("as_rvt_last_click_info")
+    if info:
+        elevation = info.get("elevation")
+        elevation_text = "" if elevation is None else f" | quota {elevation:.2f} m"
+        st.code(
+            f"{info['dms']} | lat {info['lat']:.8f}, lon {info['lon']:.8f}"
+            f" | riga {info['row']}, colonna {info['col']}{elevation_text}",
+            language=None,
+        )
+
+
+def render_view_map(core, data, rgb):
+    bounds = bounds_lonlat(core, data)
+    if bounds is None:
+        st.image(rgb_to_image(rgb), width="stretch")
+        return
+
+    left, bottom, right, top = bounds
+    center = [(bottom + top) / 2.0, (left + right) / 2.0]
+    fmap = folium.Map(location=center, zoom_start=16, tiles=None, control_scale=True)
+    folium.TileLayer(
+        tiles=core.ARCGIS_CURRENT_TILE_TEMPLATE,
+        attr="Esri",
+        name="Satellite",
+        show=False,
+    ).add_to(fmap)
+    folium.raster_layers.ImageOverlay(
+        image=image_data_url(rgb_to_image(rgb)),
+        bounds=[[bottom, left], [top, right]],
+        name="RVT",
+        opacity=1.0,
+        interactive=False,
+    ).add_to(fmap)
+    folium.FitBounds([[bottom, left], [top, right]]).add_to(fmap)
+
+    info = st.session_state.get("as_rvt_last_click_info")
+    if info:
+        folium.CircleMarker(
+            location=[info["lat"], info["lon"]],
+            radius=6,
+            color="#ff3030",
+            fill=True,
+            fill_color="#ff3030",
+            fill_opacity=0.9,
+            tooltip=info["dms"],
+        ).add_to(fmap)
+
+    if st.session_state.as_rvt_image_tool == "measure":
+        MeasureControl(
+            position="topleft",
+            primary_length_unit="meters",
+            secondary_length_unit="kilometers",
+            primary_area_unit="sqmeters",
+            secondary_area_unit="hectares",
+            active_color="#ffdf4d",
+            completed_color="#ff3030",
+        ).add_to(fmap)
+
+    folium.LayerControl(collapsed=True).add_to(fmap)
+    result = st_folium(
+        fmap,
+        width=1200,
+        height=720,
+        key=f"as_rvt_view_map_{st.session_state.as_rvt_image_tool}",
+        returned_objects=["last_clicked"],
+    )
+    click = result.get("last_clicked") if result else None
+    if click:
+        info = click_info(core, data, click)
+        if info:
+            st.session_state.as_rvt_last_click_info = info
+
+
+def image_data_url(image):
+    buf = io.BytesIO()
+    image.save(buf, format="PNG", optimize=True)
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def dataset_options(data):
@@ -827,11 +935,14 @@ def render_report(core, data, params, rgb):
         notes = st.text_area("Note", key="as_rvt_report_notes", height=90)
         max_row = int(data.dtm.shape[0] - 1)
         max_col = int(data.dtm.shape[1] - 1)
+        last_click = st.session_state.get("as_rvt_last_click_info") or {}
+        default_row = min(max(int(last_click.get("row", max_row // 2)), 0), max_row)
+        default_col = min(max(int(last_click.get("col", max_col // 2)), 0), max_col)
         c1, c2 = st.columns(2)
         with c1:
-            row = st.number_input("Riga", min_value=0, max_value=max_row, value=max_row // 2, step=1)
+            row = st.number_input("Riga", min_value=0, max_value=max_row, value=default_row, step=1)
         with c2:
-            col = st.number_input("Colonna", min_value=0, max_value=max_col, value=max_col // 2, step=1)
+            col = st.number_input("Colonna", min_value=0, max_value=max_col, value=default_col, step=1)
         submitted = st.form_submit_button("Aggiungi punto")
 
     if submitted:
@@ -933,6 +1044,39 @@ def pixel_geo(core, data, row, col):
     lat_dms = core.decimal_to_dms(lat, "N", "S")
     lon_dms = core.decimal_to_dms(lon, "E", "W")
     return {"x": float(x), "y": float(y), "lat": lat, "lon": lon, "dms": f"{lat_dms}  {lon_dms}", "row": int(row), "col": int(col)}
+
+
+def click_info(core, data, click):
+    try:
+        lat = float(click["lat"])
+        lon = float(click["lng"])
+    except Exception:
+        return None
+
+    x = lon
+    y = lat
+    if data.crs is not None and data.crs.to_string() != "EPSG:4326":
+        try:
+            xs, ys = core.rasterio.warp.transform("EPSG:4326", data.crs, [lon], [lat])
+            x = float(xs[0])
+            y = float(ys[0])
+        except Exception:
+            return None
+
+    try:
+        row, col = core.rasterio.transform.rowcol(data.profile["transform"], x, y)
+    except Exception:
+        return None
+
+    row = int(row)
+    col = int(col)
+    if data.dtm is None or row < 0 or col < 0 or row >= data.dtm.shape[0] or col >= data.dtm.shape[1]:
+        return None
+
+    info = pixel_geo(core, data, row, col)
+    value = float(data.dtm[row, col])
+    info["elevation"] = value if np.isfinite(value) else None
+    return info
 
 
 def capture_report_crop(core, rgb01, col, row):
