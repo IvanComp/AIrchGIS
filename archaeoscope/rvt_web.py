@@ -160,9 +160,18 @@ def render_rvt_controls(core):
 
     method_values = available_methods(core)
     dataset_values = ["DTM", "DSM_First", "DSM_Last", "nDSM", "First-Last", "Original"]
+    waiting_for_map_dtm = source_mode == "DTM da mappa" and not source_payload.get("generated_dtm")
 
-    dataset = st.radio("Dataset", dataset_values, key="as_rvt_dataset", horizontal=False)
-    method = st.selectbox("Metodo RVT", method_values, key="as_rvt_method")
+    if waiting_for_map_dtm:
+        st.session_state.as_rvt_dataset = "DTM"
+        dataset = "DTM"
+        method = st.session_state.as_rvt_method
+        if method not in method_values:
+            method = "Hillshade" if "Hillshade" in method_values else method_values[0]
+            st.session_state.as_rvt_method = method
+    else:
+        dataset = st.radio("Dataset", dataset_values, key="as_rvt_dataset", horizontal=False)
+        method = st.selectbox("Metodo RVT", method_values, key="as_rvt_method")
 
     is_original = dataset == "Original"
     azimuth = st.slider("Azimuth", 0.0, 360.0, key="as_rvt_azimuth", disabled=is_original)
@@ -229,6 +238,16 @@ def render_regional_dtm_selector(core):
         st.error(str(exc))
         return
 
+    method_values = available_methods(core)
+    if st.session_state.as_rvt_method not in method_values:
+        st.session_state.as_rvt_method = "Hillshade" if "Hillshade" in method_values else method_values[0]
+    st.session_state.as_rvt_dataset = "DTM"
+    st.selectbox(
+        "Tipo di mappa da generare dal DTM",
+        method_values,
+        key="as_rvt_method",
+    )
+
     center = [(bounds[1] + bounds[3]) / 2.0, (bounds[0] + bounds[2]) / 2.0]
     fmap = folium.Map(location=center, zoom_start=8, tiles=None, control_scale=True)
     folium.TileLayer(
@@ -271,7 +290,7 @@ def render_regional_dtm_selector(core):
         returned_objects=["all_drawings"],
     )
 
-    if st.button("Genera DTM", type="primary", width="stretch"):
+    if st.button("Genera DTM e mostra mappa", type="primary", width="stretch"):
         drawings = draw.get("all_drawings") or []
         if not drawings:
             st.error("Disegna un rettangolo sulla mappa.")
