@@ -10,17 +10,18 @@ from .paths import LOGO_PATH
 from .rvt_web import render_rvt_web
 
 
+MASE_URL = "https://sim.mase.gov.it/portalediaccesso/mappe/#/viewer/new/"
+GOOGLE_EARTH_URL = (
+    "https://earth.google.com/web/@42.06329556,13.45871116,984.71472258a,"
+    "13332.72240541d,35y,0h,0t,0r/data=CgRCAggBMikKJwolCiExdXloZDBqRERpNUh"
+    "zdWs2c3V0SkxHY2VWQ1VFbkwtNFggAToDCgEwQgIIAEoNCP___________wEQAA"
+)
+
+
 def main():
     st.set_page_config(page_title="ArchaeoScope", layout="wide")
     init_state()
-    render_header()
-
-    tool = st.segmented_control(
-        "Tool",
-        ["RVT", "Crop Marks"],
-        key="as_active_tool",
-        label_visibility="collapsed",
-    )
+    tool = render_navbar()
     if tool == "RVT":
         render_rvt_web()
     else:
@@ -37,21 +38,72 @@ def init_state():
             st.session_state[key] = value
 
 
+def render_app_styles():
+    st.markdown(
+        """
+        <style>
+            .block-container {
+                padding-top: 2rem;
+            }
+            .as-brand {
+                font-size: 2.35rem;
+                font-weight: 800;
+                line-height: 1;
+                letter-spacing: 0;
+                margin: 0;
+            }
+            .as-nav-rule {
+                border-bottom: 1px solid rgba(130, 145, 170, 0.24);
+                margin: 0.75rem 0 1.75rem;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_navbar():
+    render_app_styles()
+    logo_col, title_col, tool_col, mase_col, earth_col = st.columns(
+        [0.055, 0.34, 0.24, 0.14, 0.225],
+        gap="medium",
+        vertical_alignment="center",
+    )
+    with logo_col:
+        st.image(str(LOGO_PATH), width=56)
+    with title_col:
+        st.markdown('<div class="as-brand">ArchaeoScope</div>', unsafe_allow_html=True)
+    with tool_col:
+        tool = st.segmented_control(
+            "Tool",
+            ["RVT", "Crop Marks"],
+            key="as_active_tool",
+            label_visibility="collapsed",
+        )
+    with mase_col:
+        st.link_button("🛰️ MASE", MASE_URL, width="stretch")
+    with earth_col:
+        st.link_button("🌍 Google Earth", GOOGLE_EARTH_URL, width="stretch")
+    st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
+    return tool
+
+
 def render_header():
-    logo_col, title_col = st.columns([0.06, 0.94])
+    render_app_styles()
+    logo_col, title_col = st.columns([0.06, 0.94], vertical_alignment="center")
     with logo_col:
         st.image(str(LOGO_PATH), width=64)
     with title_col:
-        st.title("ArchaeoScope")
+        st.markdown('<div class="as-brand">ArchaeoScope</div>', unsafe_allow_html=True)
+    st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
 
 
 def render_cropmarks(standalone=False):
     if standalone:
         init_state()
         render_header()
-
-    st.title("Sentinel-2 crop marks enhancement")
-    st.write("Disegna un poligono o un rettangolo sulla mappa, imposta periodo e nuvole, poi avvia l'analisi.")
+        st.title("Sentinel-2 crop marks enhancement")
+        st.write("Disegna un poligono o un rettangolo sulla mappa, imposta periodo e nuvole, poi avvia l'analisi.")
 
     with st.sidebar:
         project = st.text_input("Google Earth Engine project", cropmarks.default_project(), key="as_crop_project")

@@ -30,9 +30,6 @@ def render_rvt_web():
     core = load_rvt_core()
     init_rvt_state(core)
 
-    st.title("RVT LiDAR Explorer")
-    render_external_links(core)
-
     controls, viewer = st.columns([0.28, 0.72], gap="large")
     with controls:
         params = render_rvt_controls(core)
@@ -49,14 +46,6 @@ def render_rvt_web():
             return
 
         render_rvt_viewer(core, data, params)
-
-
-def render_external_links(core):
-    cols = st.columns([0.16, 0.2, 0.64])
-    with cols[0]:
-        st.link_button("🛰️ MASE", core.MASE_URL, width="stretch")
-    with cols[1]:
-        st.link_button("🌍 Google Earth", core.GE_URL, width="stretch")
 
 
 @st.cache_resource(show_spinner=False)
