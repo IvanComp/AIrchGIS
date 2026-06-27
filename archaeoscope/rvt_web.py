@@ -31,12 +31,17 @@ def render_rvt_web():
     init_rvt_state(core)
 
     st.title("RVT LiDAR Explorer")
+    render_external_links(core)
 
     controls, viewer = st.columns([0.28, 0.72], gap="large")
     with controls:
         params = render_rvt_controls(core)
 
     with viewer:
+        if params["source_mode"] == "DTM da mappa" and not params["source_payload"].get("generated_dtm"):
+            render_regional_dtm_selector(core)
+            return
+
         data = current_rvt_data(core, params)
         if data is None or not data.loaded:
             msg = getattr(data, "error", None) if data is not None else None
@@ -44,6 +49,14 @@ def render_rvt_web():
             return
 
         render_rvt_viewer(core, data, params)
+
+
+def render_external_links(core):
+    cols = st.columns([0.16, 0.2, 0.64])
+    with cols[0]:
+        st.link_button("🛰️ MASE", core.MASE_URL, width="stretch")
+    with cols[1]:
+        st.link_button("🌍 Google Earth", core.GE_URL, width="stretch")
 
 
 @st.cache_resource(show_spinner=False)
@@ -124,13 +137,14 @@ def render_rvt_controls(core):
         source_payload["uploads"] = render_upload_controls(core)
 
     else:
-        source_payload["generated_dtm"] = render_regional_dtm_controls(core)
-
-    quick_cols = st.columns(2)
-    with quick_cols[0]:
-        st.link_button("🛰️ MASE", core.MASE_URL, width="stretch")
-    with quick_cols[1]:
-        st.link_button("🌍 Google Earth", core.GE_URL, width="stretch")
+        generated = st.session_state.as_rvt_generated_dtm
+        source_payload["generated_dtm"] = generated
+        if generated:
+            st.caption(Path(generated).name)
+            if st.button("Nuova area", width="stretch"):
+                st.session_state.as_rvt_generated_dtm = None
+                st.session_state.as_rvt_data_sig = None
+                st.rerun()
 
     mode = st.selectbox("Base", core.BASE_IMAGE_OPTIONS, index=1, key="as_rvt_base_mode")
 
@@ -203,24 +217,31 @@ def render_upload_controls(core):
     return uploads
 
 
-def render_regional_dtm_controls(core):
+def render_regional_dtm_selector(core):
     src = core.regional_dtm_source_path(RVT_DIR)
     if not src.exists():
         st.warning("DTM regionale non trovato.")
-        return st.session_state.as_rvt_generated_dtm
+        return
 
     try:
         bounds = core.raster_bounds_lonlat(src)
     except Exception as exc:
         st.error(str(exc))
-        return st.session_state.as_rvt_generated_dtm
+        return
 
     center = [(bounds[1] + bounds[3]) / 2.0, (bounds[0] + bounds[2]) / 2.0]
-    fmap = folium.Map(location=center, zoom_start=8, tiles=None)
+    fmap = folium.Map(location=center, zoom_start=8, tiles=None, control_scale=True)
     folium.TileLayer(
         tiles=core.ARCGIS_CURRENT_TILE_TEMPLATE,
         attr="Esri",
-        name="Satellite",
+        name="Satellite attuale",
+        show=True,
+    ).add_to(fmap)
+    folium.TileLayer(
+        tiles="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        attr="CartoDB",
+        name="Mappa con citta",
+        show=False,
     ).add_to(fmap)
     folium.Rectangle(
         bounds=[[bounds[1], bounds[0]], [bounds[3], bounds[2]]],
@@ -241,7 +262,14 @@ def render_regional_dtm_controls(core):
         },
         edit_options={"edit": True},
     ).add_to(fmap)
-    draw = st_folium(fmap, width=420, height=300, key="as_rvt_regional_map", returned_objects=["all_drawings"])
+    folium.LayerControl(collapsed=False).add_to(fmap)
+    draw = st_folium(
+        fmap,
+        width=1200,
+        height=720,
+        key="as_rvt_regional_map",
+        returned_objects=["all_drawings"],
+    )
 
     if st.button("Genera DTM", type="primary", width="stretch"):
         drawings = draw.get("all_drawings") or []
@@ -257,10 +285,6 @@ def render_regional_dtm_controls(core):
             st.session_state.as_rvt_generated_dtm = str(out_path)
             st.session_state.as_rvt_data_sig = None
             st.rerun()
-
-    if st.session_state.as_rvt_generated_dtm:
-        st.caption(Path(st.session_state.as_rvt_generated_dtm).name)
-    return st.session_state.as_rvt_generated_dtm
 
 
 def save_uploaded_rasters(core, files, dataset_key):
