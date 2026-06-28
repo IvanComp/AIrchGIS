@@ -12,12 +12,18 @@ BANDS = ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B11", "B12"]
 INDEX_BANDS = [
     "NDVI",
     "GNDVI",
-    "SAVI",
+    "DVI",
+    "GDVI",
+    "GRVI",
     "SR",
+    "EVI",
+    "MCARI",
+    "SAVI",
+    "NDMI",
+    "NDWI",
+    "MSI",
     "Crop_band",
     "Soil_band",
-    "NDMI",
-    "MSI",
     "TCT_brightness",
     "TCT_greenness",
     "TCT_wetness",
@@ -31,12 +37,18 @@ PCA_BANDS = [
     "B12",
     "NDVI",
     "GNDVI",
-    "SAVI",
+    "DVI",
+    "GDVI",
+    "GRVI",
     "SR",
+    "EVI",
+    "MCARI",
+    "SAVI",
+    "NDMI",
+    "NDWI",
+    "MSI",
     "Crop_band",
     "Soil_band",
-    "NDMI",
-    "MSI",
     "TCT_brightness",
     "TCT_greenness",
     "TCT_wetness",
@@ -132,14 +144,14 @@ def add_indices(img):
         img.normalizedDifference(["B8", "B3"]).rename("GNDVI"),
         img.expression("B8-B4", v).rename("DVI"),
         img.expression("B8-B3", v).rename("GDVI"),
-        img.expression("B8/B3", v).rename("GRVI"),
-        img.expression("B8/B4", v).rename("SR"),
-        img.expression("2.5*((B8-B4)/(B8+6*B4-7.5*B2+1))", v).rename("EVI"),
-        img.expression("((B5-B4)-0.2*(B5-B3))*(B5/B4)", v).rename("MCARI"),
+        img.expression("B8/(B3+0.0001)", v).rename("GRVI"),
+        img.expression("B8/(B4+0.0001)", v).rename("SR"),
+        img.expression("2.5*((B8-B4)/(B8+6*B4-7.5*B2+1+0.0001))", v).rename("EVI"),
+        img.expression("((B5-B4)-0.2*(B5-B3))*(B5/(B4+0.0001))", v).rename("MCARI"),
         img.expression("1.5*(B8-B4)/(B8+B4+0.5)", v).rename("SAVI"),
         img.expression("(B8-B11)/(B8+B11)", v).rename("NDMI"),
         img.expression("(B8-B11)/(B8+B11)", v).rename("NDWI"),
-        img.expression("B11/B8", v).rename("MSI"),
+        img.expression("B11/(B8+0.0001)", v).rename("MSI"),
         img.expression("-0.38*B3-0.71*B2+0.2*B4-0.56*B8", v).rename("Crop_band"),
         img.expression("0.09*B2+0.27*B3-0.71*B4-0.65*B8", v).rename("Soil_band"),
         img.expression("0.3037*B2+0.2793*B3+0.4743*B4+0.5585*B8+0.5082*B11+0.1863*B12", v).rename(
@@ -238,12 +250,31 @@ def z(img, band, aoi):
     return img.select(band).subtract(mean).divide(stddev).abs().rename("Z_" + band)
 
 
+def local_deficit_z(img, band, radius=60):
+    kernel = ee.Kernel.circle(radius=radius, units="meters")
+    band_img = img.select(band)
+    local_mean = band_img.reduceNeighborhood(ee.Reducer.mean(), kernel)
+    local_std = band_img.reduceNeighborhood(ee.Reducer.stdDev(), kernel).max(ee.Image.constant(0.0001))
+    deficit = local_mean.subtract(band_img).divide(local_std).max(ee.Image.constant(0))
+    return deficit.rename("deficit")
+
+
+def vegetation_deficit(img):
+    deficits = [
+        local_deficit_z(img, "NDVI"),
+        local_deficit_z(img, "GNDVI"),
+        local_deficit_z(img, "SAVI"),
+        local_deficit_z(img, "TCT_greenness"),
+    ]
+    return ee.ImageCollection(deficits).mean().rename("Vegetation_deficit")
+
+
 def anomalies(img, aoi):
     zs = [z(img, band, aoi) for band in ["NDVI", "GNDVI", "Crop_band", "Soil_band", "NDMI", "TCT_greenness"]]
     anomaly = ee.ImageCollection(zs).sum().rename("Anomaly_score")
     local = anomaly.subtract(anomaly.focal_mean(radius=60, units="meters")).rename("Local_contrast")
     edges = ee.Algorithms.CannyEdgeDetector(local, 0.7, 1).rename("Edges")
-    return anomaly.addBands(local).addBands(edges).float()
+    return anomaly.addBands(local).addBands(edges).addBands(vegetation_deficit(img)).float()
 
 
 def tile(img, vis):
@@ -314,12 +345,18 @@ def run_analysis(project, start, end, cloud, topn, mode, export, folder, geojson
                 "B12",
                 "NDVI",
                 "GNDVI",
-                "SAVI",
+                "DVI",
+                "GDVI",
+                "GRVI",
                 "SR",
+                "EVI",
+                "MCARI",
+                "SAVI",
+                "NDMI",
+                "NDWI",
+                "MSI",
                 "Crop_band",
                 "Soil_band",
-                "NDMI",
-                "MSI",
                 "TCT_brightness",
                 "TCT_greenness",
                 "TCT_wetness",
@@ -337,9 +374,21 @@ def run_analysis(project, start, end, cloud, topn, mode, export, folder, geojson
     add_tile(layers, "Healthy vegetation 8-11-2", base, {"bands": ["B8", "B11", "B2"], "min": 0.02, "max": 0.45})
     add_tile(layers, "NDVI", base.select("NDVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]})
     add_tile(layers, "GNDVI", base.select("GNDVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]})
+    add_tile(layers, "DVI", base.select("DVI"), {"min": -0.2, "max": 0.6, "palette": ["313695", "ffffbf", "1a9850"]})
+    add_tile(layers, "GDVI", base.select("GDVI"), {"min": -0.2, "max": 0.6, "palette": ["313695", "ffffbf", "1a9850"]})
+    add_tile(layers, "GRVI", base.select("GRVI"), {"min": 0, "max": 8, "palette": ["542788", "f7f7f7", "1a9850"]})
+    add_tile(layers, "Simple ratio", base.select("SR"), {"min": 0, "max": 8, "palette": ["542788", "f7f7f7", "1a9850"]})
+    add_tile(layers, "EVI", base.select("EVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]})
+    add_tile(layers, "MCARI", base.select("MCARI"), {"min": -0.2, "max": 0.4, "palette": ["2166ac", "f7f7f7", "b2182b"]})
+    add_tile(layers, "SAVI", base.select("SAVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]})
+    add_tile(layers, "NDMI", base.select("NDMI"), {"min": -0.6, "max": 0.6, "palette": ["8c510a", "f6e8c3", "01665e"]})
+    add_tile(layers, "NDWI", base.select("NDWI"), {"min": -0.6, "max": 0.6, "palette": ["8c510a", "f6e8c3", "01665e"]})
+    add_tile(layers, "MSI", base.select("MSI"), {"min": 0.4, "max": 2.5, "palette": ["01665e", "f6e8c3", "8c510a"]})
     add_tile(layers, "Crop band", base.select("Crop_band"), {"min": -0.9, "max": 0.1, "palette": ["542788", "f7f7f7", "b35806"]})
     add_tile(layers, "Soil band", base.select("Soil_band"), {"min": -1.0, "max": 0.2, "palette": ["2166ac", "f7f7f7", "b2182b"]})
-    add_tile(layers, "NDMI", base.select("NDMI"), {"min": -0.6, "max": 0.6, "palette": ["8c510a", "f6e8c3", "01665e"]})
+    add_tile(layers, "TCT brightness", base.select("TCT_brightness"), {"min": -0.2, "max": 0.8, "palette": ["000004", "f89540", "fcfdbf"]})
+    add_tile(layers, "TCT greenness", base.select("TCT_greenness"), {"min": -0.3, "max": 0.5, "palette": ["542788", "f7f7f7", "1a9850"]})
+    add_tile(layers, "TCT wetness", base.select("TCT_wetness"), {"min": -0.4, "max": 0.4, "palette": ["8c510a", "f6e8c3", "01665e"]})
     add_tile(
         layers,
         "TCT RGB",
@@ -350,6 +399,12 @@ def run_analysis(project, start, end, cloud, topn, mode, export, folder, geojson
     add_tile(layers, "PCA PC2-PC3-PC4", pcs, {"bands": ["PC2", "PC3", "PC4"], "min": -2, "max": 2})
     add_tile(layers, "Anomaly score", an.select("Anomaly_score"), {"min": 0, "max": 10, "palette": ["000000", "ffff00", "ff0000"]})
     add_tile(layers, "Local contrast", an.select("Local_contrast"), {"min": -2, "max": 2, "palette": ["0000ff", "ffffff", "ff0000"]})
+    add_tile(
+        layers,
+        "Possibili strutture - erba bassa",
+        an.select("Vegetation_deficit"),
+        {"min": 0, "max": 2.5, "palette": ["ffffff", "ffd166", "ef476f", "6a040f"]},
+    )
     add_tile(layers, "Edges", an.select("Edges"), {"min": 0, "max": 1, "palette": ["000000", "00ffff"]})
 
     try:

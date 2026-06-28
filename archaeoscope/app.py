@@ -32,6 +32,7 @@ def init_state():
     for key, value in {
         "as_crop_result": None,
         "as_crop_geometry": None,
+        "as_crop_active_layer": None,
         "as_active_tool": "RVT",
     }.items():
         if key not in st.session_state:
@@ -179,6 +180,14 @@ def render_cropmarks(standalone=False):
         st.info("La tabella ordina le date con maggiore contrasto spettrale. Lo score non e una probabilita archeologica.")
 
         st.subheader("Mappa dei layer generati")
+        layer_names = list(result["layers"].keys())
+        if st.session_state.as_crop_active_layer not in layer_names:
+            st.session_state.as_crop_active_layer = "False color 8-4-3" if "False color 8-4-3" in layer_names else layer_names[0]
+        active_layer = st.selectbox(
+            "Filtro",
+            layer_names,
+            key="as_crop_active_layer",
+        )
         result_map = folium.Map(location=result["center"], zoom_start=14, tiles=None)
         cropmarks.add_base_tiles(result_map, esri_show=True)
         folium.GeoJson(
@@ -186,10 +195,9 @@ def render_cropmarks(standalone=False):
             name="AOI",
             style_function=lambda _x: {"color": "yellow", "weight": 2, "fillOpacity": 0},
         ).add_to(result_map)
-        for name, url in result["layers"].items():
-            cropmarks.add_layer(result_map, url, name, show=(name == "False color 8-4-3"))
+        cropmarks.add_layer(result_map, result["layers"][active_layer], active_layer, show=True)
         folium.LayerControl(collapsed=False).add_to(result_map)
-        st_folium(result_map, width=1200, height=760, key="as_crop_result_map", returned_objects=[])
+        st_folium(result_map, width=1200, height=760, key=f"as_crop_result_map_{active_layer}", returned_objects=[])
 
         cols = st.columns(3)
         with cols[0]:
@@ -201,7 +209,7 @@ def render_cropmarks(standalone=False):
             if result["task_id"]:
                 st.success("Export Drive avviato. Task ID: " + result["task_id"])
         with cols[2]:
-            st.write("Layer utili: False color, Crop band, Soil band, TCT RGB, PCA, Local contrast.")
+            st.write("Layer utili: False color, Crop band, Soil band, Possibili strutture - erba bassa, Local contrast.")
 
 if __name__ == "__main__":
     main()

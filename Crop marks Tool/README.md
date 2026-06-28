@@ -65,6 +65,7 @@ Anomalie candidate:
 
 - Anomaly_score
 - Local_contrast
+- Possibili strutture - erba bassa
 - Edges
 
 ## Requisiti
