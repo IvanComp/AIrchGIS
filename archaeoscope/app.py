@@ -43,6 +43,16 @@ def render_app_styles():
     st.markdown(
         """
         <style>
+            :root {
+                --as-brown-900: #15100b;
+                --as-brown-800: #21170f;
+                --as-brown-700: #302014;
+                --as-brown-600: #4a2c16;
+                --as-gold-500: #d4af37;
+                --as-gold-400: #f1c75b;
+                --as-text: #f7ecd7;
+                --as-muted: #c7b899;
+            }
             header[data-testid="stHeader"],
             div[data-testid="stToolbar"],
             div[data-testid="stDecoration"],
@@ -55,11 +65,19 @@ def render_app_styles():
                 display: none;
                 visibility: hidden;
             }
+            .stApp {
+                background: var(--as-brown-900);
+                color: var(--as-text);
+            }
             .block-container {
                 padding-top: 1.4rem;
             }
+            section[data-testid="stSidebar"] {
+                background-color: var(--as-brown-800);
+                border-right: 1px solid rgba(212, 175, 55, 0.18);
+            }
             .as-brand {
-                color: inherit;
+                color: var(--as-gold-400);
                 font-size: 1.35rem;
                 font-weight: 800;
                 line-height: 1;
@@ -68,8 +86,41 @@ def render_app_styles():
                 white-space: nowrap;
             }
             .as-nav-rule {
-                border-bottom: 1px solid rgba(130, 145, 170, 0.22);
+                border-bottom: 1px solid rgba(212, 175, 55, 0.32);
                 margin: 0.35rem 0 1.1rem;
+            }
+            div[data-testid="stButton"] > button,
+            div[data-testid="stLinkButton"] > a {
+                background: var(--as-brown-800);
+                border: 1px solid rgba(212, 175, 55, 0.36);
+                color: var(--as-text);
+                font-weight: 700;
+            }
+            div[data-testid="stButton"] > button:hover,
+            div[data-testid="stLinkButton"] > a:hover {
+                background: var(--as-brown-700);
+                border-color: var(--as-gold-500);
+                color: var(--as-gold-400);
+            }
+            div[data-testid="stButton"] > button[kind="primary"] {
+                background: linear-gradient(180deg, var(--as-gold-400), var(--as-gold-500));
+                border-color: var(--as-gold-400);
+                color: #171008;
+            }
+            div[data-testid="stRadio"] [role="radiogroup"] label,
+            div[data-testid="stCheckbox"] label,
+            div[data-testid="stSlider"] label,
+            div[data-testid="stSelectbox"] label {
+                color: var(--as-text);
+            }
+            div[data-baseweb="select"] > div,
+            div[data-testid="stTextInput"] input,
+            div[data-testid="stNumberInput"] input,
+            div[data-testid="stDateInput"] input,
+            textarea {
+                background-color: var(--as-brown-700);
+                border-color: rgba(212, 175, 55, 0.28);
+                color: var(--as-text);
             }
         </style>
         """,
@@ -80,7 +131,7 @@ def render_app_styles():
 def render_navbar():
     render_app_styles()
     logo_col, title_col, tool_col, mase_col, earth_col, _spacer = st.columns(
-        [0.035, 0.16, 0.20, 0.10, 0.14, 0.365],
+        [0.035, 0.15, 0.19, 0.09, 0.14, 0.395],
         gap="small",
         vertical_alignment="center",
     )
@@ -89,19 +140,30 @@ def render_navbar():
     with title_col:
         st.markdown('<div class="as-brand">ArchaeoScope</div>', unsafe_allow_html=True)
     with tool_col:
-        tool = st.segmented_control(
-            "Tool",
-            ["RVT", "Crop Marks"],
-            key="as_active_tool",
-            label_visibility="collapsed",
-            width="content",
-        )
+        tool = render_tool_switch()
     with mase_col:
         st.link_button("🛰️ MASE", MASE_URL, width="content")
     with earth_col:
         st.link_button("🌍 Google Earth", GOOGLE_EARTH_URL, width="content")
     st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
     return tool
+
+
+def render_tool_switch():
+    active = st.session_state.as_active_tool
+    rvt_col, crop_col = st.columns(2, gap="small")
+    with rvt_col:
+        if st.button("RVT", key="as_nav_rvt", type="primary" if active == "RVT" else "secondary", width="stretch"):
+            st.session_state.as_active_tool = "RVT"
+    with crop_col:
+        if st.button(
+            "Crop Marks",
+            key="as_nav_crop",
+            type="primary" if active == "Crop Marks" else "secondary",
+            width="stretch",
+        ):
+            st.session_state.as_active_tool = "Crop Marks"
+    return st.session_state.as_active_tool
 
 
 def render_header():

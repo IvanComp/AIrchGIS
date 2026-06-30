@@ -459,7 +459,6 @@ def render_rvt_viewer(core, data, params):
         st.error(str(exc))
         return
 
-    st.caption(status)
     render_view_toolbar(core, data, rgb, params)
 
     action_tabs = st.tabs(["Export", "Griglia metodi", "3D Cloud", "Report"])
