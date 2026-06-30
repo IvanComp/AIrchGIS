@@ -43,8 +43,20 @@ def render_app_styles():
     st.markdown(
         """
         <style>
+            header[data-testid="stHeader"],
+            div[data-testid="stToolbar"],
+            div[data-testid="stDecoration"],
+            div[data-testid="stStatusWidget"],
+            div[data-testid="stDeployButton"],
+            button[data-testid="stDeployButton"],
+            .stDeployButton,
+            #MainMenu,
+            footer {
+                display: none;
+                visibility: hidden;
+            }
             .block-container {
-                padding-top: 1rem;
+                padding-top: 1.4rem;
             }
             .as-brand {
                 color: inherit;
@@ -68,7 +80,7 @@ def render_app_styles():
 def render_navbar():
     render_app_styles()
     logo_col, title_col, tool_col, mase_col, earth_col, _spacer = st.columns(
-        [0.04, 0.18, 0.25, 0.11, 0.16, 0.26],
+        [0.035, 0.16, 0.20, 0.10, 0.14, 0.365],
         gap="small",
         vertical_alignment="center",
     )
