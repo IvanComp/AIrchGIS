@@ -69,6 +69,7 @@ def init_rvt_state(core):
         "as_rvt_generated_dtm": None,
         "as_rvt_report_items": [],
         "as_rvt_last_rgb": None,
+        "as_rvt_last_rvt_rgb": None,
         "as_rvt_last_out": None,
         "as_rvt_last_status": "",
         "as_rvt_dataset": "DTM",
@@ -84,6 +85,7 @@ def init_rvt_state(core):
         "as_rvt_basemap_on": False,
         "as_rvt_basemap_mix": 0.35,
         "as_rvt_basemap_year": "Current",
+        "as_rvt_overlay_opacity": 1.0,
         "as_rvt_image_tool": "coordinate",
         "as_rvt_last_click_info": None,
         "as_rvt_dtm_map_view": "Satellite attuale",
@@ -174,9 +176,14 @@ def render_rvt_controls(core):
     invert = st.checkbox("Invert", key="as_rvt_invert", disabled=is_original)
 
     basemap_years = ["Current"] + cached_wayback_years(core)
-    basemap_on = st.checkbox("Basemap", key="as_rvt_basemap_on", disabled=is_original)
-    basemap_mix = st.slider("Mix basemap", 0.0, 1.0, key="as_rvt_basemap_mix", disabled=(is_original or not basemap_on))
-    basemap_year = st.selectbox("Original", basemap_years, key="as_rvt_basemap_year")
+    basemap_year = st.selectbox("Originale", basemap_years, key="as_rvt_basemap_year")
+    overlay_opacity = st.slider(
+        "Opacita RVT su Originale",
+        0.0,
+        1.0,
+        key="as_rvt_overlay_opacity",
+        help="1 mostra solo RVT, 0 mostra solo l'immagine originale sottostante.",
+    )
 
     return {
         "source_mode": source_mode,
@@ -192,8 +199,9 @@ def render_rvt_controls(core):
         "p_low": p_low,
         "p_high": p_high,
         "invert": invert,
-        "basemap_on": basemap_on,
-        "basemap_mix": basemap_mix,
+        "basemap_on": overlay_opacity < 1.0,
+        "basemap_mix": 1.0 - overlay_opacity,
+        "overlay_opacity": overlay_opacity,
         "basemap_year": basemap_year,
     }
 
@@ -345,6 +353,7 @@ def current_rvt_data(core, params):
     st.session_state.as_rvt_data = data
     st.session_state.as_rvt_data_sig = sig
     st.session_state.as_rvt_last_rgb = None
+    st.session_state.as_rvt_last_rvt_rgb = None
     st.session_state.as_rvt_last_out = None
     return data
 
@@ -442,9 +451,14 @@ def render_rvt_viewer(core, data, params):
         params["dataset"] = available[0] if available else "DTM"
 
     try:
-        with st.spinner("Calcolo RVT..."):
+        if params["dataset"] == "Original":
             rgb, raw_out, status = compose_current_view(core, data, params)
+        else:
+            with st.spinner("Calcolo RVT..."):
+                rgb, raw_out, status = compose_current_view(core, data, params)
         st.session_state.as_rvt_last_rgb = rgb
+        if rgb is not None and params["dataset"] != "Original":
+            st.session_state.as_rvt_last_rvt_rgb = rgb
         st.session_state.as_rvt_last_out = raw_out
         st.session_state.as_rvt_last_status = status
     except Exception as exc:
@@ -452,7 +466,7 @@ def render_rvt_viewer(core, data, params):
         return
 
     st.caption(status)
-    render_view_toolbar(core, data, rgb)
+    render_view_toolbar(core, data, rgb, params)
 
     action_tabs = st.tabs(["Export", "Griglia metodi", "3D Cloud", "Report"])
     with action_tabs[0]:
@@ -465,7 +479,7 @@ def render_rvt_viewer(core, data, params):
         render_report(core, data, params, rgb)
 
 
-def render_view_toolbar(core, data, rgb):
+def render_view_toolbar(core, data, rgb, params):
     tool_cols = st.columns([0.08, 0.08, 0.84])
     with tool_cols[0]:
         if st.button(
@@ -488,7 +502,7 @@ def render_view_toolbar(core, data, rgb):
             st.session_state.as_rvt_image_tool = "measure"
             st.rerun()
 
-    render_view_map(core, data, rgb)
+    render_view_map(core, data, rgb, params)
 
     info = st.session_state.get("as_rvt_last_click_info")
     if info:
@@ -501,28 +515,34 @@ def render_view_toolbar(core, data, rgb):
         )
 
 
-def render_view_map(core, data, rgb):
+def render_view_map(core, data, rgb, params):
     bounds = bounds_lonlat(core, data)
     if bounds is None:
-        st.image(rgb_to_image(rgb), width="stretch")
+        if rgb is None:
+            st.warning("Mappa originale non disponibile per questa area.")
+        else:
+            st.image(rgb_to_image(rgb), width="stretch")
         return
 
     left, bottom, right, top = bounds
     center = [(bottom + top) / 2.0, (left + right) / 2.0]
     fmap = folium.Map(location=center, zoom_start=16, tiles=None, control_scale=True)
     folium.TileLayer(
-        tiles=core.ARCGIS_CURRENT_TILE_TEMPLATE,
+        tiles=satellite_template(core, params["basemap_year"]),
         attr="Esri",
-        name="Satellite",
-        show=False,
+        name=f"Originale {params['basemap_year']}",
+        show=True,
     ).add_to(fmap)
-    folium.raster_layers.ImageOverlay(
-        image=image_data_url(rgb_to_image(rgb)),
-        bounds=[[bottom, left], [top, right]],
-        name="RVT",
-        opacity=1.0,
-        interactive=False,
-    ).add_to(fmap)
+    overlay_rgb = st.session_state.get("as_rvt_last_rvt_rgb") if params["dataset"] == "Original" else rgb
+    overlay_opacity = max(0.0, min(1.0, float(params["overlay_opacity"])))
+    if overlay_rgb is not None and overlay_opacity > 0.0:
+        folium.raster_layers.ImageOverlay(
+            image=image_data_url(rgb_to_image(overlay_rgb)),
+            bounds=[[bottom, left], [top, right]],
+            name="RVT",
+            opacity=overlay_opacity,
+            interactive=False,
+        ).add_to(fmap)
     folium.FitBounds([[bottom, left], [top, right]]).add_to(fmap)
 
     info = st.session_state.get("as_rvt_last_click_info")
@@ -553,7 +573,7 @@ def render_view_map(core, data, rgb):
         fmap,
         width=1200,
         height=720,
-        key=f"as_rvt_view_map_{st.session_state.as_rvt_image_tool}",
+        key=f"as_rvt_view_map_{st.session_state.as_rvt_image_tool}_{params['dataset']}_{params['basemap_year']}_{int(overlay_opacity * 100)}",
         returned_objects=["last_clicked"],
     )
     click = result.get("last_clicked") if result else None
@@ -646,10 +666,7 @@ def get_dataset_array(data, dataset):
 def compose_current_view(core, data, params):
     dataset = params["dataset"]
     if dataset == "Original":
-        rgb = satellite_for_data(core, data, params, data.dtm.shape[1], data.dtm.shape[0])
-        if rgb is None:
-            raise RuntimeError("Satellite non disponibile per questa area.")
-        return rgb, None, f"Original | Satellite {params['basemap_year']}"
+        return None, None, f"Original | Satellite {params['basemap_year']}"
 
     dem = get_dataset_array(data, dataset)
     if dem is None:
@@ -665,13 +682,6 @@ def compose_current_view(core, data, params):
     rgba = cmap(np.nan_to_num(disp, nan=0.0))
     over_rgb = np.asarray(rgba[:, :, :3], dtype=np.float32)
     over_rgb[~np.isfinite(disp)] = 0.0
-
-    if params["basemap_on"]:
-        base = satellite_for_data(core, data, params, over_rgb.shape[1], over_rgb.shape[0])
-        if base is not None:
-            mix = max(0.0, min(1.0, float(params["basemap_mix"])))
-            alpha_over = 1.0 - mix
-            over_rgb = np.clip(base * (1.0 - alpha_over) + over_rgb * alpha_over, 0.0, 1.0)
 
     finite = np.isfinite(out)
     if finite.any():
@@ -750,7 +760,7 @@ def render_exports(core, data, params, rgb, raw_out):
             path = export_tiff(core, data, params, raw_out)
             st.session_state.as_rvt_export_tiff = str(path)
     with cols[1]:
-        if st.button("Export .PNG", width="stretch"):
+        if st.button("Export .PNG", width="stretch", disabled=rgb is None):
             path = export_png(core, params, rgb)
             st.session_state.as_rvt_export_png = str(path)
     with cols[2]:
@@ -970,6 +980,12 @@ def load_original_dtm_surface(core, data):
 
 
 def render_report(core, data, params, rgb):
+    if rgb is None:
+        st.info("Il report immagine e disponibile sui layer RVT. In Original puoi comunque usare coordinate e misura sulla mappa.")
+        with st.expander("Coordinate e misura"):
+            render_measure_tools(core, data)
+        return
+
     st.session_state.as_rvt_report_items = st.session_state.get("as_rvt_report_items") or []
     with st.form("as_rvt_report_form", clear_on_submit=False):
         name = st.text_input("Nome posto", key="as_rvt_report_name")
