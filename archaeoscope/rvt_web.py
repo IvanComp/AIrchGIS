@@ -177,13 +177,7 @@ def render_rvt_controls(core):
 
     basemap_years = ["Current"] + cached_wayback_years(core)
     basemap_year = st.selectbox("Originale", basemap_years, key="as_rvt_basemap_year")
-    overlay_opacity = st.slider(
-        "Opacita RVT su Originale",
-        0.0,
-        1.0,
-        key="as_rvt_overlay_opacity",
-        help="1 mostra solo RVT, 0 mostra solo l'immagine originale sottostante.",
-    )
+    overlay_opacity = float(st.session_state.as_rvt_overlay_opacity)
 
     return {
         "source_mode": source_mode,
@@ -480,7 +474,7 @@ def render_rvt_viewer(core, data, params):
 
 
 def render_view_toolbar(core, data, rgb, params):
-    tool_cols = st.columns([0.08, 0.08, 0.84])
+    tool_cols = st.columns([0.08, 0.08, 0.32, 0.52], vertical_alignment="center")
     with tool_cols[0]:
         if st.button(
             "📍",
@@ -501,6 +495,14 @@ def render_view_toolbar(core, data, rgb, params):
         ):
             st.session_state.as_rvt_image_tool = "measure"
             st.rerun()
+    with tool_cols[2]:
+        st.slider(
+            "Opacita RVT su Originale",
+            0.0,
+            1.0,
+            key="as_rvt_overlay_opacity",
+            help="1 mostra solo RVT, 0 mostra solo l'immagine originale sottostante.",
+        )
 
     render_view_map(core, data, rgb, params)
 
