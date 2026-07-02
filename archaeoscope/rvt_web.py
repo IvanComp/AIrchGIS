@@ -24,6 +24,8 @@ from .paths import RVT_DIR
 
 RVT_UPLOAD_DIR = RVT_DIR / ".streamlit_uploads"
 RVT_OUTPUT_DIR = RVT_DIR / "output_rvt_gui"
+WEB_3D_LAS_MAX_POINTS = 500_000
+WEB_3D_BROWSER_MAX_SIDE = 950
 
 
 def render_rvt_web():
@@ -907,9 +909,10 @@ def render_3d_cloud(core, data, params):
     )
     if st.button("Crea 3D Cloud", type="primary", width="stretch"):
         with st.spinner("Preparazione 3D Cloud..."):
-            html_path, las_path = build_3d_cloud(core, data, params, cloud_key)
+            html_path, las_path, cloud_meta = build_3d_cloud(core, data, params, cloud_key)
         st.session_state.as_rvt_cloud_html = str(html_path)
         st.session_state.as_rvt_cloud_las = str(las_path)
+        st.session_state.as_rvt_cloud_meta = cloud_meta
 
     html_path = st.session_state.get("as_rvt_cloud_html")
     if html_path and Path(html_path).exists():
@@ -917,30 +920,36 @@ def render_3d_cloud(core, data, params):
         components.html(html, height=760, scrolling=True)
         las_path = st.session_state.get("as_rvt_cloud_las")
         if las_path and Path(las_path).exists():
+            meta = st.session_state.get("as_rvt_cloud_meta") or {}
+            total_points = int(meta.get("total_points") or 0)
+            exported_points = int(meta.get("preview_points") or 0)
+            if total_points and exported_points and exported_points < total_points:
+                st.caption(f".LAS campionato: {exported_points:,} punti su {total_points:,}.")
             st.download_button("Scarica .LAS", Path(las_path).read_bytes(), file_name=Path(las_path).name)
 
 
 def build_3d_cloud(core, data, params, cloud_key):
-    dtm, profile, crs = load_original_dtm_surface(core, data)
+    dtm, profile, crs = current_loaded_dtm_surface(data)
     out_dir = RVT_OUTPUT_DIR / "3d_cloud"
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{current_place_label(params)}__3DCloud__{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     las_path = out_dir / f"{stem}.las"
     html_path = out_dir / f"{stem}__{cloud_key}.html"
-    core.export_lads_las(
+    las_meta = core.export_lads_las(
         dtm,
         profile,
         crs,
         las_path,
         target_crs=core.LADS_TARGET_CRS,
         cloud_preprocess_key="original",
+        max_points=WEB_3D_LAS_MAX_POINTS,
     )
     terrain_grid = core.build_browser_terrain_grid(
         dtm,
         profile,
         crs,
         target_crs=core.LADS_TARGET_CRS,
-        max_side=core.LADS_BROWSER_MAX_SIDE,
+        max_side=min(core.LADS_BROWSER_MAX_SIDE, WEB_3D_BROWSER_MAX_SIDE),
         cloud_preprocess_key=cloud_key,
     )
     core.write_browser_cloud_viewer(
@@ -952,7 +961,21 @@ def build_3d_cloud(core, data, params, cloud_key):
         cloud_preprocess_options=[],
         current_cloud_preprocess_key=cloud_key,
     )
-    return html_path, las_path
+    return html_path, las_path, {
+        "total_points": int(las_meta.get("total_points") or 0),
+        "preview_points": int(las_meta.get("preview_points") or 0),
+        "sample_step": int(las_meta.get("sample_step") or 1),
+    }
+
+
+def current_loaded_dtm_surface(data):
+    if data.dtm is None:
+        raise RuntimeError("DTM non caricato.")
+    if data.profile is None or data.profile.get("transform") is None:
+        raise RuntimeError("Profilo georiferito del DTM non disponibile.")
+    if data.crs is None:
+        raise RuntimeError("CRS del DTM non disponibile.")
+    return data.dtm, data.profile, data.crs
 
 
 def load_original_dtm_surface(core, data):

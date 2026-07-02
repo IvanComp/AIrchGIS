@@ -1039,16 +1039,61 @@ def apply_cloud_preprocessing(dtm, cloud_preprocess_key="cloud1"):
     cfg = CLOUD_PREPROCESS_PROFILES.get(key)
     if cfg is None:
         raise RuntimeError(f"Cloud preprocessing non valido: {key}")
-    arr = np.asarray(dtm, dtype=np.float32).copy()
-    if cfg.get("sanitize"):
+    sanitize = bool(cfg.get("sanitize"))
+    sigma = float(cfg.get("sigma", 0.0) or 0.0)
+    blend = float(cfg.get("blend", 0.0) or 0.0)
+    passes = int(cfg.get("passes", 0) or 0)
+    arr = np.asarray(dtm, dtype=np.float32)
+    if not sanitize and sigma <= 0.0 and blend <= 0.0 and passes <= 0:
+        return arr
+    arr = arr.copy()
+    if sanitize:
         arr = _sanitize_surface_for_lads(arr)
     arr = _soft_smooth_surface(
         arr,
-        sigma=float(cfg.get("sigma", 0.0) or 0.0),
-        blend=float(cfg.get("blend", 0.0) or 0.0),
-        passes=int(cfg.get("passes", 0) or 0),
+        sigma=sigma,
+        blend=blend,
+        passes=passes,
     )
     return arr
+
+
+def _sample_valid_indices(valid, total_points, max_points):
+    limit = int(max_points or 0)
+    if limit <= 0 or total_points <= limit:
+        rows, cols = np.where(valid)
+        return rows, cols, 1
+
+    h, w = valid.shape
+    stride = max(1, int(math.ceil(math.sqrt(total_points / float(limit)))))
+    offsets = [0]
+    mid = stride // 2
+    if mid and mid not in offsets:
+        offsets.append(mid)
+
+    for row_offset in offsets:
+        for col_offset in offsets:
+            row_grid = np.arange(row_offset, h, stride, dtype=np.int32)
+            col_grid = np.arange(col_offset, w, stride, dtype=np.int32)
+            if row_grid.size == 0 or col_grid.size == 0:
+                continue
+            sample_valid = valid[np.ix_(row_grid, col_grid)]
+            sample_rows, sample_cols = np.where(sample_valid)
+            if sample_rows.size:
+                rows = row_grid[sample_rows]
+                cols = col_grid[sample_cols]
+                if rows.size > limit:
+                    keep = np.linspace(0, rows.size - 1, limit, dtype=np.int64)
+                    rows = rows[keep]
+                    cols = cols[keep]
+                return rows, cols, stride
+
+    rows, cols = np.where(valid)
+    if rows.size > limit:
+        keep = np.linspace(0, rows.size - 1, limit, dtype=np.int64)
+        rows = rows[keep]
+        cols = cols[keep]
+    return rows, cols, max(1, int(math.ceil(total_points / float(limit))))
 
 
 def build_lads_point_cloud(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS, max_points=LADS_MAX_POINTS, cloud_preprocess_key="original"):
@@ -1065,13 +1110,7 @@ def build_lads_point_cloud(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS, ma
     if total_points <= 0:
         raise RuntimeError("Il DTM non contiene celle valide.")
 
-    rows, cols = np.where(valid)
-    step = 1
-    if max_points is not None and int(max_points) > 0:
-        step = max(1, int(math.ceil(total_points / float(max_points))))
-    if step > 1:
-        rows = rows[::step]
-        cols = cols[::step]
+    rows, cols, step = _sample_valid_indices(valid, total_points, max_points)
 
     xs, ys = rasterio.transform.xy(profile["transform"], rows.tolist(), cols.tolist(), offset="center")
     xs = np.asarray(xs, dtype=np.float64)
@@ -1311,16 +1350,16 @@ def _encode_u8_base64(arr):
 
 
 def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS, max_side=LADS_BROWSER_MAX_SIDE, cloud_preprocess_key="cloud1"):
-    arr = apply_cloud_preprocessing(dtm, cloud_preprocess_key=cloud_preprocess_key)
+    source = np.asarray(dtm)
     cfg = CLOUD_PREPROCESS_PROFILES.get(cloud_preprocess_key, CLOUD_PREPROCESS_PROFILES["cloud1"])
-    if arr.ndim != 2:
+    if source.ndim != 2:
         raise RuntimeError("Il DTM browser deve essere mono-banda.")
     if profile is None or profile.get("transform") is None:
         raise RuntimeError("Transform georiferito non disponibile per il browser 3D.")
     if src_crs is None:
         raise RuntimeError("CRS del raster non disponibile per il browser 3D.")
 
-    h, w = arr.shape
+    h, w = source.shape
     if h <= 1 or w <= 1:
         raise RuntimeError("Raster troppo piccolo per il viewer 3D.")
     step = max(1, int(math.ceil(max(h, w) / float(max_side))))
@@ -1332,7 +1371,7 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
         cols = np.append(cols, w - 1)
 
     rr, cc = np.meshgrid(rows, cols, indexing="ij")
-    z_source = arr[np.ix_(rows, cols)].astype(np.float32)
+    z_source = apply_cloud_preprocessing(source[np.ix_(rows, cols)], cloud_preprocess_key=cloud_preprocess_key)
     if cfg.get("render_mode") == "relief_mesh":
         z_render, _residual = _enhance_local_relief(
             z_source,
@@ -1413,7 +1452,7 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
         "target_crs": _as_crs_text(dst_crs),
         "sample_step": int(step),
         "preview_points": int(valid.sum()),
-        "total_points": int(np.isfinite(arr).sum()),
+        "total_points": int(valid.sum()),
         "z_scale": float(z_scale),
         "cloud_preprocess_key": str(cloud_preprocess_key),
         "archaeology_candidates": opencv_candidates,
@@ -2118,7 +2157,15 @@ def write_browser_cloud_viewer(
     return output_html
 
 
-def export_lads_las(dtm, profile, src_crs, output_path, target_crs=LADS_TARGET_CRS, cloud_preprocess_key="original"):
+def export_lads_las(
+    dtm,
+    profile,
+    src_crs,
+    output_path,
+    target_crs=LADS_TARGET_CRS,
+    cloud_preprocess_key="original",
+    max_points=None,
+):
     if laspy is None:
         raise RuntimeError("Modulo `laspy` non disponibile per esportare .LAS.")
     if pyproj is None:
@@ -2129,7 +2176,7 @@ def export_lads_las(dtm, profile, src_crs, output_path, target_crs=LADS_TARGET_C
         profile,
         src_crs,
         target_crs=target_crs,
-        max_points=None,
+        max_points=max_points,
         cloud_preprocess_key=cloud_preprocess_key,
     )
     xs = np.asarray(cloud["x"], dtype=np.float64) + float(cloud["origin_x"])
