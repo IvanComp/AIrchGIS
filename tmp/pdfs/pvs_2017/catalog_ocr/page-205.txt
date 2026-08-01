@@ -1,0 +1,82 @@
+Ic RRT TW RC RP BG PM UP PD TS RG UG RD Br Ir RA
+021 153 3 4 $5 9% 4 2 3 I 8 6 3 l 1 13 4
+
+Date range Iron Age (9"-3" century BC), possible part of Roman Age site 099 (Late Republican-Imperial).
+
+Dating profile Iron Age Late Rep Early Imp Mid-Imp Late Ant
+Ss = ep ee Co
+
+References VERMEULEN et al. 2005, pp. 33-64; VERMEULEN ct al, 2006, p. 119.
+
+022 Toponym Coordinates (WGS84) Size (est.)
+
+Macerata, Cimarella 2 43332749", 13.414265° 0,002 ha (3x4 m)
+
+Interpretation —_ Rural settlement (small rural unit) (type /).
+
+Topography Located on an ancient river terrace dominating the valley of the Potenza river, northwest of the Roman
+town site of Ricina.
+
+Investigation Randomly surveyed and then identified by acrial photography in 2003.
+
+Artefacts Iron Age impasto pottery. Artefact density: 11000/ha_
+
+Site Ne Number of artefacts per material category
+CBM Ic LM PM RC RG
+022 22 2 13 1 FJ 2 1
+Date range Iron Age (9*-3" century BC).
+Dating profile Iron Age Late Rep Early Imp Mid-Imp Late Ant
+Gp cao cy a a
+References VERMEULEN et al, 2005, pp, 33-64; VERMEULEN et al, 2006, pp. 119-120,
+023 Toponym Coordinates (WGS84) Size (est.)
+Treia, Passo di Treia 43.288483°, 13.335061° 2.46 ha
+
+Interpretation —_ Iron age necropolis with at Icast three, connected monumental Picene burials surrounded by ditches (rype
+8).
+
+Topography Positioned on the first river terrace north of the river Potenza, near the Passo di Treia river crossing.
+
+Investigation Identified by aerial photography (2001), and then surveyed in 2003.
+
+Artefacts Iron Age pottery. Artefact density: 2.4/ha.
+
+Site Ne Number of artefacts per material category
+
+Ic Ww LM MC PM
+023 6 1 2 1 1 1
+Date range Iron Age.
+References VERMEULEN, BOULLART 2001; VERMEULEN et al. 2002, p. $7, BouULLART 2003, pp. 174-175.
+
+024 Teponym Coordinates (WGS84) Size (est.)
+
+Porto Recanati, Montarice 1 43 424233", 13.659868° 7 ha (350x200 m, including upper
+part of slopes)
+
+Interpretation —_ Large centralized and fortified multi-period nucleated settlement (type /0).
+
+Topography Hilltop plateau, part of an ancient river terrace located directly on the left bank of the river Potenza, at
+some 600 m from the current coastline.
+
+Investigation Previously known in literature, re-identified by acrial photography and a subsequent terrain check in 2000,
+followed by an intensive systematic intra-site grid survey in 2002 (30x30 m blocks), partial GPR and carth
+Tesistance survey's, augering and full-coverage geomagnetic prospections in 2012-2013.
+
+Artefacts Large quantities of Bronze and [ron Age pottery (c.g. Iron Age “buechero’ and Greek ware, painted ware,
+dolia, etc.), Small concentrations of Roman and Medieval pottery. Building materials (c.g. large pebbles
+as possible remains of a circuit wall). Total number of artefacts: 9326. Artefact density: 1332.3/ha
+
+Grid ne Number of artefacts per material category
+
+AB BG Br GI Ir IW LM LW Mont MP OrM PD RA RB RC RP RSSBM TS UG UP
+K99 108 1 1 77 #15 3
+K100 123 1 89 20 13
+KI101 144 619 9 1 36
+K102 120 41% § 3 ll
+K103 109 2 71 #21 1s
+K104 140 2 1112 8 17
+K105 485 2 : 17 458
+K106 193 \ 3 3 134 15 4 M
+K107 O45 5 6 597 13 i 13
+K108 193 1 3 2 6 181
+K109 188 9 1s4 4 1 20
+KI10 177 S$ 1 136 15 20

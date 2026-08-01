@@ -1,21 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="ArchaeoScope logo">
   <defs>
-    <linearGradient id="soil" x1="30" y1="226" x2="226" y2="30" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#d8843a"/>
-      <stop offset="0.48" stop-color="#4fb7a5"/>
-      <stop offset="1" stop-color="#b8ce68"/>
+    <linearGradient id="gold" x1="45" y1="35" x2="211" y2="221" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f1c75b"/>
+      <stop offset="1" stop-color="#d4af37"/>
     </linearGradient>
-    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000000" flood-opacity="0.28"/>
-    </filter>
   </defs>
-  <rect width="256" height="256" rx="56" fill="#11130f"/>
-  <circle cx="128" cy="128" r="86" fill="none" stroke="#383d32" stroke-width="10"/>
-  <path d="M50 154c28-25 48-24 76 0s49 26 80 0" fill="none" stroke="#d8843a" stroke-width="13" stroke-linecap="round"/>
-  <path d="M56 111c24-18 47-18 72 0s47 19 72 0" fill="none" stroke="#4fb7a5" stroke-width="11" stroke-linecap="round"/>
-  <path d="M78 79c16-10 30-10 50 0s34 10 50 0" fill="none" stroke="#b8ce68" stroke-width="9" stroke-linecap="round"/>
-  <path d="M128 48v160" stroke="#f4f0e8" stroke-width="8" stroke-linecap="round" opacity="0.92"/>
-  <path d="M83 196h90" stroke="#f4f0e8" stroke-width="8" stroke-linecap="round" opacity="0.92"/>
-  <circle cx="128" cy="128" r="43" fill="none" stroke="url(#soil)" stroke-width="13" filter="url(#soft)"/>
-  <circle cx="128" cy="128" r="13" fill="#f4f0e8"/>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="#15100b"/>
+  <rect x="13" y="13" width="230" height="230" rx="47" fill="none" stroke="#d4af37" stroke-opacity="0.38" stroke-width="6"/>
+
+  <path d="M43 86c28-24 59-32 89-23 22 7 40 5 62-11" fill="none" stroke="#f1c75b" stroke-opacity="0.42" stroke-width="9" stroke-linecap="round"/>
+  <path d="M38 119c27-19 51-23 76-13 18 7 32 7 48 0" fill="none" stroke="#f1c75b" stroke-opacity="0.32" stroke-width="8" stroke-linecap="round"/>
+  <path d="M42 153c23-14 45-16 66-7" fill="none" stroke="#f1c75b" stroke-opacity="0.24" stroke-width="8" stroke-linecap="round"/>
+
+  <circle cx="139" cy="126" r="57" fill="#21170f" fill-opacity="0.88" stroke="url(#gold)" stroke-width="14"/>
+  <circle cx="139" cy="126" r="36" fill="none" stroke="#f1c75b" stroke-opacity="0.22" stroke-width="7"/>
+  <path d="M179 167l38 38" fill="none" stroke="url(#gold)" stroke-width="20" stroke-linecap="round"/>
+
+  <path d="M111 143l28-62 29 62M122 121h34" fill="none" stroke="#f7ecd7" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

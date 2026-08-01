@@ -1,3 +1,4 @@
+import math
 import os
 from pathlib import Path
 
@@ -53,6 +54,24 @@ PCA_BANDS = [
     "TCT_greenness",
     "TCT_wetness",
 ]
+
+# Independent, broadly comparable signals used only to rank acquisition dates.
+# The divisors represent a useful spatial-contrast scale for each band and keep
+# ratio-like indices from dominating linear reflectance transforms.
+RANK_FEATURES = (
+    ("NDVI", 0.15, 1.0),
+    ("GNDVI", 0.15, 0.8),
+    ("SAVI", 0.15, 1.0),
+    ("NDMI", 0.12, 0.8),
+    ("Crop_band", 0.10, 0.8),
+    ("Soil_band", 0.10, 0.8),
+    ("TCT_greenness", 0.12, 0.8),
+)
+RANK_BANDS = [item[0] for item in RANK_FEATURES]
+TIMESERIES_BANDS = ["NDVI", "GNDVI", "SAVI", "NDMI", "TCT_greenness"]
+DEFAULT_PIXEL_CLOUD = 40
+DEFAULT_PERSISTENCE_THRESHOLD = 1.35
+DEFAULT_LOCAL_RADIUS = 60
 
 
 def default_project():
@@ -111,6 +130,37 @@ def center(g):
     return [sum(p[1] for p in pts) / len(pts), sum(p[0] for p in pts) / len(pts)]
 
 
+def geometry_bounds(g):
+    pts = []
+    flat_coords(g.get("coordinates", []), pts)
+    if not pts:
+        return None
+    lons = [float(point[0]) for point in pts]
+    lats = [float(point[1]) for point in pts]
+    return [[min(lats), min(lons)], [max(lats), max(lons)]]
+
+
+def square_aoi(lat, lon, radius_m=750):
+    lat = float(lat)
+    lon = float(lon)
+    radius_m = max(50.0, float(radius_m))
+    lat_delta = radius_m / 111_320.0
+    lon_scale = max(0.1, abs(math.cos(math.radians(lat))))
+    lon_delta = radius_m / (111_320.0 * lon_scale)
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [lon - lon_delta, lat - lat_delta],
+                [lon + lon_delta, lat - lat_delta],
+                [lon + lon_delta, lat + lat_delta],
+                [lon - lon_delta, lat + lat_delta],
+                [lon - lon_delta, lat - lat_delta],
+            ]
+        ],
+    }
+
+
 def geom(g):
     if g["type"] == "Polygon":
         return ee.Geometry.Polygon(g["coordinates"])
@@ -119,8 +169,10 @@ def geom(g):
     raise ValueError("Disegna un poligono o un rettangolo.")
 
 
-def mask_s2(img):
+def mask_s2(img, max_pixel_cloud=DEFAULT_PIXEL_CLOUD):
     scl = img.select("SCL")
+    cloud_probability = ee.Image(img.get("cloud_probability_image")).select("probability")
+    edge_mask = img.select("B8A").mask().updateMask(img.select("B9").mask())
     mask = (
         scl.neq(0)
         .And(scl.neq(1))
@@ -129,9 +181,11 @@ def mask_s2(img):
         .And(scl.neq(9))
         .And(scl.neq(10))
         .And(scl.neq(11))
+        .And(cloud_probability.lt(float(max_pixel_cloud)))
+        .And(edge_mask)
     )
     scaled = img.select(BANDS).divide(10000)
-    return img.addBands(scaled, None, True).updateMask(mask).copyProperties(
+    return img.addBands(scaled, None, True).addBands(cloud_probability.rename("cloud_probability")).updateMask(mask).copyProperties(
         img,
         ["system:time_start", "CLOUDY_PIXEL_PERCENTAGE", "system:index"],
     )
@@ -150,7 +204,7 @@ def add_indices(img):
         img.expression("((B5-B4)-0.2*(B5-B3))*(B5/(B4+0.0001))", v).rename("MCARI"),
         img.expression("1.5*(B8-B4)/(B8+B4+0.5)", v).rename("SAVI"),
         img.expression("(B8-B11)/(B8+B11)", v).rename("NDMI"),
-        img.expression("(B8-B11)/(B8+B11)", v).rename("NDWI"),
+        img.expression("(B3-B8)/(B3+B8+0.0001)", v).rename("NDWI"),
         img.expression("B11/(B8+0.0001)", v).rename("MSI"),
         img.expression("-0.38*B3-0.71*B2+0.2*B4-0.56*B8", v).rename("Crop_band"),
         img.expression("0.09*B2+0.27*B3-0.71*B4-0.65*B8", v).rename("Soil_band"),
@@ -173,19 +227,14 @@ def safe_num(d, k):
 
 
 def score_img(img, aoi):
-    stddev = ee.Dictionary(
-        img.select(INDEX_BANDS).reduceRegion(
-            reducer=ee.Reducer.stdDev(),
-            geometry=aoi,
-            scale=20,
-            maxPixels=1e8,
-            bestEffort=True,
-            tileScale=4,
-        )
+    reducer = ee.Reducer.mean().combine(
+        reducer2=ee.Reducer.stdDev(), sharedInputs=True
+    ).combine(
+        reducer2=ee.Reducer.count(), sharedInputs=True
     )
-    count = ee.Dictionary(
-        img.select("B8").reduceRegion(
-            reducer=ee.Reducer.count(),
+    stats = ee.Dictionary(
+        img.select(RANK_BANDS + ["cloud_probability"]).reduceRegion(
+            reducer=reducer,
             geometry=aoi,
             scale=20,
             maxPixels=1e8,
@@ -194,13 +243,20 @@ def score_img(img, aoi):
         )
     )
     score = ee.Number(0)
-    for band in INDEX_BANDS:
-        score = score.add(safe_num(stddev, band).abs())
-    return (
+    total_weight = sum(item[2] for item in RANK_FEATURES)
+    for band, useful_scale, weight in RANK_FEATURES:
+        normalized = safe_num(stats, band + "_stdDev").divide(useful_scale).min(3)
+        score = score.add(normalized.multiply(weight))
+    score = score.divide(total_weight)
+    ranked = (
         img.set("score", score)
-        .set("valid_pixels", safe_num(count, "B8"))
+        .set("valid_pixels", safe_num(stats, "NDVI_count"))
+        .set("pixel_cloud_mean", safe_num(stats, "cloud_probability_mean"))
         .set("date", ee.Date(img.get("system:time_start")).format("YYYY-MM-dd"))
     )
+    for band in TIMESERIES_BANDS:
+        ranked = ranked.set("mean_" + band, safe_num(stats, band + "_mean"))
+    return ranked
 
 
 def pca(img, bands, aoi, scale):
@@ -250,13 +306,20 @@ def z(img, band, aoi):
     return img.select(band).subtract(mean).divide(stddev).abs().rename("Z_" + band)
 
 
-def local_deficit_z(img, band, radius=60):
+def local_signed_z(img, band, radius=DEFAULT_LOCAL_RADIUS):
     kernel = ee.Kernel.circle(radius=radius, units="meters")
     band_img = img.select(band)
     local_mean = band_img.reduceNeighborhood(ee.Reducer.mean(), kernel)
     local_std = band_img.reduceNeighborhood(ee.Reducer.stdDev(), kernel).max(ee.Image.constant(0.0001))
-    deficit = local_mean.subtract(band_img).divide(local_std).max(ee.Image.constant(0))
-    return deficit.rename("deficit")
+    return band_img.subtract(local_mean).divide(local_std).rename("local_z")
+
+
+def local_deficit_z(img, band, radius=DEFAULT_LOCAL_RADIUS):
+    return local_signed_z(img, band, radius).multiply(-1).max(ee.Image.constant(0)).rename("deficit")
+
+
+def local_excess_z(img, band, radius=DEFAULT_LOCAL_RADIUS):
+    return local_signed_z(img, band, radius).max(ee.Image.constant(0)).rename("excess")
 
 
 def vegetation_deficit(img):
@@ -269,12 +332,45 @@ def vegetation_deficit(img):
     return ee.ImageCollection(deficits).mean().rename("Vegetation_deficit")
 
 
+def vegetation_excess(img):
+    excesses = [
+        local_excess_z(img, "NDVI"),
+        local_excess_z(img, "GNDVI"),
+        local_excess_z(img, "SAVI"),
+        local_excess_z(img, "TCT_greenness"),
+    ]
+    return ee.ImageCollection(excesses).mean().rename("Vegetation_excess")
+
+
+def temporal_persistence(images, threshold=DEFAULT_PERSISTENCE_THRESHOLD):
+    threshold = float(threshold)
+
+    def classify(image):
+        image = ee.Image(image)
+        deficit = vegetation_deficit(image)
+        excess = vegetation_excess(image)
+        return (
+            deficit.gte(threshold).rename("Persistent_deficit")
+            .addBands(excess.gte(threshold).rename("Persistent_excess"))
+            .addBands(deficit.max(excess).gte(threshold).rename("Persistent_any"))
+            .float()
+        )
+
+    return ee.ImageCollection(images.map(classify)).mean().float()
+
+
 def anomalies(img, aoi):
     zs = [z(img, band, aoi) for band in ["NDVI", "GNDVI", "Crop_band", "Soil_band", "NDMI", "TCT_greenness"]]
     anomaly = ee.ImageCollection(zs).sum().rename("Anomaly_score")
     local = anomaly.subtract(anomaly.focal_mean(radius=60, units="meters")).rename("Local_contrast")
     edges = ee.Algorithms.CannyEdgeDetector(local, 0.7, 1).rename("Edges")
-    return anomaly.addBands(local).addBands(edges).addBands(vegetation_deficit(img)).float()
+    return (
+        anomaly.addBands(local)
+        .addBands(edges)
+        .addBands(vegetation_deficit(img))
+        .addBands(vegetation_excess(img))
+        .float()
+    )
 
 
 def tile(img, vis):
@@ -283,6 +379,27 @@ def tile(img, vis):
 
 def add_tile(layer_dict, name, img, vis):
     layer_dict[name] = tile(img, vis)
+
+
+def add_layer_spec(layer_dict, name, img, vis, group):
+    layer_dict[name] = {"image": ee.Image(img), "vis": vis, "group": group}
+
+
+def layer_url(result, name):
+    spec = result["layer_specs"][name]
+    return tile(spec["image"], spec["vis"])
+
+
+def prepare_download(result):
+    return ee.Image(result["download_image"]).getDownloadURL(
+        {
+            "name": "s2_cropmarks",
+            "region": result["download_region"],
+            "scale": 10,
+            "filePerBand": False,
+            "format": "GEO_TIFF",
+        }
+    )
 
 
 def add_layer(m, url, name, show=False, opacity=1.0):
@@ -297,43 +414,90 @@ def add_layer(m, url, name, show=False, opacity=1.0):
     ).add_to(m)
 
 
-def run_analysis(project, start, end, cloud, topn, mode, export, folder, geojson_geometry):
+def run_analysis(
+    project,
+    start,
+    end,
+    cloud,
+    topn,
+    mode,
+    export,
+    folder,
+    geojson_geometry,
+    pixel_cloud=DEFAULT_PIXEL_CLOUD,
+    persistence_threshold=DEFAULT_PERSISTENCE_THRESHOLD,
+):
     init_ee(project)
     aoi = geom(geojson_geometry)
-    col = (
+    criteria = ee.Filter.And(
+        ee.Filter.bounds(aoi),
+        ee.Filter.date(str(start), str(end)),
+    )
+    source = (
         ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-        .filterBounds(aoi)
-        .filterDate(str(start), str(end))
+        .filter(criteria)
         .filter(ee.Filter.lte("CLOUDY_PIXEL_PERCENTAGE", cloud))
-        .map(mask_s2)
+    )
+    cloud_probability = ee.ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY").filter(criteria)
+    joined = ee.Join.saveFirst("cloud_probability_image").apply(
+        primary=source,
+        secondary=cloud_probability,
+        condition=ee.Filter.equals(leftField="system:index", rightField="system:index"),
+    )
+    granules = (
+        ee.ImageCollection(joined)
+        .map(lambda image: mask_s2(image, pixel_cloud))
         .map(add_indices)
     )
-    total = col.size().getInfo()
+    total = granules.size().getInfo()
     if total == 0:
         raise ValueError("Nessuna immagine trovata con questi parametri.")
 
-    ranked = col.map(lambda x: score_img(x, aoi)).filter(ee.Filter.gt("valid_pixels", 10)).sort("score", False)
+    ranked = (
+        granules.map(lambda image: score_img(image, aoi))
+        .filter(ee.Filter.gt("valid_pixels", 10))
+        .sort("score", False)
+        .distinct("date")
+        .sort("score", False)
+    )
     valid_count = ranked.size().getInfo()
     if valid_count == 0:
         raise ValueError("Nessuna immagine con pixel validi dopo la maschera. Aumenta l'area o la soglia nuvole.")
 
     table_count = min(50, valid_count)
     ranked_limited = ranked.limit(table_count)
+    selectors = [
+        "date",
+        "CLOUDY_PIXEL_PERCENTAGE",
+        "pixel_cloud_mean",
+        "valid_pixels",
+        "score",
+        "system:index",
+    ] + ["mean_" + band for band in TIMESERIES_BANDS]
+    rows = ranked_limited.reduceColumns(
+        reducer=ee.Reducer.toList(len(selectors)),
+        selectors=selectors,
+    ).get("list").getInfo()
     df = pd.DataFrame(
-        {
-            "date": ranked_limited.aggregate_array("date").getInfo(),
-            "cloud": ranked_limited.aggregate_array("CLOUDY_PIXEL_PERCENTAGE").getInfo(),
-            "valid_pixels": ranked_limited.aggregate_array("valid_pixels").getInfo(),
-            "score": ranked_limited.aggregate_array("score").getInfo(),
-            "id": ranked_limited.aggregate_array("system:index").getInfo(),
-        }
+        rows,
+        columns=[
+            "date",
+            "cloud",
+            "pixel_cloud_mean",
+            "valid_pixels",
+            "score",
+            "id",
+        ] + [band.lower() + "_mean" for band in TIMESERIES_BANDS],
     )
+    df["selected_for_composite"] = False
+    df.loc[df.index[: min(int(topn), len(df))], "selected_for_composite"] = True
 
     best = ee.Image(ranked.first()).clip(aoi)
     top = ee.ImageCollection(ranked.limit(int(topn)))
     base = top.median().clip(aoi) if mode == "Mediana migliori date" else best
     pcs = pca(base, PCA_BANDS, aoi, 20).select(["PC1", "PC2", "PC3", "PC4", "PC5", "PC6"])
     an = anomalies(base, aoi)
+    persistence = temporal_persistence(top, persistence_threshold).clip(aoi)
     out = (
         base.select(
             [
@@ -364,55 +528,61 @@ def run_analysis(project, start, end, cloud, topn, mode, export, folder, geojson
         )
         .addBands(pcs)
         .addBands(an)
+        .addBands(persistence)
         .clip(aoi)
         .float()
     )
 
-    layers = {}
-    add_tile(layers, "RGB 4-3-2", base, {"bands": ["B4", "B3", "B2"], "min": 0.02, "max": 0.35})
-    add_tile(layers, "False color 8-4-3", base, {"bands": ["B8", "B4", "B3"], "min": 0.02, "max": 0.45})
-    add_tile(layers, "Healthy vegetation 8-11-2", base, {"bands": ["B8", "B11", "B2"], "min": 0.02, "max": 0.45})
-    add_tile(layers, "NDVI", base.select("NDVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]})
-    add_tile(layers, "GNDVI", base.select("GNDVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]})
-    add_tile(layers, "DVI", base.select("DVI"), {"min": -0.2, "max": 0.6, "palette": ["313695", "ffffbf", "1a9850"]})
-    add_tile(layers, "GDVI", base.select("GDVI"), {"min": -0.2, "max": 0.6, "palette": ["313695", "ffffbf", "1a9850"]})
-    add_tile(layers, "GRVI", base.select("GRVI"), {"min": 0, "max": 8, "palette": ["542788", "f7f7f7", "1a9850"]})
-    add_tile(layers, "Simple ratio", base.select("SR"), {"min": 0, "max": 8, "palette": ["542788", "f7f7f7", "1a9850"]})
-    add_tile(layers, "EVI", base.select("EVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]})
-    add_tile(layers, "MCARI", base.select("MCARI"), {"min": -0.2, "max": 0.4, "palette": ["2166ac", "f7f7f7", "b2182b"]})
-    add_tile(layers, "SAVI", base.select("SAVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]})
-    add_tile(layers, "NDMI", base.select("NDMI"), {"min": -0.6, "max": 0.6, "palette": ["8c510a", "f6e8c3", "01665e"]})
-    add_tile(layers, "NDWI", base.select("NDWI"), {"min": -0.6, "max": 0.6, "palette": ["8c510a", "f6e8c3", "01665e"]})
-    add_tile(layers, "MSI", base.select("MSI"), {"min": 0.4, "max": 2.5, "palette": ["01665e", "f6e8c3", "8c510a"]})
-    add_tile(layers, "Crop band", base.select("Crop_band"), {"min": -0.9, "max": 0.1, "palette": ["542788", "f7f7f7", "b35806"]})
-    add_tile(layers, "Soil band", base.select("Soil_band"), {"min": -1.0, "max": 0.2, "palette": ["2166ac", "f7f7f7", "b2182b"]})
-    add_tile(layers, "TCT brightness", base.select("TCT_brightness"), {"min": -0.2, "max": 0.8, "palette": ["000004", "f89540", "fcfdbf"]})
-    add_tile(layers, "TCT greenness", base.select("TCT_greenness"), {"min": -0.3, "max": 0.5, "palette": ["542788", "f7f7f7", "1a9850"]})
-    add_tile(layers, "TCT wetness", base.select("TCT_wetness"), {"min": -0.4, "max": 0.4, "palette": ["8c510a", "f6e8c3", "01665e"]})
-    add_tile(
-        layers,
+    layer_specs = {}
+    add_layer_spec(layer_specs, "RGB 4-3-2", base, {"bands": ["B4", "B3", "B2"], "min": 0.02, "max": 0.35}, "Immagini")
+    add_layer_spec(layer_specs, "False color 8-4-3", base, {"bands": ["B8", "B4", "B3"], "min": 0.02, "max": 0.45}, "Immagini")
+    add_layer_spec(layer_specs, "Healthy vegetation 8-11-2", base, {"bands": ["B8", "B11", "B2"], "min": 0.02, "max": 0.45}, "Immagini")
+    add_layer_spec(layer_specs, "NDVI", base.select("NDVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]}, "Vegetazione")
+    add_layer_spec(layer_specs, "GNDVI", base.select("GNDVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]}, "Vegetazione")
+    add_layer_spec(layer_specs, "DVI", base.select("DVI"), {"min": -0.2, "max": 0.6, "palette": ["313695", "ffffbf", "1a9850"]}, "Vegetazione")
+    add_layer_spec(layer_specs, "GDVI", base.select("GDVI"), {"min": -0.2, "max": 0.6, "palette": ["313695", "ffffbf", "1a9850"]}, "Vegetazione")
+    add_layer_spec(layer_specs, "GRVI", base.select("GRVI"), {"min": 0, "max": 8, "palette": ["542788", "f7f7f7", "1a9850"]}, "Vegetazione")
+    add_layer_spec(layer_specs, "Simple ratio", base.select("SR"), {"min": 0, "max": 8, "palette": ["542788", "f7f7f7", "1a9850"]}, "Vegetazione")
+    add_layer_spec(layer_specs, "EVI", base.select("EVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]}, "Vegetazione")
+    add_layer_spec(layer_specs, "MCARI", base.select("MCARI"), {"min": -0.2, "max": 0.4, "palette": ["2166ac", "f7f7f7", "b2182b"]}, "Vegetazione")
+    add_layer_spec(layer_specs, "SAVI", base.select("SAVI"), {"min": -0.2, "max": 0.8, "palette": ["313695", "ffffbf", "1a9850"]}, "Vegetazione")
+    add_layer_spec(layer_specs, "NDMI", base.select("NDMI"), {"min": -0.6, "max": 0.6, "palette": ["8c510a", "f6e8c3", "01665e"]}, "Umidita e suolo")
+    add_layer_spec(layer_specs, "NDWI", base.select("NDWI"), {"min": -0.6, "max": 0.6, "palette": ["8c510a", "f6e8c3", "01665e"]}, "Umidita e suolo")
+    add_layer_spec(layer_specs, "MSI", base.select("MSI"), {"min": 0.4, "max": 2.5, "palette": ["01665e", "f6e8c3", "8c510a"]}, "Umidita e suolo")
+    add_layer_spec(layer_specs, "Crop band", base.select("Crop_band"), {"min": -0.9, "max": 0.1, "palette": ["542788", "f7f7f7", "b35806"]}, "Umidita e suolo")
+    add_layer_spec(layer_specs, "Soil band", base.select("Soil_band"), {"min": -1.0, "max": 0.2, "palette": ["2166ac", "f7f7f7", "b2182b"]}, "Umidita e suolo")
+    add_layer_spec(layer_specs, "TCT brightness", base.select("TCT_brightness"), {"min": -0.2, "max": 0.8, "palette": ["000004", "f89540", "fcfdbf"]}, "Tasseled Cap")
+    add_layer_spec(layer_specs, "TCT greenness", base.select("TCT_greenness"), {"min": -0.3, "max": 0.5, "palette": ["542788", "f7f7f7", "1a9850"]}, "Tasseled Cap")
+    add_layer_spec(layer_specs, "TCT wetness", base.select("TCT_wetness"), {"min": -0.4, "max": 0.4, "palette": ["8c510a", "f6e8c3", "01665e"]}, "Tasseled Cap")
+    add_layer_spec(
+        layer_specs,
         "TCT RGB",
         base,
         {"bands": ["TCT_brightness", "TCT_greenness", "TCT_wetness"], "min": [-0.2, -0.3, -0.4], "max": [0.8, 0.5, 0.4]},
+        "Tasseled Cap",
     )
-    add_tile(layers, "PCA PC1-PC2-PC3", pcs, {"bands": ["PC1", "PC2", "PC3"], "min": -2, "max": 2})
-    add_tile(layers, "PCA PC2-PC3-PC4", pcs, {"bands": ["PC2", "PC3", "PC4"], "min": -2, "max": 2})
-    add_tile(layers, "Anomaly score", an.select("Anomaly_score"), {"min": 0, "max": 10, "palette": ["000000", "ffff00", "ff0000"]})
-    add_tile(layers, "Local contrast", an.select("Local_contrast"), {"min": -2, "max": 2, "palette": ["0000ff", "ffffff", "ff0000"]})
-    add_tile(
-        layers,
-        "Possibili strutture - erba bassa",
+    add_layer_spec(layer_specs, "PCA PC1-PC2-PC3", pcs, {"bands": ["PC1", "PC2", "PC3"], "min": -2, "max": 2}, "PCA")
+    add_layer_spec(layer_specs, "PCA PC2-PC3-PC4", pcs, {"bands": ["PC2", "PC3", "PC4"], "min": -2, "max": 2}, "PCA")
+    add_layer_spec(layer_specs, "Anomaly score", an.select("Anomaly_score"), {"min": 0, "max": 10, "palette": ["000000", "ffff00", "ff0000"]}, "Anomalie")
+    add_layer_spec(layer_specs, "Local contrast", an.select("Local_contrast"), {"min": -2, "max": 2, "palette": ["0000ff", "ffffff", "ff0000"]}, "Anomalie")
+    add_layer_spec(
+        layer_specs,
+        "Vegetazione in deficit - possibili muri",
         an.select("Vegetation_deficit"),
         {"min": 0, "max": 2.5, "palette": ["ffffff", "ffd166", "ef476f", "6a040f"]},
+        "Anomalie",
     )
-    add_tile(layers, "Edges", an.select("Edges"), {"min": 0, "max": 1, "palette": ["000000", "00ffff"]})
-
-    try:
-        download = out.getDownloadURL(
-            {"name": "s2_cropmarks", "region": aoi, "scale": 10, "filePerBand": False, "format": "GEO_TIFF"}
-        )
-    except Exception:
-        download = None
+    add_layer_spec(
+        layer_specs,
+        "Vegetazione in eccesso - possibili fossati",
+        an.select("Vegetation_excess"),
+        {"min": 0, "max": 2.5, "palette": ["ffffff", "bde0fe", "219ebc", "023047"]},
+        "Anomalie",
+    )
+    add_layer_spec(layer_specs, "Persistenza complessiva", persistence.select("Persistent_any"), {"min": 0, "max": 1, "palette": ["000000", "fee08b", "d73027"]}, "Persistenza temporale")
+    add_layer_spec(layer_specs, "Persistenza deficit", persistence.select("Persistent_deficit"), {"min": 0, "max": 1, "palette": ["000000", "ffd166", "9d0208"]}, "Persistenza temporale")
+    add_layer_spec(layer_specs, "Persistenza eccesso", persistence.select("Persistent_excess"), {"min": 0, "max": 1, "palette": ["000000", "90e0ef", "0077b6"]}, "Persistenza temporale")
+    add_layer_spec(layer_specs, "Edges", an.select("Edges"), {"min": 0, "max": 1, "palette": ["000000", "00ffff"]}, "Anomalie")
 
     task_id = None
     if export:
@@ -430,10 +600,23 @@ def run_analysis(project, start, end, cloud, topn, mode, export, folder, geojson
 
     return {
         "df": df,
-        "layers": layers,
-        "download": download,
+        "layer_specs": layer_specs,
+        "layer_urls": {},
+        "download": None,
+        "download_image": out,
+        "download_region": aoi,
         "task_id": task_id,
         "center": center(geojson_geometry),
         "geometry": geojson_geometry,
-        "params": {"start": str(start), "end": str(end), "cloud": cloud, "topn": topn, "mode": mode},
+        "params": {
+            "start": str(start),
+            "end": str(end),
+            "cloud": cloud,
+            "pixel_cloud": pixel_cloud,
+            "topn": topn,
+            "mode": mode,
+            "persistence_threshold": persistence_threshold,
+        },
+        "scene_count": total,
+        "valid_scene_count": valid_count,
     }

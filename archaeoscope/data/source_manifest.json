@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-08-01",
+  "documents": [
+    {
+      "key": "cam_m_2024",
+      "title": "Carta archeologica della Provincia di Macerata (CAM-M)",
+      "authors": "Roberto Perna, Stefano Finocchi, Chiara Capponi (a cura di)",
+      "year": 2024,
+      "publisher": "EUM Edizioni Università di Macerata",
+      "isbn": "978-88-6056-889-2",
+      "landing_url": "https://eum.unimc.it/it/catalogo/carta-archeologica-della-provincia-di-macerata-cam-m/859",
+      "download_url": "https://eum.unimc.it/it/file/get?code=cd156e70-2c5e-49d8-8a6f-0c841aaac013",
+      "license": "CC BY-NC-ND",
+      "local_name": "cam_m_2024.pdf",
+      "legacy_filenames": [
+        "CARTA ARCHEOLOGICA DELLA PROVINCIA DI MACERATA (CAM-M).pdf"
+      ],
+      "sha256": "cb1607515b623dee742d7227b7e30fbb4aecca3db30cbf07e311007e157c05e7",
+      "size_bytes": 14403728,
+      "pages": 596,
+      "record_coverage": "CAM-M, catalogo pp. 170-533 e tavole comunali",
+      "access": "open_access"
+    },
+    {
+      "key": "pvs_2006_catalogue",
+      "title": "Catalogazione dei siti archeologici - I siti archeologici della Vallata del Potenza",
+      "authors": "Frank Vermeulen et al.",
+      "year": 2006,
+      "publisher": "Ministero per i Beni e le Attivita Culturali, Direzione Regionale Marche",
+      "isbn": "88-7663-357-X",
+      "landing_url": "https://biblio.ugent.be/publication/344980",
+      "persistent_url": "http://hdl.handle.net/1854/LU-344980",
+      "license": "Diritti non specificati nella scheda bibliografica",
+      "local_name": "pvs_catalogue_2006.pdf",
+      "legacy_filenames": [
+        "Catalogazione dei siti archeologici (1).pdf",
+        "Catalogazione dei siti archeologici.pdf"
+      ],
+      "sha256": "185aebad9eee3927fff6ea6fd0acfd1b19fd406c8c5eae963e700eba06828ccc",
+      "size_bytes": 6871165,
+      "pages": 120,
+      "record_coverage": "PVS, schede 001-140",
+      "access": "local_authorized_copy"
+    },
+    {
+      "key": "pvs_2017",
+      "title": "The Potenza Valley Survey (Marche, Italy): Settlement Dynamics and Changing Material Culture in an Adriatic Valley between Iron Age and Late Antiquity",
+      "authors": "Frank Vermeulen, Dimitri Van Limbergen, Patrick Monsieur, Devi Taelman (eds.)",
+      "year": 2017,
+      "publisher": "E.S.S. Editorial Service System Srl",
+      "isbn": "9788884441638",
+      "landing_url": "https://biblio.ugent.be/publication/8521375",
+      "persistent_url": "http://hdl.handle.net/1854/LU-8521375",
+      "catalogue_url": "https://biblio.ugent.be/publication/8521385",
+      "license": "In copyright; nessuna licenza indicata da UGent",
+      "local_name": "pvs_2017.pdf",
+      "legacy_filenames": [
+        "ThePotenzaValleySurvey.pdf",
+        "ThePotenzaValleySurvey (1).pdf"
+      ],
+      "sha256": "3cdcafff0acfbc2a470ea35dc951f783ae4ab950ea297f6ae2233b10d7e9bf77",
+      "size_bytes": 17417400,
+      "pages": 428,
+      "record_coverage": "PVS 2000-2017; Sites catalogue, pp. 199-257",
+      "access": "local_authorized_copy"
+    }
+  ],
+  "web_sources": [
+    {
+      "key": "pvs_project",
+      "title": "Potenza Valley Project",
+      "url": "https://www.potenza.ugent.be/",
+      "institution": "Ghent University"
+    }
+  ],
+  "map_collection": {
+    "key": "cam_m_municipal_maps",
+    "title": "CAM-M - Tavole dei territori comunali",
+    "landing_url": "https://eum.unimc.it/it/catalogo/carta-archeologica-della-provincia-di-macerata-cam-m/859",
+    "asset_count": 53,
+    "last_verified": "2026-08-01",
+    "verified_assets": 53,
+    "cache_subdir": "cam_m_maps"
+  }
+}

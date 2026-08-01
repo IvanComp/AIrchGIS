@@ -399,6 +399,8 @@ def clip_tile_to_geojson(tile, geojson_path: Path):
     inside_win = inside[r0 : r1 + 1, c0 : c1 + 1]
 
     def _clip_arr(a):
+        if a is None:
+            return None
         b = np.asarray(a, dtype=np.float32)[r0 : r1 + 1, c0 : c1 + 1].copy()
         b[~inside_win] = np.nan
         return b
@@ -406,8 +408,8 @@ def clip_tile_to_geojson(tile, geojson_path: Path):
     dtm = _clip_arr(tile["DTM"])
     dsmf = _clip_arr(tile["DSM_First"])
     dsml = _clip_arr(tile["DSM_Last"])
-    ndsm = dsmf - dtm
-    diff = dsmf - dsml
+    ndsm = (dsmf - dtm) if dsmf is not None else None
+    diff = (dsmf - dsml) if dsmf is not None and dsml is not None else None
 
     new_transform = transform * rasterio.transform.Affine.translation(c0, r0)
     new_profile = profile.copy()
@@ -436,10 +438,6 @@ def list_database_places(root: Path):
         if p.name.startswith("."):
             continue
         if not (p / "DTM").exists():
-            continue
-        if find_dir(p, FIRST_DIR_CANDIDATES) is None:
-            continue
-        if find_dir(p, LAST_DIR_CANDIDATES) is None:
             continue
         out.append(p.name)
     return out
@@ -1520,23 +1518,27 @@ class InputData:
             p_l, _ = self._resolve_preprocessed_paths(p_l_orig, use_preprocessed=use_preprocessed, preprocessed_suffix=preprocessed_suffix)
             area_geojson_path = None
 
-        if not p_dtm or not p_f or not p_l:
+        if not p_dtm:
             self.loaded = False
             if place_name:
-                self.error = f"Input mancanti in Database/{place_name}: richieste cartelle DTM, DSM_First (o DSM_Fisrt), DSM_Last."
+                self.error = f"Input mancanti in Database/{place_name}: serve almeno un raster nella cartella DTM."
             else:
-                self.error = "Input mancanti: metti zip o raster in image/DTM, image/DSM_First (o DSM_Fisrt), image/DSM_Last."
+                self.error = "Input mancanti: metti almeno un raster o uno zip in image/DTM."
             return
 
         dtm, res, prof, _, bounds, crs = load_raster_source(p_dtm)
-        dsmf, _, _, _, _, _ = load_raster_source(p_f)
-        dsml, _, _, _, _, _ = load_raster_source(p_l)
+        dsmf = None
+        dsml = None
+        if p_f:
+            dsmf, _, _, _, _, _ = load_raster_source(p_f)
+        if p_l:
+            dsml, _, _, _, _, _ = load_raster_source(p_l)
         tile = {
             "DTM": dtm,
             "DSM_First": dsmf,
             "DSM_Last": dsml,
-            "nDSM": dsmf - dtm,
-            "First-Last": dsmf - dsml,
+            "nDSM": (dsmf - dtm) if dsmf is not None else None,
+            "First-Last": (dsmf - dsml) if dsmf is not None and dsml is not None else None,
             "res": res,
             "profile": prof,
             "bounds": bounds,

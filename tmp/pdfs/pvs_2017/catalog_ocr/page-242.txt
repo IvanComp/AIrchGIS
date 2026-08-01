@@ -1,0 +1,86 @@
+uP RA RP RC Mc RCBM
+130 4 4 1 8 5 2 4
+
+Date range Roman Age (Imperial; 1"-2™ century AD).
+
+Dating profile Iron Age Late Rep Early Imp Mit-Imp Late Ant
+Cc ca CO co Cc
+
+References MOSCATELLI, VETTORAZZ! 1988, pp, 7-84; VERMEULEN ef al, 2006, p, 207.
+
+131 Toponym Coordinates (WGS84) Size (est.)
+
+Porto Recanati, Potentia Sud 43.412149°, 13.670683° 0.8 ha (40x20 m)
+
+Interpretation —_ Rural settlement (small farm) (type 2) (suburban settlement area).
+
+Topography Situated in the valley Noor of the coastal plain, directly south-west of Potentia, on the N-side of the
+Roman road leading out of its W-gate towards the Roman bridge at Casa dell’Arco. This area was located
+close to the Roman river course.
+
+Investigation Identified through a targeted survey in 2002, motivated by traces of a road and funerary monuments
+visible in crop marks on the acrial photography (site 116). The character of surface finds in this area
+directly adjacent to the necropolis points however more at extra-mural settlement activity.
+
+Artefacts Concentration of lots of Roman pottery (c.g. common ware, BG, TS, dolia, | North African amphora) and
+building material (c.g. tiles, limestone blocks, pieces of burnt loam). Artefact density: 140/ha (131);
+62.3/ha (off-site).
+
+Site Ne Number of artefacts per material category
+BG TS RA RP RC RD PM LM SBM RRT Daub RMort UP
+31 112 1 1 41 14 8 6 2 1 a 17 1s 2
+
+Off-site 33 12 4 2 5 7
+
+Date range Roman Age (1" century BC — 3" century AD).
+
+Dating profile Iron Age Late Rep Early Imp Mid-Imp Late Ant
+Cc SS & i——} C4
+
+References VERMEULEN et al. 2003, pp. 71-106; VERMEULEN ct al. 2005, 33-64; VERMEULEN et al. 2006, p. 208.
+
+132 Toponym Coordinates (WGS84) Size (est.)
+
+Porto Recanati, Casa Storant-Potentia 43,415918°, 13.671885° 18 ha (intra muros)
+
+Interpretation Roman urban settlement, probably preceded by smaller [ron Age settlement, and terminated as an Early
+Medieval village (type 7).
+
+Topography The site of the former town of Porentia, near the Adriatic coast, is connected with the now
+geomorphologically well mapped and located quite narrow and slightly clevated beach ridge, directly
+north of the now disappeared Roman mouth of the river Potenza. The site of mostly arable and pasture
+land is now diagonally crossed by the coastal road and railroad, and covered by two farm houses.
+
+Investigation First located by N. Alficri during the late 1940s and via rescuc-excavations of a northem housing sector
+and an extra-mural cemetery by L. Mercando of the Soprintendenza in the 1960s—70s. Main
+archaeological contributions to the town topography by U, Moscatelli and through regular excavations
+near its lown centre between 1985 and 2006 by E, Percossi of the Soprintendenza. A more holistic
+topographical approach was started by the PVS team under direction of F. Vermeulen in 2000 and the
+main fichd oriented operations during the past 15 years were: continuous monitoring with oblique and low
+altitude acrial photography (airplane, helikite, drone, ...) and study of other remote sensing data (satellite,
+Lidar. ..), geophysical approaches (in 2004, 2005, 2007, 2009, 2010, 2013) including full coverage
+magnetic surveys and partial coverage with GPR and clectric resistivity prospections, geomorphological
+coring operations and total station measurements of the microtopography, excavations of the W-gate
+(2009-2012) and finally systematic artefact surveys in grids over the current arable fields of the site (2002,
+2003). The main results of all this work are discussed elsewhere in the book.
+
+Artefacts For artefact numbers, see the end of the catalogue.
+
+Date range Roman Age (184 BC — 6*-7* century AD).
+
+References Artest 1949; MERCANDO ct al. 1974; MERCANDO 1979; Mosca TEL. 1985; Pexcoss! SeRENELLI 1990;
+1995, pp, 27-55; 2001; VERMEULEN 2006; 2008; 2012; 2014a; 2014b; VERMEULEN et al, 2006, pp. 208-
+210; VERMEULEN, VERIORVEN 2006; VERREYKE, VERMEULEN 2009; VERMEULEN, MONSIFUR 2012;
+VERMEULEN, CARBON! forthcoming.
+
+133 Toponym Coordinates (WGS84) Size (est.)
+
+Porto Recanati, Casa dell'Arco 43.408656°, 13.667634° 0.27 ha (90x30 m)
+
+Interpretation — Bridge and possibly connected structures (npe §),
+
+Topography The site is situated 250 m south-west of the ancient abbey of S, Maria a Potenza, in the centre of the
+Potenza plain near the coast.
+
+Investigation The remains of the bridge (two well-preserved arches; possibly Augustan) were noted for the first time m
+the 17" century. Crop marks of buried structures ~ essentially of a large rectangular building and some

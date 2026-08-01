@@ -1,0 +1,712 @@
+C HAMELEON: A Framework for Dynamic Selection
+of Aggregation Strategies in Federated Learning
+Anonymous Author(s)
+
+Abstract—Federated Learning (FL) enables multiple clients to
+collaboratively train a shared model without exposing their local
+data. At each round, the server collects local model updates
+from clients and aggregates them into a shared global model.
+Several aggregation strategies exist, ranging from simple weight
+averaging, such as FedAvg, to variants tailored to address specific
+issues, such as unreliable clients or skewed data distributions.
+System boundary conditions, however, rarely remain constant:
+data distributions shift, clients drop in and out, computational
+and communication resources fluctuate, and convergence can
+become unstable across rounds. These factors influence which
+aggregation strategy is best suited at a given point in training.
+Yet most FL systems select a single strategy before training
+begins and keep it fixed throughout, even though a strategy that
+works well early on may no longer be the best choice later. This
+work presents Chameleon, a runtime adaptation framework
+for selecting performance-oriented FL strategies. After each
+communication round, a server-side adaptation manager observes
+runtime metrics and boundary conditions and selects the strategy
+for the next round. We model strategy selection as a runtime
+decision problem over a finite set of compatible FL strategies. We
+study multiple adaptation policies, including random, predictorbased, Bayesian optimization-based, and LLM-driven selection.
+We evaluate Chameleon across diverse FL settings, including
+IID and non-IID data, heterogeneous clients, varying participation rates, and different learning tasks. Results show...
+Index Terms—Federated Learning, Performance Analysis, Performance Optimization, Dynamic Adaptation.
+
+I. I NTRODUCTION
+Federated Learning (FL) is a distributed machine learning
+(ML) paradigm in which multiple clients collaboratively train
+a shared model without exposing their local data [1], [2].
+Google introduced this paradigm in 2017 to solve a concrete
+problem on smartphone devices: improving keyboard nextword prediction required training on personal chat data, which
+is sensitive in its own right and poses even greater risk when
+centralized on a single location [2]. Instead of moving the
+data, the computation runs on the device: each phone trains
+the model locally on its own data, and only the resulting
+model update is sent back to the server for aggregation.
+In a typical FL process, the server broadcasts the current
+global model to a subset of clients, each client performs local
+training on its own data, and the server aggregates the resulting
+updates to refine the global model’s weights. This last step is
+referred to as model aggregation: the server aggregates the
+locally trained models, gradients, or weights to produce an
+updated global model [1]. Hence, model aggregation is not a
+secondary operation but a key step: the accuracy, reliability,
+and the convergence speed of the resulting global model
+depend directly on the chosen aggregation strategy [1]–[3].
+
+A recent survey [3] analyzes 201 studies on model aggregation strategies in FL and organizes them according to how
+client updates are coordinated, collected, and combined into
+the global model. The survey identifies four main families:
+(i) synchronous aggregation, where the server updates the
+global model after receiving the expected client contributions;
+(ii) asynchronous aggregation, where this synchronization requirement is relaxed so that updates can be incorporated as
+they become available; (iii) hierarchical aggregation, where
+aggregation is distributed across intermediate levels, such as
+edge or regional servers; and (iv) robust aggregation, where
+the aggregation rule is designed to tolerate unreliable, lowquality, or malicious client updates. This taxonomy reflects the
+main challenges that aggregation strategies aim to mitigate. In
+particular, FL aggregation is affected by statistical heterogeneity, since clients may train on non-independent and identically distributed (non-IID) data; by system communication
+bottlenecks, since clients may differ in availability, bandwidth,
+or computation time; and by secure aggregation requirements,
+which aim to combine client updates while limiting the impact
+of unreliable or adversarial participants [3]. Different families
+address these challenges with different trade-offs: synchronous
+strategies provide a simple and stable round-based protocol
+but may suffer from heterogeneous or delayed updates; asynchronous and hierarchical strategies improve timeliness and
+scalability but introduce stale updates or additional coordination; robust strategies improve reliability and security but often
+add computational or communication overhead.
+Accordingly, aggregation strategies are typically designed
+to mitigate one or more of these challenges, but each design
+choice introduces trade-offs. Synchronous strategies provide
+a simple, stable round-based protocol but can be sensitive
+to stragglers and heterogeneous updates. Asynchronous and
+hierarchical strategies improve timeliness or scalability, but
+may introduce stale updates, additional coordination, or architectural complexity. Robust strategies improve reliability
+and security, but often add computational or communication
+overhead. Therefore, the choice of an aggregation strategy
+depends on the dominant challenge in a given FL setting,
+rather than on a single “silver bullet” method.
+Within this design space, this paper focuses on performanceoriented strategies that can be exchanged within the same
+round-based FL training loop. This scope includes synchronous aggregation rules and server-side optimization strategies, which preserve the same execution structure but differ in
+how they combine, smooth, or regularize client updates. F E DAVG [1] is the standard baseline that aggregates client models
+
+via a weighted average proportional to each client’s local data.
+F EDAVG M [4] adds server-side momentum to smooth noisy
+update trajectories, F ED P ROX [5] constrains local training to
+reduce client drift, and adaptive server optimizers such as
+F EDA DAM [6] stabilize learning when the magnitudes and
+directions of client updates vary across rounds.
+Despite this variety, FL systems commonly adopt a static
+strategy: a single aggregation or server optimization method is
+selected before training begins and used throughout all rounds.
+This design assumes that the same strategy remains appropriate for the entire training process. In practice, this assumption
+is often restrictive. FL systems are dynamic: clients may join
+or drop out, computational resources may vary, communication
+costs may change, and the model may move through different
+learning phases. A strategy that performs well during early
+exploration may be less effective when convergence slows;
+similarly, a strategy designed for heterogeneous updates may
+become useful only after client drift becomes visible.
+This paper is motivated by the following observation: the
+best FL strategy is not necessarily fixed, but may depend
+on the current state of the federation. For instance, F EDAVG
+may be sufficient when clients are homogeneous and updates
+are stable, while F ED P ROX may become preferable when
+statistical or system heterogeneity causes client drift. Similarly,
+adaptive server optimizers such as F EDA DAM can be useful
+when convergence becomes noisy or unstable. These examples
+suggest that selecting an aggregation strategy can be treated
+as a runtime adaptation problem.
+We present Chameleon, a framework for selecting runtime
+aggregation strategies in FL. Rather than fixing a single
+strategy before training, Chameleon uses a server-side adaptation manager to observe the system’s evolving state and
+select the strategy for the next round. The decision relies on
+information already available at the server, including predictive performance, round duration, communication behavior,
+client participation, and indicators of statistical or system
+heterogeneity. We study several adaptation policies for this
+decision problem: a random policy as a lower-bound reference,
+a predictor-based policy that maps runtime features to candidate strategies, a Bayesian optimization policy that balances
+exploration and exploitation, and an LLM-driven policy that
+combines runtime observations with prior knowledge about
+the assumptions and strengths of each aggregation strategy.
+We evaluate Chameleon across multiple FL configurations,
+including non-IID data distribution, varying federation sizes,
+and heterogeneous client characteristics, comparing adaptive
+selection policies against static single-strategy baselines to
+assess whether runtime adaptation can better adapt to the
+changing conditions of the FL process.
+In summary, this paper makes the following contributions:
+• We formulate the selection of FL aggregation strategies
+as a runtime adaptation problem driven by performance
+metrics and system observations.
+• We introduce Chameleon, a framework that dynamically selects the aggregation strategy for the next FL
+round.
+
+...
+Server
+
+Client 1 ... n
+
+For each Federated Learning Round
+For each Client
+1
+
+3
+
+2
+
+Send Model Parameters
+
+Local
+Training
+
+Return Trained Model Parameters
+
+4
+
+Model
+Aggregation
+
+...
+Global Model
+
+Local Model 1 ... n
+
+Fig. 1: Federated Learning Workflow.
+
+•
+
+We empirically assess adaptive strategy selection under
+representative FL settings and compare it against static
+selection baselines.
+
+The remainder of the paper is organized as follows.
+Section II introduces background on FL, server strategies,
+and Flower Baselines. Section ?? presents the design of
+Chameleon and its adaptation policies. Section ?? reports
+the experimental evaluation. Section ?? discusses related work,
+and Section ?? concludes the paper.
+II. P RELIMINARIES
+A. Federated Learning in a Nutshell
+In traditional machine learning (ML), training data is typically centralized on cloud servers to develop a single predictive
+model [7]. Rising privacy concerns and regulatory constraints
+have reduced organizations’ willingness to share sensitive
+data [2], leading to data silos where information remains
+isolated for protection [8]. Federated learning (FL) addresses
+this by enabling collaborative model training across distributed
+clients or devices, without moving their local data to a central
+server [1], [2]. Google introduced the original formulation in
+2017, motivated initially by applications such as next-word
+prediction on smartphone keyboards [1]. Since then, the field
+has grown rapidly, driven by successful applications across
+domains such as healthcare, finance, and industry [9].
+Figure 1 shows an overview of the general FL framework.
+Each communication round follows four steps. 1 Clients
+download the current global model parameters from the server
+and use them to initialize their local “snapshot”, replacing
+whatever local weights they held from the previous round.
+2 Each client then trains this snapshot on its own local
+dataset, typically running several epochs of stochastic gradient
+descent (or a similar optimizer), and updates its local model
+independently of every other client. 3 Once local training
+finishes, clients send their updated model parameters or the
+computed gradients back to the server. 4 The server collects
+the contributions from participating clients and aggregates
+them, using an aggregation strategy, an information fusion
+algorithm such as F EDAVG [1], into a global model for the
+next round. The process repeats over multiple rounds until a
+
+stopping criterion is met, such as reaching a target accuracy
+or a fixed number of communications rounds.
+B. Aggregation Strategies and Baselines
+The aggregation phase defines how the server combines
+client contributions into the next global model [3].
+The most common strategy is F EDAVG [1], which computes
+a data-weighted average of client models. Although F EDAVG
+is simple and widely adopted, it may be suboptimal when
+clients are heterogeneous, updates are noisy, convergence
+is unstable, or the system objective goes beyond average
+accuracy.
+Several aggregation and server-side optimization strategies
+have therefore been proposed. In this paper, we use the
+term strategy broadly to denote any method that affects how
+the global model is updated from client contributions. This
+includes classical aggregation rules, server-side optimizers,
+personalization methods, robustness mechanisms, and taskspecific FL baselines. Table ?? summarizes the strategies and
+baselines considered in Chameleon, grouped by objective
+and integration status.
+a) General-purpose and optimization-oriented aggregation: F EDAVG [1] is the canonical FL aggregation rule and
+serves as the main reference point for federated training.
+F EDAVG M [4] extends F EDAVG with server-side momentum, smoothing global update directions across rounds and
+improving convergence when client updates are noisy or nonIID. Adaptive server optimizers such as F EDA DAM, F EDA DA GRAD , and F EDYOGI [6] treat aggregation as a server-side
+optimization process. F EDA DAM improves stability through
+adaptive moment estimates, F EDA DAGRAD adapts learning
+rates according to accumulated update history, and F EDYOGI
+limits overly aggressive adaptation when client updates are
+heterogeneous.
+b) Heterogeneity and client drift: Several methods address statistical or system heterogeneity. F ED P ROX [5] modifies local training to limit how far client models drift
+from the global model, making it useful when clients have
+non-IID data or different computational capabilities. F ED N OVA [14] normalizes client updates to reduce inconsistencies
+caused by clients performing different amounts of local work.
+F ED BN [11] keeps batch normalization statistics local to
+each client, improving robustness under feature shift. H ETERO FL [20] supports clients with different computational and
+communication capacities by leveraging heterogeneous model
+structures. F J ORD [18] uses ordered dropout to adapt model
+complexity to client resources, while D EPTH FL [19] enables
+clients to train models with different depths according to their
+capabilities.
+c) Fairness, personalization, and adaptation: Some
+methods change the objective from learning a single
+global model to improving fairness or personalization. Q F EDAVG [10] gives greater influence to clients with poorer
+local performance, improving fairness across the federation.
+F ED P ER [16] separates shared and personalized layers, allowing each client to keep part of the model local. F E -
+
+D R EP [17] learns a shared representation while maintaining
+client-specific prediction heads. F ED M ETA [12] applies metalearning to support fast adaptation to client-specific tasks.
+F ED MLB [13] introduces multi-level branched regularization
+to balance shared learning and personalization. MOON [21]
+uses model-contrastive learning to improve representation
+quality under non-IID data. F LOCO [23] studies federated
+learning over connected modes, exploiting relationships between different model solutions instead of forcing all clients
+toward a single optimum.
+d) Communication and computation efficiency.: Other
+methods focus on reducing the cost of FL training. F ED PARA [15] uses low-rank parameterization to reduce the
+number of transmitted parameters and improve communication
+efficiency. DASHA [22] combines communication compression with variance reduction to support efficient optimization
+under limited communication. TAMUNA [24] addresses acceleration, compression, and partial participation, making it
+relevant when only a subset of clients can participate or when
+communication resources are constrained.
+e) Task-specific, model-specific, and domain-specific
+baselines.: Some baselines are designed for specific learning
+tasks or model families rather than general-purpose aggregation. F ED PFT [25] targets one-shot FL with foundation
+models. F ED S TAR [26] focuses on semi-supervised federated self-training. F EDVSSL [27] addresses federated selfsupervised video learning. F EDWAV 2V EC 2 [28] is designed
+for federated speech recognition. H F ED XGB OOST [29] targets
+federated gradient boosting trees rather than neural network
+models. S TATAVG [30] is a domain-specific method for nonIID intrusion detection. These methods are relevant in their
+intended domains, but they are not directly comparable in a
+common image-classification FL setting without changing the
+task, model family, or evaluation protocol.
+f) Robustness, fraudulent clients, diagnostics, and benchmarking.: A separate group of methods addresses robustness,
+debugging, or evaluation rather than standard performance optimization. FLANDERS [32] targets robustness against model
+poisoning attacks, making it relevant when clients may behave
+maliciously or submit fraudulent updates. F ED D EBUG [31]
+focuses on debugging and fault localization in FL systems,
+helping identify problematic clients or training failures. NIIDB ENCH [33] is a benchmark suite for evaluating FL methods
+under non-IID data silos. These baselines are valuable for
+analyzing reliability and robustness, but they are not included
+in the current performance-oriented selector because their
+primary objective is not to improve standard non-adversarial
+training performance.
+
+R EFERENCES
+[1] B. McMahan, E. Moore, D. Ramage, S. Hampson, and B. A. y Arcas,
+“Communication-efficient Learning of Deep Networks from Decentralized Data,” in Artificial intelligence and statistics. PMLR, 2017, pp.
+1273–1282.
+[2] P. Kairouz et al., “Advances and open problems in federated learning,”
+Found. Trends Mach. Learn., vol. 14, no. 1–2, pp. 1–210, Jun. 2021.
+
+TABLE I: Mapping between the federated learning strategies considered in Chameleon and the main challenges identified
+for model aggregation in federated learning. ✓indicates that the strategy directly targets the challenge, △indicates partial or
+indirect mitigation, and ✗indicates that the challenge is not explicitly targeted.
+Aggregation family
+
+Secure
+aggregation
+
+Main focus
+
+Reference
+
+FedAvg
+FedAvgM
+
+Federated averaging of model weights
+Server momentum for non-IID convergence
+Proximal optimization under system and
+statistical heterogeneity
+Adaptive server-side optimization
+Adaptive server-side optimization
+Adaptive server-side optimization under
+heterogeneous updates
+Fairness-aware federated optimization
+Local batch normalization for feature
+shift
+Federated meta-learning and fast adaptation
+Multi-level branched regularization
+Normalized averaging for heterogeneous local optimization
+Low-rank parameterization and communication efficiency
+Personalization through local layers
+Shared representations for personalized
+FL
+Ordered dropout for heterogeneous
+client capacities
+Depthwise training for heterogeneous
+clients
+Computation and communication efficiency under heterogeneity
+Model-contrastive federated learning
+Communication compression and variance reduction
+Federated learning over connected
+modes
+Acceleration, compression, and partial
+participation
+One-shot FL with foundation models
+Semi-supervised federated self-training
+Federated self-supervised video learning
+Federated speech recognition
+
+[1]
+[4]
+
+✗
+✓
+
+△
+△
+
+✗
+✗
+
+[5]
+
+✓
+
+✗
+
+✗
+
+[6]
+[6]
+[6]
+
+✓
+✓
+✓
+
+△
+△
+△
+
+✗
+✗
+✗
+
+[10]
+[11]
+
+✓
+✓
+
+✗
+✗
+
+✗
+✗
+
+[12]
+
+✓
+
+✗
+
+✗
+
+[13]
+[14]
+
+✓
+✓
+
+✗
+✗
+
+✗
+✗
+
+[15]
+
+✗
+
+✓
+
+✗
+
+[16]
+[17]
+
+✓
+✓
+
+△
+△
+
+✗
+✗
+
+[18]
+
+△
+
+✓
+
+✗
+
+[19]
+
+△
+
+✓
+
+✗
+
+[20]
+
+△
+
+✓
+
+✗
+
+[21]
+[22]
+
+✓
+△
+
+✗
+✓
+
+✗
+✗
+
+[23]
+
+✓
+
+✗
+
+✗
+
+[24]
+
+△
+
+✓
+
+✗
+
+[25]
+[26]
+[27]
+[28]
+
+△
+△
+△
+△
+
+✓
+✗
+△
+✗
+
+✗
+✗
+✗
+✗
+
+FedProx
+FedAdam
+FedAdagrad
+FedYogi
+q-FedAvg
+FedBN
+Synchronous
+aggregation
+
+Statistical
+Communication
+heterogeneity
+bottlenecks
+
+Strategy
+
+FedMeta
+FedMLB
+FedNova
+FedPara
+FedPer
+FedRep
+FjORD
+DepthFL
+HeteroFL
+MOON
+DASHA
+Floco
+TAMUNA
+FedPFT
+FedStar
+FedVSSL
+FedWav2Vec2
+
+Asynchronous
+aggregation
+
+–
+
+No selected baseline directly instantiates
+asynchronous aggregation
+
+–
+
+✗
+
+✗
+
+✗
+
+Hierarchical
+aggregation
+
+–
+
+No selected baseline directly instantiates
+hierarchical aggregation
+
+–
+
+✗
+
+✗
+
+✗
+
+Robust aggregation
+
+hFedXGBoost
+StatAvg
+FedDebug
+FLANDERS
+
+Federated gradient boosting trees
+Non-IID intrusion detection
+Debugging and fault localization
+Robustness against model poisoning attacks
+
+[29]
+[30]
+[31]
+[32]
+
+△
+✓
+✗
+✗
+
+✗
+✗
+✗
+✗
+
+✗
+✗
+△
+✓
+
+Benchmark suite
+
+NIID-Bench
+
+Benchmarking non-IID data silos
+
+[33]
+
+△
+
+✗
+
+✗
+
+[3] P. Qi, D. Chiaro, A. Guzzo, M. Ianni, G. Fortino, and F. Piccialli, “Model
+aggregation techniques in Federated Learning: A comprehensive survey,”
+Future Gener. Comput. Syst., vol. 150, pp. 272–293, 2024.
+[4] T. H. Hsu, H. Qi, and M. Brown, “Federated Visual Classification
+with Real-World Data Distribution,” in Computer Vision – ECCV 2020.
+Springer, 2020, pp. 76–92.
+[5] T. Li, A. K. Sahu, M. Zaheer, M. Sanjabi, A. Talwalkar, and V. Smith,
+“Federated Optimization in Heterogeneous Networks,” in Proceedings
+of Machine Learning and Systems, 2020.
+[6] S. J. Reddi, Z. Charles, M. Zaheer, Z. Garrett, K. Rush, J. Konečný,
+S. Kumar, and H. B. McMahan, “Adaptive Federated Optimization,” in
+International Conference on Learning Representations, 2021.
+[7] S. Amershi, A. Begel, C. Bird, R. DeLine, H. Gall, E. Kamar, N. Nagappan, B. Nushi, and T. Zimmermann, “Software Engineering for Machine
+
+Learning: A Case Study,” in International Conference on Software
+Engineering: Software Engineering in Practice (ICSE-SEIP), 2019, pp.
+291–300.
+[8] Q. Yang, Y. Liu, T. Chen, and Y. Tong, “Federated Machine Learning:
+Concept and Applications,” ACM Transactions on Intelligent Systems
+and Technology, vol. 10, no. 2, 2019.
+[9] H. Zhang, J. Bosch, and H. H. Olsson, “Federated Learning Systems:
+Architecture Alternatives,” in Asia-Pacific Software Engineering Conference (APSEC), 2020, pp. 385–394.
+[10] T. Li, M. Sanjabi, A. Beirami, and V. Smith, “Fair Resource Allocation in Federated Learning,” in International Conference on Learning
+Representations, 2020.
+[11] X. Li, M. Jiang, X. Zhang, M. Kamp, and Q. Dou, “FedBN: Federated
+Learning on Non-IID Features via Local Batch Normalization,” in
+
+International Conference on Learning Representations, 2021.
+[12] F. Chen, Z. Dong, Z. Li, and X. He, “Federated Meta-Learning for
+Recommendation,” CoRR, vol. abs/1802.07876, 2018.
+[13] J. Kim, G. Kim, and B. Han, “Multi-Level Branched Regularization for
+Federated Learning,” CoRR, vol. abs/2207.06936, 2022.
+[14] J. Wang, Q. Liu, H. Liang, G. Joshi, and H. V. Poor, “Tackling the Objective Inconsistency Problem in Heterogeneous Federated Optimization,”
+in Advances in Neural Information Processing Systems, 2020.
+[15] H. Nam, Y. Moon, and T. Oh, “FedPara: Low-Rank Hadamard Product for Communication-Efficient Federated Learning,” in International
+Conference on Learning Representations, 2022.
+[16] M. G. Arivazhagan, V. Aggarwal, A. K. Singh, and S. Choudhary, “Federated Learning with Personalization Layers,” CoRR, vol.
+abs/1912.00818, 2019.
+[17] L. Collins, H. Hassani, A. Mokhtari, and S. Shakkottai, “Exploiting
+Shared Representations for Personalized Federated Learning,” in International Conference on Machine Learning, 2021, pp. 2089–2099.
+[18] S. Horváth, S. Laskaridis, M. Almeida, I. Leontiadis, S. I. Venieris,
+and N. D. Lane, “FjORD: Fair and Accurate Federated Learning under
+Heterogeneous Targets with Ordered Dropout,” in Advances in Neural
+Information Processing Systems, 2021, pp. 12 876–12 889.
+[19] M. Kim, S. Yu, S. Kim, and S. Moon, “DepthFL: Depthwise Federated
+Learning for Heterogeneous Clients,” in International Conference on
+Learning Representations, 2023.
+[20] E. Diao, J. Ding, and V. Tarokh, “HeteroFL: Computation and Communication Efficient Federated Learning for Heterogeneous Clients,” in
+International Conference on Learning Representations, 2021.
+[21] Q. Li, B. He, and D. Song, “Model-Contrastive Federated Learning,”
+in IEEE/CVF Conference on Computer Vision and Pattern Recognition,
+2021, pp. 10 713–10 722.
+[22] A. Tyurin and P. Richtárik, “DASHA: Distributed Nonconvex Optimization with Communication Compression and Optimal Oracle Complexity,” in International Conference on Learning Representations, 2023.
+[23] D. Grinwald, P. Wiesner, and S. Nakajima, “Federated Learning over
+Connected Modes,” in Advances in Neural Information Processing
+Systems, 2024.
+[24] L. Condat, I. Agarsky, G. Malinovsky, and P. Richtárik, “TAMUNA:
+Accelerated Federated Learning with Local Training and Partial Participation,” CoRR, vol. abs/2302.09832, 2023.
+[25] M. Beitollahi, A. Bie, S. Hemati, L. M. Brunswic, X. Li, X. Chen, and
+G. Zhang, “Parametric Feature Transfer: One-shot Federated Learning
+with Foundation Models,” CoRR, vol. abs/2402.01862, 2024.
+[26] V. Tsouvalas, A. Saeed, and T. Ozcelebi, “Federated Self-Training
+for Semi-Supervised Audio Recognition,” CoRR, vol. abs/2107.06877,
+2021.
+[27] Y. A. U. Rehman, Y. Gao, J. Shen, P. P. B. de Gusmão, and N. D.
+Lane, “Federated Self-Supervised Learning for Video Understanding,”
+in Computer Vision – ECCV 2022. Springer, 2022, pp. 506–522.
+[28] T. Nguyen, S. Mdhaffar, N. A. Tomashenko, J. Bonastre, and Y. Estève,
+“Federated Learning for ASR based on Wav2vec 2.0,” CoRR, vol.
+abs/2302.10790, 2023.
+[29] C. Ma, X. Qiu, D. J. Beutel, and N. D. Lane, “Gradient-less Federated
+Gradient Boosting Tree with Learnable Learning Rates,” in Workshop
+on Machine Learning and Systems, 2023, pp. 56–63.
+[30] P. S. Bouzinis, P. Radoglou-Grammatikis, I. Makris, T. Lagkas, V. Argyriou, G. T. Papadopoulos, P. Sarigiannidis, and G. K. Karagiannidis,
+“StatAvg: Mitigating Data Heterogeneity in Federated Learning for
+Intrusion Detection Systems,” CoRR, vol. abs/2405.13062, 2024.
+[31] W. Gill, A. Anwar, and M. A. Gulzar, “FedDebug: Systematic Debugging for Federated Learning Applications,” in IEEE/ACM International
+Conference on Software Engineering, 2023, pp. 512–523.
+[32] E. Gabrielli, D. Belli, Z. Matrullo, V. Miori, and G. Tolomei, “Securing
+Federated Learning Against Extreme Model Poisoning Attacks via
+Multidimensional Time Series Anomaly Detection on Local Updates,”
+IEEE Transactions on Information Forensics and Security, vol. 20, pp.
+9610–9624, 2025.
+[33] Q. Li, Y. Diao, Q. Chen, and B. He, “Federated Learning on Non-IID
+Data Silos: An Experimental Study,” in International Conference on
+Data Engineering, ICDE. IEEE, 2022, pp. 965–978.
+
+

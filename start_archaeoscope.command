@@ -3,6 +3,9 @@ set -e
 
 cd "$(dirname "$0")"
 
+VENV_DIR=".venv_archaeoscope"
+REQUIREMENTS_FILE="requirements.txt"
+
 if [ -x "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12" ]; then
   PYTHON_BIN="/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12"
 elif [ -x "/usr/local/bin/python3" ]; then
@@ -15,23 +18,33 @@ else
   exit 1
 fi
 
-if [ -x ".venv/bin/python" ]; then
-  if ! ./.venv/bin/python - <<'PY' >/dev/null 2>&1
+if [ ! -x "$VENV_DIR/bin/python" ]; then
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
+  "$VENV_DIR/bin/python" -m pip install --upgrade pip setuptools wheel
+fi
+
+REQ_HASH="$(shasum -a 256 "$REQUIREMENTS_FILE" | awk '{print $1}')"
+STAMP_FILE="$VENV_DIR/.requirements.sha256"
+INSTALLED_HASH=""
+if [ -f "$STAMP_FILE" ]; then
+  INSTALLED_HASH="$(tr -d '[:space:]' < "$STAMP_FILE")"
+fi
+
+if [ "$REQ_HASH" != "$INSTALLED_HASH" ]; then
+  "$VENV_DIR/bin/python" -m pip install -r "$REQUIREMENTS_FILE"
+  print -r -- "$REQ_HASH" > "$STAMP_FILE"
+fi
+
+if ! "$VENV_DIR/bin/python" - <<'PY' >/dev/null 2>&1
 import tkinter
 import rasterio
 import rvt.vis
 PY
-  then
-    rm -rf .venv
-  fi
+then
+  echo "Ambiente Python incompleto. Elimina solo $VENV_DIR e riavvia ArchaeoScope."
+  read -r "x?Premi Invio per chiudere."
+  exit 1
 fi
-
-if [ ! -x ".venv/bin/python" ]; then
-  "$PYTHON_BIN" -m venv --system-site-packages .venv
-fi
-
-./.venv/bin/python -m pip install --upgrade pip setuptools wheel
-./.venv/bin/python -m pip install -r requirements.txt
 
 if [ -f "Crop marks Tool/.ee_project" ]; then
   export EE_PROJECT="$(cat "Crop marks Tool/.ee_project" | tr -d '[:space:]')"
@@ -41,4 +54,4 @@ fi
 
 export PYTHONDONTWRITEBYTECODE=1
 
-./.venv/bin/python -m streamlit run archaeoscope_app.py
+exec "$VENV_DIR/bin/python" -m streamlit run archaeoscope_app.py
