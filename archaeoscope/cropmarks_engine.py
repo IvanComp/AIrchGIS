@@ -87,8 +87,20 @@ CONTRAST_RADIUS = 60
 COHERENCE_RADIUS = 90
 MAX_RANKED_SCENES = 60
 
+# --- parcel segmentation -----------------------------------------------------
+# A circular kernel that straddles a field boundary compares two different crops
+# and reports the margin as a strong, perfectly straight anomaly. Every local
+# statistic is therefore computed inside a parcel, and no candidate is produced
+# within one kernel radius of a boundary.
+BOUNDARY_PERCENTILE = 92        # share of the area that is field interior
+PARCEL_EDGE_BUFFER_M = 60       # equals DEFAULT_LOCAL_RADIUS
+
 S2_SCALE = 20
 LANDSAT_SCALE = 30
+
+MODE_BEST = "Migliore singola data"
+MODE_MEDIAN = "Mediana migliori date (solo contesto)"
+COMPOSITE_MODES = (MODE_BEST, MODE_MEDIAN)
 
 
 def default_project():
@@ -218,7 +230,9 @@ def mask_s2(img, max_pixel_cloud=DEFAULT_PIXEL_CLOUD):
     mask = (
         scl.neq(0)
         .And(scl.neq(1))
+        .And(scl.neq(2))   # dark area and topographic shadow
         .And(scl.neq(3))
+        .And(scl.neq(6))   # water
         .And(scl.neq(8))
         .And(scl.neq(9))
         .And(scl.neq(10))
@@ -526,7 +540,11 @@ def ninety_day_normal(climatology, month):
 
 
 def pca(img, bands, aoi, scale):
+    # toArray needs every band valid on every pixel: a partially masked pixel
+    # yields a shorter array and the centred covariance collapses to NaN, which
+    # is what used to make the whole export fail with an opaque 400.
     image = img.select(bands)
+    image = image.updateMask(image.mask().reduce(ee.Reducer.min()))
     means = ee.Dictionary(
         image.reduceRegion(
             reducer=ee.Reducer.mean(),
@@ -570,6 +588,158 @@ def z(img, band, aoi):
     mean = safe_num(values, band + "_mean")
     stddev = safe_num(values, band + "_stdDev").max(0.0001)
     return img.select(band).subtract(mean).divide(stddev).abs().rename("Z_" + band)
+
+
+def seasonal_signature(collection, aoi, scale, crs="EPSG:32633"):
+    """One NDVI median per month: the annual behaviour of each pixel.
+
+    Two pixels in the same field follow the same curve through sowing, growth
+    and harvest. Two pixels across a boundary do not, whatever a single date
+    happens to show.
+    """
+    months = [
+        collection.filter(ee.Filter.calendarRange(month, month, "month"))
+        .select("NDVI")
+        .median()
+        .rename(f"m{month:02d}")
+        for month in range(1, 13)
+    ]
+    return ee.Image.cat(months).clip(aoi).unmask(0).reproject(crs=crs, scale=scale)
+
+
+def _shift_kernel(dr, dc):
+    weights = [[0.0] * 3 for _ in range(3)]
+    weights[1 + dr][1 + dc] = 1.0
+    return ee.Kernel.fixed(3, 3, weights)
+
+
+def boundary_strength(signature):
+    """How differently a pixel behaves from its four neighbours over the year."""
+    distances = []
+    for dr, dc in ((0, 1), (1, 0), (0, -1), (-1, 0)):
+        shifted = signature.convolve(_shift_kernel(dr, dc))
+        distances.append(signature.subtract(shifted).pow(2).reduce(ee.Reducer.mean()).sqrt())
+    return ee.ImageCollection(distances).max().rename("boundary_strength")
+
+
+def field_boundaries(signature, aoi, scale, percentile=BOUNDARY_PERCENTILE):
+    """Binary field-margin mask, thresholded on the area's own distribution."""
+    strength = boundary_strength(signature)
+    threshold = ee.Number(
+        strength.reduceRegion(
+            reducer=ee.Reducer.percentile([percentile]),
+            geometry=aoi,
+            scale=scale,
+            maxPixels=1e8,
+            bestEffort=True,
+            tileScale=4,
+        ).values().get(0)
+    )
+    return strength.gte(threshold).rename("parcel_boundary")
+
+
+MONTH_BANDS = [f"m{month:02d}" for month in range(1, 13)]
+
+# Winter cereal in the Marche is sown in autumn, stays green through winter,
+# peaks in April-May and is harvested in June: the crop-mark crop. A summer crop
+# leaves the ground bare all winter and peaks in July-August. Permanent grass
+# never goes bare and never peaks.
+CLASS_OTHER, CLASS_CEREAL, CLASS_SUMMER, CLASS_GRASS = 0, 1, 2, 3
+CLASS_LABELS = {CLASS_OTHER: "altro", CLASS_CEREAL: "cereale", CLASS_SUMMER: "estiva", CLASS_GRASS: "prato"}
+GRASS_MAX_AMPLITUDE = 0.30
+GRASS_MIN_FLOOR = 0.35
+CEREAL_PEAK_MONTHS = (4, 6)
+CEREAL_MIN_DROP = 0.25
+SUMMER_MAX_WINTER = 0.30
+# A crop mark needs a canopy to express itself; a soil mark needs bare ground.
+CANOPY_GATE = 0.35
+BARE_GATE = 0.25
+# A pixel judged on one or two acquisitions is not evidence.
+MIN_EFFECTIVE_DATES = 3
+
+
+def parcel_curve(signature, radius_m=PARCEL_EDGE_BUFFER_M):
+    """The annual NDVI curve of the field a pixel belongs to.
+
+    Smoothing the seasonal signature over ``radius_m`` and reading it inside
+    :func:`parcel_interior` gives the field's own year: the kernel is the same
+    size as the buffer, so it cannot reach across a margin into another crop.
+
+    Labelling the parcels and reducing over connected components would be more
+    exact and was tried first; on Earth Engine it exhausts the memory limit over
+    areas of this size, and the gain does not justify it - the classification
+    below only needs the shape of the curve.
+    """
+    return signature.select(MONTH_BANDS).focal_mean(radius=radius_m, units="meters")
+
+
+def crop_class(curve):
+    """Classify each parcel from the shape of its year.
+
+    The AOI mean NDVI that the ranking used to rely on mixes a wheat field at
+    0.8 with a ploughed one at 0.1 and calls the average a phenological state.
+    This asks the question per field instead.
+    """
+    peak = curve.reduce(ee.Reducer.max())
+    floor = curve.reduce(ee.Reducer.min())
+    amplitude = peak.subtract(floor)
+    peak_month = curve.toArray().arrayArgmax().arrayGet([0]).add(1)
+    winter = curve.select(["m12", "m01", "m02"]).reduce(ee.Reducer.mean())
+    summer = curve.select(["m07", "m08"]).reduce(ee.Reducer.mean())
+
+    grass = amplitude.lt(GRASS_MAX_AMPLITUDE).And(floor.gt(GRASS_MIN_FLOOR))
+    cereal = (
+        peak_month.gte(CEREAL_PEAK_MONTHS[0])
+        .And(peak_month.lte(CEREAL_PEAK_MONTHS[1]))
+        .And(peak.subtract(summer).gt(CEREAL_MIN_DROP))
+    )
+    summer_crop = winter.lt(SUMMER_MAX_WINTER).And(peak_month.gte(6))
+
+    classes = (
+        ee.Image.constant(CLASS_OTHER)
+        .where(summer_crop, CLASS_SUMMER)
+        .where(cereal, CLASS_CEREAL)
+        .where(grass, CLASS_GRASS)
+        .rename("crop_class")
+        .toInt()
+    )
+    return classes.addBands(peak_month.rename("peak_month")).addBands(amplitude.rename("ndvi_amplitude"))
+
+
+def target_parcels(classes, target):
+    """Which fields can express the kind of mark being looked for."""
+    crop_type = classes.select("crop_class")
+    if target == "Soil marks (suolo nudo)":
+        return crop_type.eq(CLASS_CEREAL).Or(crop_type.eq(CLASS_SUMMER)).rename("target_parcel")
+    if target == "Crop marks (vegetazione)":
+        return crop_type.eq(CLASS_CEREAL).rename("target_parcel")
+    return crop_type.neq(CLASS_GRASS).And(crop_type.neq(CLASS_OTHER)).rename("target_parcel")
+
+
+def date_weight(img, eligible, target):
+    """How much this acquisition can say about this pixel.
+
+    Zero on a field that cannot carry the mark, and zero on a date when that
+    field was in the wrong state - bare when a crop mark is wanted, under canopy
+    when a soil mark is.
+    """
+    ndvi = img.select("NDVI")
+    if target == "Soil marks (suolo nudo)":
+        stage = ndvi.lt(BARE_GATE)
+    elif target == "Crop marks (vegetazione)":
+        stage = ndvi.gte(CANOPY_GATE)
+    else:
+        stage = ndvi.gte(CANOPY_GATE).Or(ndvi.lt(BARE_GATE))
+    return eligible.And(stage).rename("weight").float()
+
+
+def parcel_interior(boundaries, radius_m=PARCEL_EDGE_BUFFER_M):
+    """1 where a neighbourhood of ``radius_m`` stays inside a single field.
+
+    This is what makes a plain circular kernel a within-parcel statistic: no
+    candidate is produced in the band where the kernel could straddle a margin.
+    """
+    return boundaries.focal_max(radius=radius_m, units="meters").Not().rename("parcel_interior")
 
 
 def local_signed_z(img, band, radius=DEFAULT_LOCAL_RADIUS):
@@ -666,26 +836,125 @@ def multi_year_recurrence(collection, years, threshold=DEFAULT_PERSISTENCE_THRES
 
 
 def anomalies(img, aoi):
+    """Legacy single-image anomaly stack, kept for the context layers only."""
     zs = [z(img, band, aoi) for band in ["NDVI", "GNDVI", "Crop_band", "Soil_band", "NDMI", "TCT_greenness"]]
     anomaly = ee.ImageCollection(zs).sum().rename("Anomaly_score")
     local = anomaly.subtract(anomaly.focal_mean(radius=60, units="meters")).rename("Local_contrast")
     edges = ee.Algorithms.CannyEdgeDetector(local, 0.7, 1).rename("Edges")
-    deficit = vegetation_deficit(img)
-    excess = vegetation_excess(img)
-    combined = deficit.max(excess).rename("Mark_strength")
-    coherence = structure_coherence(combined)
-    linear = combined.multiply(coherence).rename("Linear_marks")
+    return anomaly.addBands(local).addBands(edges).float()
+
+
+SOIL_BANDS = ["TCT_brightness", "Soil_band"]
+
+
+def local_signed_z_multi(img, bands, radius=DEFAULT_LOCAL_RADIUS):
+    """Signed z-scores of several bands against a circular neighbourhood.
+
+    Used together with :func:`parcel_interior`, which keeps only the pixels
+    farther than ``radius`` from any parcel boundary. Inside that mask the
+    kernel cannot cross into another field, so this *is* the within-parcel
+    statistic, at a fraction of the cost of a connected-components reduction.
+    """
+    kernel = ee.Kernel.circle(radius=radius, units="meters")
+    values = img.select(bands)
+    mean = values.reduceNeighborhood(ee.Reducer.mean(), kernel).rename(bands)
+    std = values.reduceNeighborhood(ee.Reducer.stdDev(), kernel).rename(bands).max(ee.Image.constant(1e-4))
+    return values.subtract(mean).divide(std)
+
+
+def date_marks(img):
+    """Deficit and excess of a single acquisition, measured inside the parcel.
+
+    The signed z-scores are averaged before being split into deficit and excess:
+    averaging the clipped halves instead would let a band that is positive and
+    one that is negative both contribute, inflating weak, incoherent signals.
+    """
+    zs = local_signed_z_multi(img, VEGETATION_BANDS + SOIL_BANDS)
+    signed = zs.select(VEGETATION_BANDS).reduce(ee.Reducer.mean())
+    zero = ee.Image.constant(0)
+    deficit = signed.multiply(-1).max(zero).rename("Vegetation_deficit")
+    excess = signed.max(zero).rename("Vegetation_excess")
+    soil = zs.select(SOIL_BANDS).abs().reduce(ee.Reducer.max()).rename("Soil_mark_index")
     return (
-        anomaly.addBands(local)
-        .addBands(edges)
-        .addBands(deficit)
-        .addBands(excess)
-        .addBands(combined)
-        .addBands(coherence)
+        deficit.addBands(excess)
+        .addBands(deficit.max(excess).rename("Mark_strength"))
+        .addBands(soil)
+        .float()
+        .copyProperties(img, ["system:time_start", "date", "year", "scene_id"])
+    )
+
+
+DETECTION_BANDS = ["Vegetation_deficit", "Vegetation_excess", "Mark_strength", "Soil_mark_index"]
+
+
+def detection_layers(collection, threshold, years, interior, eligible=None, target="Automatico"):
+    """Anomaly maps built date by date, then aggregated with per-pixel weights.
+
+    A crop mark is a transient anomaly, so it must be measured on each
+    acquisition and combined afterwards: compositing the reflectance first and
+    looking for anomalies in the composite removes exactly what is being looked
+    for.
+
+    Each acquisition also contributes only where it can say something. A date is
+    excellent over a wheat field about to be harvested and worthless over the
+    ploughed field next to it, so the weight is per pixel, not per scene, and
+    the aggregation is a weighted mean rather than a plain one.
+    """
+    threshold = float(threshold)
+    if eligible is None:
+        eligible = ee.Image.constant(1)
+
+    def measure(image):
+        image = ee.Image(image)
+        marks = ee.Image(date_marks(image))
+        weight = date_weight(image, eligible, target)
+        flags = (
+            marks.select(["Vegetation_deficit", "Vegetation_excess", "Mark_strength"])
+            .gte(threshold)
+            .rename(["Persistent_deficit", "Persistent_excess", "Persistent_any"])
+        )
+        return (
+            marks.addBands(flags)
+            .multiply(weight)
+            .addBands(weight)
+            .float()
+            .copyProperties(image, ["system:time_start", "date", "year", "scene_id"])
+        )
+
+    per_date = ee.ImageCollection(collection.map(measure))
+    weighted = per_date.sum()
+    total_weight = weighted.select("weight")
+    usable = total_weight.gte(MIN_EFFECTIVE_DATES)
+    aggregated = weighted.select(DETECTION_BANDS + PERSISTENCE_BANDS).divide(total_weight.max(1e-6))
+
+    recurrence = None
+    if years:
+        per_year = [
+            ee.Image(per_date.filter(ee.Filter.eq("year", int(year))).select("Persistent_any").max()).gt(0)
+            for year in years
+        ]
+        recurrence = (
+            ee.ImageCollection(per_year).sum().divide(len(years)).rename("Multi_year_recurrence").float()
+        )
+
+    strength = aggregated.select("Mark_strength")
+    coherence = structure_coherence(strength)
+    linear = strength.multiply(coherence).rename("Linear_marks")
+
+    mask = interior.And(usable)
+    stack = (
+        aggregated.addBands(coherence)
         .addBands(linear)
-        .addBands(soil_mark_index(img))
+        .addBands(total_weight.rename("Effective_dates"))
+        .updateMask(mask)
         .float()
     )
+    if recurrence is not None:
+        stack = stack.addBands(recurrence.updateMask(mask))
+    return stack, per_date
+
+
+PERSISTENCE_BANDS = ["Persistent_deficit", "Persistent_excess", "Persistent_any"]
 
 
 # ---------------------------------------------------------------------------
@@ -734,7 +1003,7 @@ def add_layer(m, url, name, show=False, opacity=1.0):
     ).add_to(m)
 
 
-def build_layer_specs(base, pcs, an, persistence, recurrence, mask, red_edge):
+def build_layer_specs(base, detection, context, boundaries, interior, mask, red_edge, classes=None, eligible=None):
     specs = {}
     add_layer_spec(specs, "RGB 4-3-2", base, {"bands": ["B4", "B3", "B2"], "min": 0.02, "max": 0.35}, "Immagini")
     add_layer_spec(specs, "False color 8-4-3", base, {"bands": ["B8", "B4", "B3"], "min": 0.02, "max": 0.45}, "Immagini")
@@ -742,91 +1011,72 @@ def build_layer_specs(base, pcs, an, persistence, recurrence, mask, red_edge):
         specs, "Healthy vegetation 8-11-2", base, {"bands": ["B8", "B11", "B2"], "min": 0.02, "max": 0.45}, "Immagini"
     )
     add_layer_spec(
+        specs, "Maschera aree analizzate", mask.selfMask(), {"min": 0, "max": 1, "palette": ["ffd166"]}, "Immagini"
+    )
+    add_layer_spec(
         specs,
-        "Maschera aree analizzate",
-        mask.selfMask(),
-        {"min": 0, "max": 1, "palette": ["ffd166"]},
+        "Confini di parcella riconosciuti",
+        boundaries.selfMask(),
+        {"min": 0, "max": 1, "palette": ["ef476f"]},
         "Immagini",
     )
-
-    green_palette = ["313695", "ffffbf", "1a9850"]
-    add_layer_spec(specs, "NDVI", base.select("NDVI"), {"min": -0.2, "max": 0.8, "palette": green_palette}, "Vegetazione")
-    add_layer_spec(specs, "GNDVI", base.select("GNDVI"), {"min": -0.2, "max": 0.8, "palette": green_palette}, "Vegetazione")
-    add_layer_spec(specs, "DVI", base.select("DVI"), {"min": -0.2, "max": 0.6, "palette": green_palette}, "Vegetazione")
-    add_layer_spec(specs, "GDVI", base.select("GDVI"), {"min": -0.2, "max": 0.6, "palette": green_palette}, "Vegetazione")
-    add_layer_spec(
-        specs, "GRVI", base.select("GRVI"), {"min": 0, "max": 8, "palette": ["542788", "f7f7f7", "1a9850"]}, "Vegetazione"
-    )
     add_layer_spec(
         specs,
-        "Simple ratio",
-        base.select("SR"),
-        {"min": 0, "max": 8, "palette": ["542788", "f7f7f7", "1a9850"]},
-        "Vegetazione",
+        "Interno parcella (dove si cercano anomalie)",
+        interior.selfMask(),
+        {"min": 0, "max": 1, "palette": ["4cc9f0"]},
+        "Immagini",
     )
-    add_layer_spec(specs, "EVI", base.select("EVI"), {"min": -0.2, "max": 0.8, "palette": green_palette}, "Vegetazione")
-    add_layer_spec(specs, "SAVI", base.select("SAVI"), {"min": -0.2, "max": 0.8, "palette": green_palette}, "Vegetazione")
-    if red_edge:
+    if classes is not None:
         add_layer_spec(
             specs,
-            "MCARI",
-            base.select("MCARI"),
-            {"min": -0.2, "max": 0.4, "palette": ["2166ac", "f7f7f7", "b2182b"]},
-            "Vegetazione",
+            "Classe colturale della parcella",
+            classes.select("crop_class"),
+            {"min": 0, "max": 3, "palette": ["3d3d3d", "f1c75b", "e07a5f", "2a9d8f"]},
+            "Immagini",
+        )
+    if eligible is not None:
+        add_layer_spec(
+            specs,
+            "Parcelle idonee alla traccia cercata",
+            eligible.selfMask(),
+            {"min": 0, "max": 1, "palette": ["06d6a0"]},
+            "Immagini",
         )
 
-    add_layer_spec(
-        specs, "NDMI", base.select("NDMI"), {"min": -0.6, "max": 0.6, "palette": ["8c510a", "f6e8c3", "01665e"]}, "Umidita e suolo"
-    )
-    add_layer_spec(
-        specs, "NDWI", base.select("NDWI"), {"min": -0.6, "max": 0.6, "palette": ["8c510a", "f6e8c3", "01665e"]}, "Umidita e suolo"
-    )
-    add_layer_spec(
-        specs, "MSI", base.select("MSI"), {"min": 0.4, "max": 2.5, "palette": ["01665e", "f6e8c3", "8c510a"]}, "Umidita e suolo"
-    )
-    add_layer_spec(
-        specs,
-        "Crop band",
-        base.select("Crop_band"),
-        {"min": -0.9, "max": 0.1, "palette": ["542788", "f7f7f7", "b35806"]},
-        "Umidita e suolo",
-    )
-    add_layer_spec(
-        specs,
-        "Soil band",
-        base.select("Soil_band"),
-        {"min": -1.0, "max": 0.2, "palette": ["2166ac", "f7f7f7", "b2182b"]},
-        "Umidita e suolo",
-    )
-    add_layer_spec(
-        specs,
-        "Soil marks - contrasto suolo nudo",
-        an.select("Soil_mark_index"),
-        {"min": 0, "max": 3, "palette": ["ffffff", "e9c46a", "bc6c25", "3d1e00"]},
-        "Umidita e suolo",
-    )
+    green = ["313695", "ffffbf", "1a9850"]
+    for name, band, vmin, vmax, palette in [
+        ("NDVI", "NDVI", -0.2, 0.8, green),
+        ("GNDVI", "GNDVI", -0.2, 0.8, green),
+        ("DVI", "DVI", -0.2, 0.6, green),
+        ("GDVI", "GDVI", -0.2, 0.6, green),
+        ("GRVI", "GRVI", 0, 8, ["542788", "f7f7f7", "1a9850"]),
+        ("Simple ratio", "SR", 0, 8, ["542788", "f7f7f7", "1a9850"]),
+        ("EVI", "EVI", -0.2, 0.8, green),
+        ("SAVI", "SAVI", -0.2, 0.8, green),
+    ]:
+        add_layer_spec(specs, name, base.select(band), {"min": vmin, "max": vmax, "palette": palette}, "Vegetazione")
+    if red_edge:
+        add_layer_spec(
+            specs, "MCARI", base.select("MCARI"), {"min": -0.2, "max": 0.4, "palette": ["2166ac", "f7f7f7", "b2182b"]}, "Vegetazione"
+        )
 
-    add_layer_spec(
-        specs,
-        "TCT brightness",
-        base.select("TCT_brightness"),
-        {"min": -0.2, "max": 0.8, "palette": ["000004", "f89540", "fcfdbf"]},
-        "Tasseled Cap",
-    )
-    add_layer_spec(
-        specs,
-        "TCT greenness",
-        base.select("TCT_greenness"),
-        {"min": -0.3, "max": 0.5, "palette": ["542788", "f7f7f7", "1a9850"]},
-        "Tasseled Cap",
-    )
-    add_layer_spec(
-        specs,
-        "TCT wetness",
-        base.select("TCT_wetness"),
-        {"min": -0.4, "max": 0.4, "palette": ["8c510a", "f6e8c3", "01665e"]},
-        "Tasseled Cap",
-    )
+    wet = ["8c510a", "f6e8c3", "01665e"]
+    for name, band, vmin, vmax, palette in [
+        ("NDMI", "NDMI", -0.6, 0.6, wet),
+        ("NDWI", "NDWI", -0.6, 0.6, wet),
+        ("MSI", "MSI", 0.4, 2.5, ["01665e", "f6e8c3", "8c510a"]),
+        ("Crop band", "Crop_band", -0.9, 0.1, ["542788", "f7f7f7", "b35806"]),
+        ("Soil band", "Soil_band", -1.0, 0.2, ["2166ac", "f7f7f7", "b2182b"]),
+    ]:
+        add_layer_spec(specs, name, base.select(band), {"min": vmin, "max": vmax, "palette": palette}, "Umidita e suolo")
+
+    for name, band, vmin, vmax, palette in [
+        ("TCT brightness", "TCT_brightness", -0.2, 0.8, ["000004", "f89540", "fcfdbf"]),
+        ("TCT greenness", "TCT_greenness", -0.3, 0.5, ["542788", "f7f7f7", "1a9850"]),
+        ("TCT wetness", "TCT_wetness", -0.4, 0.4, wet),
+    ]:
+        add_layer_spec(specs, name, base.select(band), {"min": vmin, "max": vmax, "palette": palette}, "Tasseled Cap")
     add_layer_spec(
         specs,
         "TCT RGB",
@@ -835,82 +1085,105 @@ def build_layer_specs(base, pcs, an, persistence, recurrence, mask, red_edge):
         "Tasseled Cap",
     )
 
-    add_layer_spec(specs, "PCA PC1-PC2-PC3", pcs, {"bands": ["PC1", "PC2", "PC3"], "min": -2, "max": 2}, "PCA")
-    add_layer_spec(specs, "PCA PC2-PC3-PC4", pcs, {"bands": ["PC2", "PC3", "PC4"], "min": -2, "max": 2}, "PCA")
-
-    add_layer_spec(
-        specs,
-        "Anomaly score",
-        an.select("Anomaly_score"),
-        {"min": 0, "max": 10, "palette": ["000000", "ffff00", "ff0000"]},
-        "Anomalie",
-    )
-    add_layer_spec(
-        specs,
-        "Local contrast",
-        an.select("Local_contrast"),
-        {"min": -2, "max": 2, "palette": ["0000ff", "ffffff", "ff0000"]},
-        "Anomalie",
-    )
     add_layer_spec(
         specs,
         "Vegetazione in deficit - possibili muri",
-        an.select("Vegetation_deficit"),
-        {"min": 0, "max": 2.5, "palette": ["ffffff", "ffd166", "ef476f", "6a040f"]},
+        detection.select("Vegetation_deficit"),
+        {"min": 0, "max": 1.6, "palette": ["ffffff", "ffd166", "ef476f", "6a040f"]},
         "Anomalie",
     )
     add_layer_spec(
         specs,
         "Vegetazione in eccesso - possibili fossati",
-        an.select("Vegetation_excess"),
-        {"min": 0, "max": 2.5, "palette": ["ffffff", "bde0fe", "219ebc", "023047"]},
+        detection.select("Vegetation_excess"),
+        {"min": 0, "max": 1.6, "palette": ["ffffff", "bde0fe", "219ebc", "023047"]},
         "Anomalie",
     )
     add_layer_spec(
         specs,
         "Marks lineari - anomalie orientate",
-        an.select("Linear_marks"),
-        {"min": 0, "max": 2.0, "palette": ["000000", "3a0ca3", "f72585", "ffd166"]},
+        detection.select("Linear_marks"),
+        {"min": 0, "max": 1.2, "palette": ["000000", "3a0ca3", "f72585", "ffd166"]},
         "Anomalie",
     )
     add_layer_spec(
         specs,
         "Coerenza direzionale",
-        an.select("Coherence"),
+        detection.select("Coherence"),
         {"min": 0, "max": 1, "palette": ["000000", "4cc9f0", "ffffff"]},
         "Anomalie",
     )
-    add_layer_spec(specs, "Edges", an.select("Edges"), {"min": 0, "max": 1, "palette": ["000000", "00ffff"]}, "Anomalie")
+    add_layer_spec(
+        specs,
+        "Soil marks - contrasto suolo nudo",
+        detection.select("Soil_mark_index"),
+        {"min": 0, "max": 2.5, "palette": ["ffffff", "e9c46a", "bc6c25", "3d1e00"]},
+        "Anomalie",
+    )
 
     add_layer_spec(
         specs,
         "Persistenza complessiva",
-        persistence.select("Persistent_any"),
+        detection.select("Persistent_any"),
         {"min": 0, "max": 1, "palette": ["000000", "fee08b", "d73027"]},
         "Persistenza temporale",
     )
     add_layer_spec(
         specs,
         "Persistenza deficit",
-        persistence.select("Persistent_deficit"),
+        detection.select("Persistent_deficit"),
         {"min": 0, "max": 1, "palette": ["000000", "ffd166", "9d0208"]},
         "Persistenza temporale",
     )
     add_layer_spec(
         specs,
         "Persistenza eccesso",
-        persistence.select("Persistent_excess"),
+        detection.select("Persistent_excess"),
         {"min": 0, "max": 1, "palette": ["000000", "90e0ef", "0077b6"]},
         "Persistenza temporale",
     )
-    if recurrence is not None:
-        add_layer_spec(
-            specs,
-            "Ricorrenza pluriennale",
-            recurrence,
-            {"min": 0, "max": 1, "palette": ["000000", "fca311", "e63946", "ffffff"]},
-            "Persistenza temporale",
-        )
+    add_layer_spec(
+        specs,
+        "Ricorrenza pluriennale",
+        detection.select("Multi_year_recurrence"),
+        {"min": 0, "max": 1, "palette": ["000000", "fca311", "e63946", "ffffff"]},
+        "Persistenza temporale",
+    )
+
+    add_layer_spec(
+        specs,
+        "Anomaly score (contesto, singola data)",
+        context.select("Anomaly_score"),
+        {"min": 0, "max": 10, "palette": ["000000", "ffff00", "ff0000"]},
+        "Contesto",
+    )
+    add_layer_spec(
+        specs,
+        "Local contrast (contesto, singola data)",
+        context.select("Local_contrast"),
+        {"min": -2, "max": 2, "palette": ["0000ff", "ffffff", "ff0000"]},
+        "Contesto",
+    )
+    add_layer_spec(
+        specs, "Edges (contesto)", context.select("Edges"), {"min": 0, "max": 1, "palette": ["000000", "00ffff"]}, "Contesto"
+    )
+    add_layer_spec(
+        specs,
+        "Date utili per pixel",
+        detection.select("Effective_dates"),
+        {"min": 0, "max": 12, "palette": ["000000", "4cc9f0", "ffd166"]},
+        "Contesto",
+    )
+    return specs
+
+
+
+def pca_layer_specs(base, aoi, scale, red_edge):
+    """PCA layers, built lazily so a degenerate decomposition cannot break export."""
+    pcs = pca(base, pca_bands(red_edge), aoi, max(scale, 30)).select(["PC1", "PC2", "PC3", "PC4", "PC5", "PC6"])
+    specs = {}
+    add_layer_spec(specs, "PCA PC1-PC2-PC3", pcs, {"bands": ["PC1", "PC2", "PC3"], "min": -2, "max": 2}, "PCA")
+    add_layer_spec(specs, "PCA PC2-PC3-PC4", pcs, {"bands": ["PC2", "PC3", "PC4"], "min": -2, "max": 2}, "PCA")
     return specs
 
 
@@ -1051,25 +1324,45 @@ def run_analysis(
     if not selected_ids:
         raise ValueError("Nessuna data selezionabile con i filtri correnti.")
     top = granules.filter(ee.Filter.inList("scene_id", selected_ids))
-    best = ee.Image(granules.filter(ee.Filter.eq("scene_id", selected_ids[0])).first()).clip(aoi)
-    base = top.median().clip(aoi) if mode == "Mediana migliori date" else best
-
-    bands = pca_bands(red_edge)
-    pcs = pca(base, bands, aoi, scale).select(["PC1", "PC2", "PC3", "PC4", "PC5", "PC6"])
-    an = anomalies(base, aoi)
-    dated = top.map(lambda image: image.set("year", ee.Date(image.get("system:time_start")).get("year")))
-    persistence = temporal_persistence(dated, persistence_threshold).clip(aoi)
+    dated = top.map(
+        lambda image: image.set("year", ee.Date(image.get("system:time_start")).get("year"))
+    )
     years = sorted({scene["date"][:4] for scene in ranked if scene["selected_for_composite"]})
-    recurrence = multi_year_recurrence(dated, years, persistence_threshold)
-    if recurrence is not None:
-        recurrence = recurrence.clip(aoi)
 
-    out = base.select(output_bands(red_edge)).addBands(pcs).addBands(an).addBands(persistence)
-    if recurrence is not None:
-        out = out.addBands(recurrence)
-    out = out.addBands(mask.rename("Analysis_mask")).clip(aoi).float()
+    # The reference image is for looking at, never for detecting on: see
+    # detection_layers.
+    best = ee.Image(granules.filter(ee.Filter.eq("scene_id", selected_ids[0])).first()).clip(aoi)
+    base = top.median().clip(aoi) if str(mode).startswith("Mediana") else best
 
-    layer_specs = build_layer_specs(base, pcs, an, persistence, recurrence, mask.clip(aoi), red_edge)
+    signature = seasonal_signature(granules, aoi, scale)
+    boundaries = field_boundaries(signature, aoi, scale)
+    interior = parcel_interior(boundaries).And(mask)
+    classes = crop_class(parcel_curve(signature))
+    eligible = target_parcels(classes, target)
+    detection, per_date = detection_layers(
+        dated, persistence_threshold, years, interior, eligible=eligible, target=target
+    )
+    detection = detection.clip(aoi)
+    context = anomalies(base, aoi)
+
+    out = (
+        base.select(output_bands(red_edge))
+        .addBands(context)
+        .addBands(detection)
+        .addBands(mask.rename("Analysis_mask"))
+        .addBands(boundaries.rename("Parcel_boundary"))
+        .addBands(classes)
+        .clip(aoi)
+        .float()
+    )
+
+    layer_specs = build_layer_specs(
+        base, detection, context, boundaries, interior, mask.clip(aoi), red_edge, classes, eligible
+    )
+    # The PCA eigen decomposition fails on large or heavily masked areas and
+    # would invalidate every export that carried it, so it is built lazily and
+    # kept out of the exported image.
+    layer_specs.update(pca_layer_specs(base, aoi, scale, red_edge))
 
     task_id = None
     if export:
@@ -1093,7 +1386,12 @@ def run_analysis(
         "download": None,
         "download_image": out,
         "download_region": aoi,
-        "validation_image": persistence.addBands(an),
+        "validation_image": detection,
+        "parcel_boundaries": boundaries,
+        "crop_classes": classes,
+        "selected_collection": dated,
+        "best_image": best,
+        "per_date_marks": per_date,
         "analysis_scale": scale,
         "export_scale": sensor_export_scale(sensor),
         "task_id": task_id,
@@ -1124,6 +1422,7 @@ DISPLAY_COLUMNS = [
     ("scene_cloud", "cloud"),
     ("pixel_cloud_mean", "pixel_cloud_mean"),
     ("valid_pixels", "valid_pixels"),
+    ("coverage", "copertura"),
     ("phenology", "fase"),
     ("rain_30d_mm", "pioggia_30gg_mm"),
     ("rain_30d_normal_mm", "pioggia_30gg_media_mm"),
@@ -1152,6 +1451,7 @@ def scenes_dataframe(scenes):
         "valid_pixels",
         "pioggia_30gg_mm",
         "pioggia_30gg_media_mm",
+        "copertura",
         "siccita",
         "contrasto_locale",
         "score",

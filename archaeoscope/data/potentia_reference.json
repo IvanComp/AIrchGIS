@@ -1,0 +1,112 @@
+{
+  "site": "Potentia (Porto Recanati, MC)",
+  "source": {
+    "document": "Vermeulen et al., The Potenza Valley Survey, 2017",
+    "figure": "Fig. 71",
+    "pdf_page": 102,
+    "local_copy": "RVT/output_rvt_gui/source_cache/pvs_2017.pdf"
+  },
+  "raster": {
+    "embedded_size_px": [
+      396,
+      584
+    ],
+    "ground_sampling_distance_m": 2.78,
+    "note": "L'immagine incorporata nel PDF e a 72 ppi: e questo, non la scala della figura, a limitare la precisione di vettorializzazione."
+  },
+  "georeference": {
+    "crs": "EPSG:3004",
+    "method": "affine ai quattro tick di easting e cinque di northing, misurati sul render a 400 dpi",
+    "render_dpi": 400,
+    "x_m_per_px": 0.5217391304340442,
+    "x_offset_m": 2411269.4782608715,
+    "y_m_per_px": -0.520923630129072,
+    "y_offset_m": 4808984.3545470685,
+    "frame_px_LRTB": [
+      836.0,
+      2944.0,
+      1173.0,
+      4317.0
+    ],
+    "gcp_residual_max_m": 0.31,
+    "gcps": {
+      "easting_px": [
+        1208.5,
+        1783.5,
+        2358.5,
+        2933.5
+      ],
+      "easting_m": [
+        2411900,
+        2412200,
+        2412500,
+        2412800
+      ],
+      "northing_px": [
+        1506.0,
+        2081.0,
+        2657.5,
+        3234.0,
+        3809.0
+      ],
+      "northing_m": [
+        4808200,
+        4807900,
+        4807600,
+        4807300,
+        4807000
+      ]
+    }
+  },
+  "city_walls": {
+    "corners_epsg3004": {
+      "N": [
+        2412483.391304348,
+        4808037.836311124
+      ],
+      "E": [
+        2412637.8260869565,
+        4807529.414848118
+      ],
+      "S": [
+        2412319.2173913047,
+        4807425.230122092
+      ],
+      "W": [
+        2412164.7826086963,
+        4807935.735279619
+      ]
+    },
+    "corners_wgs84": {
+      "N": [
+        13.671816884765663,
+        43.4174003673162
+      ],
+      "E": [
+        13.67382392694207,
+        43.41284577595177
+      ],
+      "S": [
+        13.6699102349248,
+        43.41186221420298
+      ],
+      "W": [
+        13.667902524013257,
+        43.416435491275735
+      ]
+    },
+    "long_side_m": 532.4,
+    "short_side_m": 334.9,
+    "area_ha": 17.8,
+    "long_axis_azimuth_deg": 163.1,
+    "insula_pitch_m": 48,
+    "street_width_m": 5,
+    "note": "Angoli letti su griglia metrica sovrapposta; incertezza ~5 m."
+  },
+  "aoi_bbox_wgs84": [
+    13.666302524013258,
+    43.41067821420298,
+    13.67542392694207,
+    43.4185843673162
+  ]
+}

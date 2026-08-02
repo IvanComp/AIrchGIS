@@ -182,7 +182,13 @@ def render_cropmarks(standalone=False):
             key="as_crop_pixel_cloud",
         )
         topn = st.slider("Date migliori da combinare", 1, 20, 8, key="as_crop_topn")
-        mode = st.selectbox("Immagine base", ["Migliore singola data", "Mediana migliori date"], key="as_crop_mode")
+        mode = st.selectbox(
+            "Immagine di riferimento",
+            cropmarks.COMPOSITE_MODES,
+            key="as_crop_mode",
+            help="Serve solo a guardare l'area. Le anomalie sono sempre calcolate data per data e "
+            "aggregate dopo: un composito mediano cancellerebbe proprio le tracce transitorie.",
+        )
         persistence_threshold = st.slider(
             "Soglia persistenza locale",
             0.8,

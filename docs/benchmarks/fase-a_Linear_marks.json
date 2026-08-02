@@ -1,0 +1,39 @@
+{
+  "label": "fase-a",
+  "band": "Linear_marks",
+  "k": 20,
+  "peaks": 200,
+  "targets": 29,
+  "auc": 0.5055555555555555,
+  "precision": 0.05,
+  "precision_random": 0.025290107717125462,
+  "edge_contamination": 0.0,
+  "edge_share_of_area": 0.02326065462871416,
+  "searchable_share": 0.5512147548977426,
+  "targets_reachable": 12,
+  "params": {
+    "start": "2016-01-01",
+    "end": "2026-08-02",
+    "cloud": 40,
+    "pixel_cloud": 40,
+    "topn": 12,
+    "mode": "Migliore singola data",
+    "persistence_threshold": 1.35,
+    "sensor": "Sentinel-2 (2016 →)",
+    "target": "Automatico",
+    "open_land_only": true
+  },
+  "legacy": false,
+  "scene_count": 730,
+  "valid_scene_count": 707,
+  "years": [
+    "2017",
+    "2018",
+    "2019",
+    "2020",
+    "2021",
+    "2022",
+    "2024",
+    "2026"
+  ]
+}

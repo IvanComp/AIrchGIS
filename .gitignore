@@ -27,3 +27,6 @@ env/
 /RVT/.streamlit_uploads/
 /RVT/image/Database/
 /RVT/image/Database/**/.prepro_cache/
+
+# Benchmark rasters (rigenerabili)
+/.benchmark_cache/

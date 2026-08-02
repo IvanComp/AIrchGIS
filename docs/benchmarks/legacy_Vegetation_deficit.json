@@ -1,0 +1,39 @@
+{
+  "label": "legacy",
+  "band": "Vegetation_deficit",
+  "k": 20,
+  "peaks": 200,
+  "targets": 29,
+  "auc": 0.45413333333333333,
+  "precision": 0.1,
+  "precision_random": 0.040654483904335015,
+  "edge_contamination": 0.35,
+  "edge_share_of_area": 0.0761370404037238,
+  "searchable_share": 0.9150962338295614,
+  "targets_reachable": 24,
+  "params": {
+    "start": "2016-01-01",
+    "end": "2026-08-02",
+    "cloud": 40,
+    "pixel_cloud": 40,
+    "topn": 12,
+    "mode": "Migliore singola data",
+    "persistence_threshold": 1.35,
+    "sensor": "Sentinel-2 (2016 →)",
+    "target": "Automatico",
+    "open_land_only": true
+  },
+  "legacy": true,
+  "scene_count": 730,
+  "valid_scene_count": 707,
+  "years": [
+    "2017",
+    "2018",
+    "2019",
+    "2020",
+    "2021",
+    "2022",
+    "2024",
+    "2026"
+  ]
+}

@@ -79,13 +79,28 @@ class RankingTests(unittest.TestCase):
         ranked = ranking.rank_scenes(scenes)
         self.assertEqual(ranked[0]["scene_id"], "dry")
 
-    def test_partial_coverage_is_penalised(self):
+    def test_a_scene_that_sees_a_sliver_of_the_area_is_rejected(self):
         scenes = [
             scene(scene_id="full", valid_pixels=1000),
             scene(scene_id="sliver", valid_pixels=50),
         ]
         ranked = ranking.rank_scenes(scenes)
         self.assertEqual(ranked[0]["scene_id"], "full")
+        rejected = next(item for item in ranked if item["scene_id"] == "sliver")
+        self.assertEqual(rejected["score"], 0.0)
+        self.assertAlmostEqual(rejected["coverage"], 0.05)
+
+    def test_coverage_is_a_filter_not_a_discount(self):
+        scenes = [
+            scene(scene_id="full", valid_pixels=1000, NDVI_contrast=0.01),
+            scene(scene_id="sliver", valid_pixels=800, NDVI_contrast=0.20),
+        ]
+        ranked = ranking.rank_scenes(scenes, min_coverage=0.9)
+        # The sliver has by far the strongest contrast and still must not win:
+        # its statistics describe a different piece of ground.
+        self.assertEqual(ranked[0]["scene_id"], "full")
+        selected = ranking.select_for_composite(ranked, 5)
+        self.assertEqual([s["scene_id"] for s in selected if s["selected_for_composite"]], ["full"])
 
     def test_ranking_does_not_mutate_the_input(self):
         scenes = [scene()]

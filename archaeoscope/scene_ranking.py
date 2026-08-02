@@ -96,36 +96,54 @@ def dryness_index(recent_mm, climatology_mm):
     return max(0.0, min(1.0, 1.0 - ratio))
 
 
+# A scene that sees a sliver of the area cannot be compared with one that sees
+# all of it: its statistics describe a different place. Coverage is a filter,
+# not a discount.
+MIN_COVERAGE = 0.90
+
+
 def coverage_weight(valid_pixels, max_valid_pixels):
-    """Penalise scenes that only see a fraction of the area of interest."""
+    """Deprecated soft weight, kept so the old behaviour stays reproducible."""
     if not max_valid_pixels:
         return 1.0
     coverage = max(0.0, min(1.0, float(valid_pixels) / float(max_valid_pixels)))
     return 0.55 + 0.45 * coverage
 
 
-def rank_scenes(scenes, target="Automatico", dryness_weight=DRYNESS_WEIGHT):
+def coverage(valid_pixels, max_valid_pixels):
+    if not max_valid_pixels:
+        return 1.0
+    return max(0.0, min(1.0, float(valid_pixels or 0) / float(max_valid_pixels)))
+
+
+def rank_scenes(scenes, target="Automatico", dryness_weight=DRYNESS_WEIGHT, min_coverage=MIN_COVERAGE):
     """Return ``scenes`` sorted by final score, richest date first.
 
     Each scene is a dict holding the raw Earth Engine statistics. The function
-    adds the derived columns (``contrast``, ``phenology``, ``dryness``,
-    ``score``) and never mutates the input.
+    adds the derived columns (``contrast``, ``coverage``, ``phenology``,
+    ``dryness``, ``score``) and never mutates the input.
+
+    Scenes below ``min_coverage`` of the area are kept in the table, so the user
+    can see they exist, but scored to zero: they are not comparable with a scene
+    that sees the whole area.
     """
     prepared = []
     max_valid = max((float(scene.get("valid_pixels") or 0) for scene in scenes), default=0.0)
     for scene in scenes:
         item = dict(scene)
         item["contrast"] = contrast_score(scene)
+        item["coverage"] = coverage(scene.get("valid_pixels"), max_valid)
         item["phenology"] = phenology_class(scene.get("ndvi_mean"), scene.get("bare_fraction"))
         item["dryness"] = dryness_index(scene.get("rain_30d_mm"), scene.get("rain_30d_normal_mm"))
         prepared.append(item)
 
     max_contrast = max((item["contrast"] for item in prepared), default=0.0) or 1.0
     for item in prepared:
-        normalised = item["contrast"] / max_contrast
+        if item["coverage"] < min_coverage:
+            item["score"] = 0.0
+            continue
         item["score"] = (
-            normalised
-            * coverage_weight(item.get("valid_pixels"), max_valid)
+            (item["contrast"] / max_contrast)
             * target_weight(item["phenology"], target)
             * (1.0 + dryness_weight * item["dryness"])
         )
@@ -134,14 +152,19 @@ def rank_scenes(scenes, target="Automatico", dryness_weight=DRYNESS_WEIGHT):
 
 
 def select_for_composite(scenes, topn):
-    """Flag the best ``topn`` scenes, keeping one scene per calendar date."""
+    """Flag the best ``topn`` scenes, keeping one scene per calendar date.
+
+    A scene scored to zero was rejected by the coverage filter and is never
+    selected; a scene with no score at all has not been ranked and is eligible.
+    """
     seen_dates = set()
     selected = 0
     out = []
     for scene in scenes:
         item = dict(scene)
         date = item.get("date")
-        keep = selected < int(topn) and date not in seen_dates
+        rejected = "score" in item and item["score"] <= 0
+        keep = selected < int(topn) and date not in seen_dates and not rejected
         item["selected_for_composite"] = keep
         if keep:
             seen_dates.add(date)
