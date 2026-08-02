@@ -8,6 +8,8 @@ from streamlit_folium import st_folium
 
 from . import candidate_store
 from . import cropmarks_engine as cropmarks
+from . import site_index
+from . import ui
 from .archaeological_database import render_archaeological_database
 from .paths import LOGO_PATH
 from .rvt_web import render_rvt_web
@@ -26,7 +28,10 @@ PRIMARY_TOOLS = ("RVT", "Crop Marks", "Database", "Candidati")
 
 
 def main():
-    st.set_page_config(page_title="ArchaeoScope", layout="wide")
+    try:
+        st.set_page_config(page_title="ArchaeoScope", layout="wide", page_icon=str(LOGO_PATH))
+    except Exception:  # a missing or unsupported icon must never block the app
+        st.set_page_config(page_title="ArchaeoScope", layout="wide")
     init_state()
     tool = render_navbar()
     if tool == "RVT":
@@ -45,154 +50,22 @@ def init_state():
         "as_crop_geometry": None,
         "as_crop_active_layer": None,
         "as_crop_source_record": None,
+        "as_crop_validation": None,
         "as_active_tool": "RVT",
     }.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
 
-def render_app_styles():
-    st.markdown(
-        """
-        <style>
-            :root {
-                --as-brown-950: #0f0c08;
-                --as-brown-900: #15100b;
-                --as-brown-850: #1b130d;
-                --as-brown-800: #21170f;
-                --as-brown-700: #302014;
-                --as-brown-600: #4a2c16;
-                --as-gold-500: #d4af37;
-                --as-gold-400: #f1c75b;
-                --as-text: #f7ecd7;
-                --as-muted: #c7b899;
-                --as-line: rgba(212, 175, 55, 0.24);
-            }
-            header[data-testid="stHeader"],
-            div[data-testid="stToolbar"],
-            div[data-testid="stDecoration"],
-            div[data-testid="stStatusWidget"],
-            div[data-testid="stDeployButton"],
-            button[data-testid="stDeployButton"],
-            .stDeployButton,
-            #MainMenu,
-            footer {
-                display: none;
-                visibility: hidden;
-            }
-            .stApp {
-                background:
-                    linear-gradient(180deg, rgba(241, 199, 91, 0.05), rgba(15, 12, 8, 0) 220px),
-                    var(--as-brown-950);
-                color: var(--as-text);
-            }
-            .block-container {
-                padding-top: 1.05rem;
-                padding-bottom: 2.2rem;
-            }
-            section[data-testid="stSidebar"] {
-                background-color: var(--as-brown-800);
-                border-right: 1px solid rgba(212, 175, 55, 0.18);
-            }
-            .as-brand {
-                color: var(--as-gold-400);
-                font-size: 1.42rem;
-                font-weight: 800;
-                line-height: 1;
-                letter-spacing: 0;
-                margin: 0;
-                white-space: nowrap;
-            }
-            .as-nav-rule {
-                border-bottom: 1px solid var(--as-line);
-                margin: 0.85rem 0 1.1rem;
-            }
-            div[data-testid="stButton"] > button {
-                background: var(--as-brown-800);
-                border: 1px solid rgba(212, 175, 55, 0.36);
-                border-radius: 8px;
-                color: var(--as-text);
-                font-weight: 700;
-                min-height: 2.55rem;
-            }
-            div[data-testid="stButton"] > button:hover {
-                background: var(--as-brown-700);
-                border-color: var(--as-gold-500);
-                color: var(--as-gold-400);
-            }
-            div[data-testid="stButton"] > button[kind="primary"] {
-                background: linear-gradient(180deg, var(--as-gold-400), var(--as-gold-500));
-                border-color: var(--as-gold-400);
-                color: #171008;
-            }
-            .as-utility {
-                align-items: center;
-                display: flex;
-                gap: 0.45rem;
-                justify-content: flex-end;
-            }
-            .as-utility-label {
-                color: var(--as-muted);
-                font-size: 0.72rem;
-                font-weight: 800;
-                letter-spacing: 0.08em;
-                margin-right: 0.2rem;
-                text-transform: uppercase;
-            }
-            .as-utility-link {
-                align-items: center;
-                border: 1px solid rgba(212, 175, 55, 0.22);
-                border-radius: 999px;
-                color: #eadcc5 !important;
-                display: inline-flex;
-                font-size: 0.78rem;
-                font-weight: 800;
-                gap: 0.34rem;
-                padding: 0.36rem 0.62rem;
-                text-decoration: none !important;
-                white-space: nowrap;
-            }
-            .as-utility-icon {
-                font-size: 0.9rem;
-                line-height: 1;
-            }
-            .as-utility-link:hover {
-                background: rgba(212, 175, 55, 0.12);
-                border-color: rgba(241, 199, 91, 0.48);
-                color: var(--as-gold-400) !important;
-            }
-            div[data-testid="stRadio"] [role="radiogroup"] label,
-            div[data-testid="stCheckbox"] label,
-            div[data-testid="stSlider"] label,
-            div[data-testid="stSelectbox"] label {
-                color: var(--as-text);
-            }
-            div[data-baseweb="select"] > div,
-            div[data-testid="stTextInput"] input,
-            div[data-testid="stNumberInput"] input,
-            div[data-testid="stDateInput"] input,
-            textarea {
-                background-color: var(--as-brown-700);
-                border-color: rgba(212, 175, 55, 0.28);
-                color: var(--as-text);
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def render_navbar():
-    render_app_styles()
-    logo_col, title_col, tool_col, utility_col = st.columns(
-        [0.045, 0.175, 0.47, 0.31],
+    ui.inject_styles()
+    brand_col, tool_col, utility_col = st.columns(
+        [0.22, 0.5, 0.28],
         gap="small",
         vertical_alignment="center",
     )
-    with logo_col:
-        st.image(str(LOGO_PATH), width=40)
-    with title_col:
-        st.markdown('<div class="as-brand">ArchaeoScope</div>', unsafe_allow_html=True)
+    with brand_col:
+        st.markdown(ui.brand_markup(), unsafe_allow_html=True)
     with tool_col:
         tool = render_tool_switch()
     with utility_col:
@@ -234,21 +107,39 @@ def render_tool_switch():
 
 
 def render_header():
-    render_app_styles()
-    logo_col, title_col = st.columns([0.05, 0.95], vertical_alignment="center")
-    with logo_col:
-        st.image(str(LOGO_PATH), width=40)
-    with title_col:
-        st.markdown('<div class="as-brand">ArchaeoScope</div>', unsafe_allow_html=True)
+    ui.inject_styles()
+    st.markdown(ui.brand_markup(), unsafe_allow_html=True)
     st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
+
+
+CROP_LEGEND = """
+<div class="as-legend">
+<b>Come leggere i layer.</b>
+<i>Vegetazione in deficit</i> segnala piante piu stentate del contorno: murature, strade e massicciate sepolte.
+<i>Vegetazione in eccesso</i> segnala piante piu vigorose: fossati, canali, riempimenti piu profondi e umidi.
+<i>Marks lineari</i> pesa le stesse anomalie per la loro coerenza direzionale, perche una struttura antropica
+e orientata mentre la variabilita naturale del suolo non lo e.
+<i>Persistenza</i> conta quante delle date scelte mostrano l'anomalia; <i>Ricorrenza pluriennale</i> conta in quanti
+anni diversi ricompare, che e l'indizio piu solido.
+<i>Soil marks</i> lavora sul contrasto del suolo nudo e ha senso sulle date senza copertura vegetale.
+</div>
+"""
 
 
 def render_cropmarks(standalone=False):
     if standalone:
         init_state()
         render_header()
-        st.title("Sentinel-2 crop marks enhancement")
-        st.write("Disegna un poligono o un rettangolo sulla mappa, imposta periodo e nuvole, poi avvia l'analisi.")
+
+    ui.section_title(
+        "Screening multispettrale",
+        eyebrow="Crop marks e soil marks",
+        hint=(
+            "Disegna l'area, scegli il sensore e il tipo di traccia. Il motore classifica ogni acquisizione per "
+            "contrasto locale, stato della coltura e siccita dei giorni precedenti, poi combina solo le date "
+            "che possono davvero mostrare qualcosa."
+        ),
+    )
 
     source_record = st.session_state.get("as_crop_source_record")
     if source_record:
@@ -265,8 +156,23 @@ def render_cropmarks(standalone=False):
 
     with st.sidebar:
         project = st.text_input("Google Earth Engine project", cropmarks.default_project(), key="as_crop_project")
-        start = st.date_input("Da", date(max(2016, date.today().year - 3), 1, 1), key="as_crop_start")
-        end = st.date_input("A", date.today(), key="as_crop_end")
+        sensor = st.selectbox(
+            "Archivio di immagini",
+            cropmarks.SENSOR_OPTIONS,
+            key="as_crop_sensor",
+            help="Landsat estende la ricerca al 1984, a 30 m: utile per paleoalvei, grandi recinti e per vedere "
+            "il paesaggio prima delle trasformazioni recenti.",
+        )
+        default_start = date(1990, 1, 1) if sensor == cropmarks.SENSOR_LANDSAT else date(max(2016, date.today().year - 3), 1, 1)
+        start = st.date_input("Da", default_start, key="as_crop_start", min_value=date(1984, 1, 1))
+        end = st.date_input("A", date.today(), key="as_crop_end", min_value=date(1984, 1, 1))
+        target = st.selectbox(
+            "Traccia cercata",
+            cropmarks.TARGETS,
+            key="as_crop_target",
+            help="Le crop marks vogliono una coltura in crescita, le soil marks un campo arato e nudo. "
+            "La scelta cambia quali date entrano nel composito.",
+        )
         cloud = st.slider("Nuvole massime scena (%)", 0, 100, 35, key="as_crop_cloud")
         pixel_cloud = st.slider(
             "Probabilita nuvola per pixel (%)",
@@ -286,16 +192,31 @@ def render_cropmarks(standalone=False):
             key="as_crop_persistence_threshold",
             help="Contrasto locale minimo per contare un'anomalia in una data.",
         )
+        open_land_only = st.checkbox(
+            "Limita l'analisi a seminativi e aree aperte",
+            True,
+            key="as_crop_open_land",
+            help="Esclude edificato, bosco e acqua con ESA WorldCover. Un bordo di tetto produce piu contrasto "
+            "di qualunque muro sepolto: senza questo filtro le statistiche seguono l'urbanizzato.",
+        )
+        use_rainfall = st.checkbox(
+            "Pesa le date con la siccita precedente",
+            True,
+            key="as_crop_rainfall",
+            help="Confronta la pioggia dei 30 giorni prima di ogni scena con la media 1991-2020 (ERA5-Land).",
+        )
+        show_sites = st.checkbox("Mostra siti noti sulla mappa", True, key="as_crop_show_sites")
         export = st.checkbox("Esporta GeoTIFF su Google Drive", False, key="as_crop_export")
         folder = st.text_input("Cartella Drive", "S2_cropmarks", key="as_crop_folder")
-        run = st.button("Avvia analisi", type="primary")
-        reset = st.button("Reset analisi")
+        run = st.button("Avvia analisi", type="primary", width="stretch")
+        reset = st.button("Reset analisi", width="stretch")
 
     if reset:
         st.session_state.as_crop_result = None
         st.session_state.as_crop_geometry = None
         st.session_state.as_crop_source_record = None
         st.session_state.as_crop_active_layer = None
+        st.session_state.as_crop_validation = None
         st.rerun()
 
     draw_map = folium.Map(location=[41.5, 15.5], zoom_start=9, tiles=None)
@@ -309,6 +230,8 @@ def render_cropmarks(standalone=False):
         bounds = cropmarks.geometry_bounds(st.session_state.as_crop_geometry)
         if bounds:
             draw_map.fit_bounds(bounds, padding=(24, 24))
+            if show_sites:
+                add_known_sites(draw_map, bounds, padding=0.05)
     Draw(
         export=False,
         draw_options={
@@ -336,6 +259,7 @@ def render_cropmarks(standalone=False):
             st.stop()
         if project:
             cropmarks.save_default_project(project)
+        st.session_state.as_crop_validation = None
         with st.spinner("Analisi in corso. Non interagire con la pagina finche non appare il risultato."):
             try:
                 st.session_state.as_crop_result = cropmarks.run_analysis(
@@ -350,6 +274,10 @@ def render_cropmarks(standalone=False):
                     st.session_state.as_crop_geometry,
                     pixel_cloud=pixel_cloud,
                     persistence_threshold=persistence_threshold,
+                    sensor=sensor,
+                    target=target,
+                    open_land_only=open_land_only,
+                    use_rainfall=use_rainfall,
                 )
             except Exception as exc:
                 st.session_state.as_crop_result = None
@@ -359,78 +287,233 @@ def render_cropmarks(standalone=False):
 
     result = st.session_state.as_crop_result
     if result:
-        metric_cols = st.columns(4)
-        metric_cols[0].metric("Scene trovate", result.get("scene_count", 0))
-        metric_cols[1].metric("Scene valide", result.get("valid_scene_count", 0))
-        metric_cols[2].metric("Date combinate", min(result["params"]["topn"], result.get("valid_scene_count", 0)))
-        metric_cols[3].metric("Layer disponibili", len(result["layer_specs"]))
-
-        st.subheader("Date migliori")
-        display_df = result["df"].copy()
-        for column in ["cloud", "pixel_cloud_mean", "score"] + [
-            name for name in display_df.columns if name.endswith("_mean")
-        ]:
-            display_df[column] = display_df[column].astype(float).round(3)
-        st.dataframe(display_df, width="stretch", hide_index=True)
-        st.info(
-            "Lo score e una priorita di indagine basata su contrasti spettrali normalizzati: "
-            "non rappresenta una probabilita archeologica. Le anomalie persistenti sono quelle "
-            "che ricompaiono nelle date selezionate."
-        )
-
-        if len(result["df"]) > 1:
-            chart = result["df"].copy()
-            chart["date"] = chart["date"].astype("datetime64[ns]")
-            chart = chart.sort_values("date").set_index("date")
-            chart_columns = ["ndvi_mean", "savi_mean", "ndmi_mean"]
-            st.subheader("Serie temporale media nell'AOI")
-            st.line_chart(chart[chart_columns], height=260)
-
-        st.subheader("Mappa dei layer generati")
-        layer_names = list(result["layer_specs"].keys())
-        if st.session_state.as_crop_active_layer not in layer_names:
-            preferred = "Persistenza complessiva" if result["params"]["topn"] > 1 else "False color 8-4-3"
-            st.session_state.as_crop_active_layer = preferred if preferred in layer_names else layer_names[0]
-        active_layer = st.selectbox(
-            "Filtro",
-            layer_names,
-            key="as_crop_active_layer",
-            format_func=lambda name: f"{result['layer_specs'][name]['group']} · {name}",
-        )
-        if active_layer not in result["layer_urls"]:
-            with st.spinner("Preparazione del layer selezionato..."):
-                result["layer_urls"][active_layer] = cropmarks.layer_url(result, active_layer)
-        result_map = folium.Map(location=result["center"], zoom_start=14, tiles=None)
-        cropmarks.add_base_tiles(result_map, esri_show=True)
-        folium.GeoJson(
-            result["geometry"],
-            name="AOI",
-            style_function=lambda _x: {"color": "yellow", "weight": 2, "fillOpacity": 0},
-        ).add_to(result_map)
-        cropmarks.add_layer(result_map, result["layer_urls"][active_layer], active_layer, show=True)
-        folium.LayerControl(collapsed=False).add_to(result_map)
-        st_folium(result_map, width=1200, height=760, key=f"as_crop_result_map_{active_layer}", returned_objects=[])
-
-        cols = st.columns(3)
-        with cols[0]:
-            if result["download"]:
-                st.link_button("Scarica GeoTIFF", result["download"])
-            elif st.button("Prepara download GeoTIFF", width="stretch"):
-                try:
-                    with st.spinner("Preparazione download..."):
-                        result["download"] = cropmarks.prepare_download(result)
-                    st.rerun()
-                except Exception as exc:
-                    st.warning(f"Download diretto non disponibile: {exc}. Usa l'export Drive.")
-        with cols[1]:
-            if result["task_id"]:
-                st.success("Export Drive avviato. Task ID: " + result["task_id"])
-        with cols[2]:
-            st.write("Confronta persistenza, deficit ed eccesso di vegetazione con RGB, suolo e LiDAR prima di classificare il candidato.")
-
-        render_candidate_save_form(result, active_layer)
+        render_crop_results(result, show_sites)
 
     render_crop_candidate_archive()
+
+
+def render_crop_results(result, show_sites=True):
+    frame = result["df"]
+    selected = frame[frame["selected_for_composite"]] if "selected_for_composite" in frame else frame
+
+    st.markdown(result_chips(result, selected), unsafe_allow_html=True)
+
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Scene trovate", result.get("scene_count", 0))
+    metric_cols[1].metric("Scene valide", result.get("valid_scene_count", 0))
+    metric_cols[2].metric("Date combinate", int(len(selected)))
+    metric_cols[3].metric("Anni coperti", len(result.get("years") or []))
+
+    ui.section_title("Date migliori", eyebrow="Ranking delle acquisizioni")
+    display_df = frame.copy()
+    for column in display_df.columns:
+        if display_df[column].dtype.kind == "f":
+            display_df[column] = display_df[column].round(3)
+    st.dataframe(display_df, width="stretch", hide_index=True)
+    st.caption(
+        "Lo score combina contrasto locale, copertura utile dell'area, coerenza con la traccia cercata e "
+        "siccita dei 30 giorni precedenti. E una priorita di indagine, non una probabilita archeologica."
+    )
+
+    if len(frame) > 1:
+        chart_col, rain_col = st.columns([0.58, 0.42], gap="large")
+        chart = frame.copy()
+        chart["date"] = chart["date"].astype("datetime64[ns]")
+        chart = chart.sort_values("date").set_index("date")
+        with chart_col:
+            st.markdown("**Serie temporale degli indici nell'area**")
+            st.line_chart(
+                chart[["ndvi_mean", "savi_mean", "ndmi_mean"]],
+                height=250,
+                color=["#f1c75b", "#e0a458", "#8fd3d1"],
+            )
+        with rain_col:
+            st.markdown("**Pioggia nei 30 giorni precedenti vs media 1991-2020**")
+            if result.get("rainfall_available") and chart["pioggia_30gg_mm"].notna().any():
+                st.line_chart(
+                    chart[["pioggia_30gg_mm", "pioggia_30gg_media_mm"]],
+                    height=250,
+                    color=["#8fd3d1", "#c7b899"],
+                )
+            else:
+                st.info("Contesto pluviometrico non disponibile per questa esecuzione.")
+
+    ui.section_title("Mappa dei layer generati", eyebrow="Anomalie")
+    st.markdown(CROP_LEGEND, unsafe_allow_html=True)
+    layer_names = list(result["layer_specs"].keys())
+    if st.session_state.as_crop_active_layer not in layer_names:
+        preferred = "Persistenza complessiva" if len(selected) > 1 else "False color 8-4-3"
+        st.session_state.as_crop_active_layer = preferred if preferred in layer_names else layer_names[0]
+    active_layer = st.selectbox(
+        "Filtro",
+        layer_names,
+        key="as_crop_active_layer",
+        format_func=lambda name: f"{result['layer_specs'][name]['group']} · {name}",
+    )
+    if active_layer not in result["layer_urls"]:
+        with st.spinner("Preparazione del layer selezionato..."):
+            result["layer_urls"][active_layer] = cropmarks.layer_url(result, active_layer)
+    result_map = folium.Map(location=result["center"], zoom_start=14, tiles=None)
+    cropmarks.add_base_tiles(result_map, esri_show=True)
+    folium.GeoJson(
+        result["geometry"],
+        name="AOI",
+        style_function=lambda _x: {"color": "yellow", "weight": 2, "fillOpacity": 0},
+    ).add_to(result_map)
+    cropmarks.add_layer(result_map, result["layer_urls"][active_layer], active_layer, show=True)
+    if show_sites:
+        add_known_sites(result_map, cropmarks.geometry_bounds(result["geometry"]), padding=0.03)
+    folium.LayerControl(collapsed=False).add_to(result_map)
+    st_folium(result_map, width=1200, height=760, key=f"as_crop_result_map_{active_layer}", returned_objects=[])
+
+    cols = st.columns(3)
+    with cols[0]:
+        if result["download"]:
+            st.link_button("Scarica GeoTIFF", result["download"], width="stretch")
+        elif st.button("Prepara download GeoTIFF", width="stretch"):
+            try:
+                with st.spinner("Preparazione download..."):
+                    result["download"] = cropmarks.prepare_download(result)
+                st.rerun()
+            except Exception as exc:
+                st.warning(f"Download diretto non disponibile: {exc}. Usa l'export Drive.")
+    with cols[1]:
+        if result["task_id"]:
+            st.success("Export Drive avviato. Task ID: " + result["task_id"])
+    with cols[2]:
+        st.caption(
+            "Confronta persistenza, deficit ed eccesso di vegetazione con RGB, suolo e LiDAR prima di "
+            "classificare il candidato."
+        )
+
+    render_site_validation(result)
+    render_candidate_save_form(result, active_layer)
+
+
+def result_chips(result, selected):
+    params = result.get("params", {})
+    phases = selected["fase"].value_counts().to_dict() if "fase" in selected else {}
+    phase_text = ", ".join(f"{count} {label}" for label, count in phases.items()) or "n.d."
+    dryness = selected["siccita"].mean() if "siccita" in selected and selected["siccita"].notna().any() else None
+    years = result.get("years") or []
+    span = f"{years[0]}-{years[-1]}" if years else "n.d."
+    chips = [
+        f'<span class="as-chip">Sensore <b>{params.get("sensor", "")}</b></span>',
+        f'<span class="as-chip">Traccia <b>{params.get("target", "")}</b></span>',
+        f'<span class="as-chip">Anni <b>{span}</b></span>',
+        f'<span class="as-chip">Fasi <b>{phase_text}</b></span>',
+    ]
+    if dryness is not None:
+        css = "as-chip as-chip--hot" if dryness >= 0.4 else "as-chip as-chip--cool"
+        chips.append(f'<span class="{css}">Siccita media <b>{dryness:.2f}</b></span>')
+    if params.get("open_land_only"):
+        chips.append('<span class="as-chip">Maschera <b>aree aperte</b></span>')
+    return f'<div class="as-chips">{"".join(chips)}</div>'
+
+
+def add_known_sites(target_map, bounds, padding=0.03):
+    """Draw the documentary catalogue over an imagery map."""
+    if not bounds:
+        return 0
+    try:
+        sites = site_index.sites_in_bounds(
+            bounds, padding=padding, methods=("pubblicata", "toponimo")
+        )
+    except Exception:
+        LOGGER.exception("Siti noti non disponibili")
+        return 0
+    if not sites:
+        return 0
+    group = folium.FeatureGroup(name=f"Siti noti ({len(sites)})", show=True)
+    for site in sites:
+        derived = site.get("coordinate_method") != "pubblicata"
+        color = "#ffd166" if derived else "#4cc9f0"
+        label = " · ".join(
+            value
+            for value in [
+                site.get("number"),
+                site.get("localita"),
+                site.get("dating"),
+                "posizione dedotta da toponimo" if derived else None,
+            ]
+            if value
+        )
+        radius_m = site.get("coordinate_uncertainty_m")
+        if radius_m:
+            folium.Circle(
+                location=[site["lat"], site["lon"]],
+                radius=float(radius_m),
+                color=color,
+                weight=1,
+                opacity=0.5,
+                fill=True,
+                fill_opacity=0.06,
+            ).add_to(group)
+        folium.CircleMarker(
+            location=[site["lat"], site["lon"]],
+            radius=5,
+            color=color,
+            weight=2,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.55,
+            tooltip=label or site.get("number", "sito"),
+        ).add_to(group)
+    group.add_to(target_map)
+    return len(sites)
+
+
+def render_site_validation(result):
+    """Does the anomaly map actually favour the sites we already know about?"""
+    sites = cropmarks.sites_inside(
+        result.get("geometry"), site_index.georeferenced_sites(methods=("pubblicata",))
+    )
+    with st.expander(f"Controllo sui siti noti nell'area ({len(sites)})", expanded=False):
+        st.caption(
+            "Usa solo le schede con coordinate pubblicate: verificare il rilevatore su posizioni dedotte dal "
+            "gazetteer misurerebbe il gazetteer, non il rilevatore."
+        )
+        if not sites:
+            st.caption(
+                "Nessuna scheda con coordinate pubblicate cade dentro questa AOI. Allarga l'area su una zona "
+                "gia catalogata per misurare quanto il rilevatore separa i siti noti dal fondo."
+            )
+            return
+        band = st.selectbox(
+            "Layer da verificare",
+            ["Persistent_any", "Vegetation_deficit", "Vegetation_excess", "Linear_marks", "Soil_mark_index"],
+            key="as_crop_validation_band",
+        )
+        if st.button("Confronta con punti di controllo casuali", key="as_crop_validate", width="stretch"):
+            with st.spinner("Campionamento in corso..."):
+                try:
+                    st.session_state.as_crop_validation = cropmarks.validate_against_sites(result, sites, band=band)
+                except Exception as exc:
+                    st.session_state.as_crop_validation = None
+                    LOGGER.exception("Validazione non completata")
+                    st.warning(f"Validazione non completata: {exc}")
+        report = st.session_state.get("as_crop_validation")
+        if not report:
+            return
+        cols = st.columns(3)
+        auc = report.get("auc")
+        cols[0].metric("AUC siti vs controlli", f"{auc:.2f}" if auc is not None else "n.d.")
+        cols[1].metric(
+            "Media sui siti noti",
+            f"{report['site_mean']:.3f}" if report.get("site_mean") is not None else "n.d.",
+        )
+        cols[2].metric(
+            "Media sui controlli",
+            f"{report['control_mean']:.3f}" if report.get("control_mean") is not None else "n.d.",
+        )
+        st.caption(
+            f"Layer {report['band']}: {len(report['sites'])} siti catalogati contro "
+            f"{len(report['controls'])} punti casuali nella stessa area. AUC 0.5 significa che il layer non "
+            "distingue i siti noti dal fondo; sopra 0.7 la separazione e netta. Il campione e piccolo e i siti "
+            "catalogati non sono un campione casuale: e un controllo di sanita, non una validazione statistica."
+        )
+        if report["sites"]:
+            st.dataframe(report["sites"], hide_index=True, width="stretch")
 
 
 def render_candidate_save_form(result, active_layer):
@@ -491,10 +574,13 @@ def render_crop_candidate_archive():
 
 
 def render_candidates():
-    st.title("Candidati e dossier di verifica")
-    st.caption(
-        "Archivio locale delle anomalie da confrontare con fonti, immagini storiche, LiDAR e ricognizione. "
-        "Lo stato esprime una decisione di lavoro, non una certificazione archeologica."
+    ui.section_title(
+        "Candidati e dossier di verifica",
+        eyebrow="Archivio di lavoro",
+        hint=(
+            "Anomalie da confrontare con fonti, immagini storiche, LiDAR e ricognizione. "
+            "Lo stato esprime una decisione di lavoro, non una certificazione archeologica."
+        ),
     )
     candidates = candidate_store.load_candidates()
     if not candidates:

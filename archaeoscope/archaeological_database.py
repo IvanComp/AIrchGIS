@@ -15,7 +15,9 @@ from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 
 from . import cropmarks_engine as cropmarks
+from . import geocoding
 from . import source_registry
+from . import ui
 from .database_enrichment import enrich_database
 from .paths import PROJECT_ROOT, RVT_DIR
 
@@ -38,6 +40,22 @@ PERIOD_KEYWORDS = {
     "Tardoantico": ("tardoantico", "tardoantica"),
     "Medioevo": ("medievale", "medioevo", "altomedievale"),
     "Non identificata": ("non id",),
+}
+
+# How a record got its position, from strongest to weakest evidence.
+COORDINATE_QUALITY = {
+    "Pubblicate": "pubblicata",
+    "Da toponimo": "toponimo",
+    "Solo comune": "comune",
+}
+# Municipality centroids are useful to browse the catalogue but far too coarse
+# to drive a satellite analysis, so they stay off the map until asked for.
+DEFAULT_COORDINATE_QUALITY = ("Pubblicate", "Da toponimo")
+
+QUALITY_COLORS = {
+    "pubblicata": "green",
+    "toponimo": "orange",
+    "comune": "lightgray",
 }
 
 
@@ -70,7 +88,7 @@ def render_archaeological_database():
 
     map_col, detail_col = st.columns([0.64, 0.36], gap="large")
     with map_col:
-        clicked_number = render_database_map(filtered)
+        clicked_number = render_database_map(filtered, filters["coordinate_quality"])
         if clicked_number and clicked_number != st.session_state.get("as_db_selected_number"):
             st.session_state.as_db_selected_number = clicked_number
             st.rerun()
@@ -87,7 +105,13 @@ def load_database():
     if not DATA_PATH.exists():
         return {"metadata": {}, "records": [], "stats": {}}
     database = json.loads(DATA_PATH.read_text(encoding="utf-8"))
-    return enrich_database(database)
+    enriched = enrich_database(database)
+    gazetteer = geocoding.load_gazetteer()
+    stats = geocoding.apply_geocoding(enriched.get("records", []), gazetteer)
+    enriched.setdefault("metadata", {})["geocoding"] = dict(
+        stats, gazetteer=(gazetteer.metadata if gazetteer else None)
+    )
+    return enriched
 
 
 def render_source_catalog(data):
@@ -117,6 +141,7 @@ def render_source_catalog(data):
             f"{enrichment.get('coordinates_added_from_pvs_2017', 0)} da PVS 2017; "
             f"{enrichment.get('pvs_duplicate_rows_removed', 0)} duplicati PVS ricondotti alla relativa scheda CAM-M."
         )
+        render_geocoding_summary(data.get("metadata", {}).get("geocoding"))
         for document, status in zip(documents, statuses):
             info_col, link_col = st.columns([0.76, 0.24], vertical_alignment="center")
             with info_col:
@@ -136,6 +161,25 @@ def render_source_catalog(data):
                 st.dataframe(pd.DataFrame(review_queue), hide_index=True, width="stretch")
 
 
+def render_geocoding_summary(stats):
+    """Say plainly how many positions are published and how many are deduced."""
+    if not stats:
+        return
+    if not stats.get("gazetteer"):
+        st.caption(
+            "Gazetteer dei toponimi non presente: le schede senza coordinate pubblicate restano fuori dalla "
+            "mappa. Generalo con `python scripts/build_gazetteer.py`."
+        )
+        return
+    gazetteer = stats["gazetteer"]
+    st.caption(
+        f"Georeferenziazione: {stats.get('published', 0)} schede con coordinate pubblicate, "
+        f"{stats.get('toponym', 0)} dedotte da toponimo, {stats.get('municipality', 0)} posizionate solo sul "
+        f"comune, {stats.get('unresolved', 0)} non collocabili. Gazetteer: "
+        f"{gazetteer.get('place_count', 0)} toponimi, {gazetteer.get('license', '')}."
+    )
+
+
 def ensure_database_state(records):
     if "as_db_query" not in st.session_state:
         st.session_state.as_db_query = ""
@@ -150,6 +194,7 @@ def ensure_database_state(records):
         "as_db_exact_dating": "Tutte",
         "as_db_only_georef": False,
         "as_db_basemap": "Mappa",
+        "as_db_coord_quality": list(DEFAULT_COORDINATE_QUALITY),
     }.items():
         if key not in st.session_state:
             st.session_state[key] = value
@@ -204,10 +249,18 @@ def render_filters(records):
             key="as_db_exact_dating",
         )
 
-    c5, c6 = st.columns([0.72, 0.28], gap="small")
-    with c5:
+    c8, c9, c10 = st.columns([0.42, 0.36, 0.22], gap="small")
+    with c8:
         periods = st.multiselect("Età / macro-periodi", list(PERIOD_KEYWORDS), key="as_db_periods")
-    with c6:
+    with c9:
+        coordinate_quality = st.multiselect(
+            "Origine delle coordinate",
+            list(COORDINATE_QUALITY),
+            key="as_db_coord_quality",
+            help="Le coordinate pubblicate vengono dalle fonti. Quelle da toponimo sono dedotte dal gazetteer "
+            "e valgono entro qualche centinaio di metri. Quelle di solo comune servono a sfogliare, non ad analizzare.",
+        )
+    with c10:
         only_georef = st.checkbox("Solo punti georeferenziati", key="as_db_only_georef")
     st.markdown("</div>", unsafe_allow_html=True)
     return {
@@ -221,13 +274,16 @@ def render_filters(records):
         "periods": periods,
         "exact_dating": exact_dating,
         "only_georef": only_georef,
+        "coordinate_quality": coordinate_quality,
     }
 
 
 def render_metrics(records, filtered):
     georef_filtered = sum(1 for record in filtered if has_coordinates(record))
-    georef_total = sum(1 for record in records if has_coordinates(record))
     ceramic_filtered = sum(1 for record in filtered if record.get("ceramic_presence") == "presente")
+    published = sum(1 for record in records if coordinate_method(record) == "pubblicata")
+    toponym = sum(1 for record in records if coordinate_method(record) == "toponimo")
+    municipality = sum(1 for record in records if coordinate_method(record) == "comune")
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     with m1:
         st.metric("Schede", len(records))
@@ -240,11 +296,24 @@ def render_metrics(records, filtered):
     with m5:
         st.metric("Con lat/lon", f"{georef_filtered}/{len(filtered)}")
     with m6:
-        st.metric("Punti mappa", georef_total)
+        st.metric(
+            "Coordinate pubblicate",
+            published,
+            delta=f"+{toponym} da toponimo",
+            delta_color="off",
+            help=f"{municipality} schede restano posizionate solo sul comune.",
+        )
 
 
-def render_database_map(records):
-    georef_records = [record for record in records if has_coordinates(record)]
+def coordinate_method(record):
+    return record.get("coordinate_method") or ("pubblicata" if has_coordinates(record) else "")
+
+
+def render_database_map(records, coordinate_quality=None):
+    allowed = {COORDINATE_QUALITY[label] for label in (coordinate_quality or COORDINATE_QUALITY)}
+    georef_records = [
+        record for record in records if has_coordinates(record) and coordinate_method(record) in allowed
+    ]
     basemap = st.radio(
         "Sfondo mappa",
         ["Mappa", "Satellite"],
@@ -269,25 +338,43 @@ def render_database_map(records):
 
     clicked_number = ""
     if georef_records:
-        cluster = MarkerCluster(name="Siti georeferenziati").add_to(db_map)
+        clusters = {}
         bounds = []
         for record in georef_records:
             lat = float(record["lat"])
             lon = float(record["lon"])
             bounds.append([lat, lon])
+            method = coordinate_method(record)
+            if method not in clusters:
+                label = next(
+                    (name for name, value in COORDINATE_QUALITY.items() if value == method), method
+                )
+                clusters[method] = MarkerCluster(name=f"Coordinate {label.lower()}", show=True).add_to(db_map)
             popup = folium.Popup(marker_popup_html(record), max_width=360)
+            radius = record.get("coordinate_uncertainty_m")
+            if radius:
+                folium.Circle(
+                    location=[lat, lon],
+                    radius=float(radius),
+                    color="#f1c75b",
+                    weight=1,
+                    opacity=0.45,
+                    fill=True,
+                    fill_opacity=0.05,
+                ).add_to(clusters[method])
             folium.Marker(
                 location=[lat, lon],
                 tooltip=f"{record['number']} - {record.get('localita', '')}",
                 popup=popup,
                 icon=folium.Icon(color=marker_color(record), icon="info-sign"),
-            ).add_to(cluster)
+            ).add_to(clusters[method])
         db_map.fit_bounds(bounds, padding=(24, 24))
     else:
         db_map.fit_bounds(MACERATA_BOUNDS, padding=(8, 8))
         st.warning(
-            "Il PDF CAM-M non pubblica coordinate numeriche lat/lon: la mappa mostrerà punti solo dopo import "
-            "di coordinate ufficiali o inserimento manuale."
+            "Nessun punto con l'origine di coordinate selezionata. Il PDF CAM-M non pubblica coordinate "
+            "numeriche: le posizioni arrivano dalle fonti collegate, dal gazetteer dei toponimi o "
+            "dall'inserimento manuale."
         )
 
     folium.LayerControl(collapsed=False).add_to(db_map)
@@ -393,15 +480,23 @@ def render_site_vitrine(record):
         st.warning(flag)
 
     if has_coordinates(record):
+        if geocoding.is_derived(record):
+            st.warning(
+                f"Posizione dedotta, non pubblicata: {record.get('coordinate_source', '')}. "
+                "Verificala sulla tavola comunale prima di trattare l'anomalia come un riscontro."
+            )
+        default_radius = int(record.get("coordinate_uncertainty_m") or 750)
         analysis_cols = st.columns([0.38, 0.62], vertical_alignment="bottom")
         with analysis_cols[0]:
             radius = st.number_input(
                 "Raggio AOI (m)",
                 min_value=200,
                 max_value=5000,
-                value=750,
+                value=min(5000, max(200, default_radius)),
                 step=50,
                 key=f"as_db_crop_radius_{record['number']}",
+                help="Preimpostato sull'incertezza della posizione: piu la coordinata e debole, piu larga "
+                "deve essere l'area analizzata.",
             )
         with analysis_cols[1]:
             if st.button(
@@ -714,6 +809,8 @@ def merge_coordinates(records, overrides):
             item["lat"] = override["lat"]
             item["lon"] = override["lon"]
             item["coordinate_source"] = override.get("source", "")
+            item["coordinate_method"] = "pubblicata"
+            item["coordinate_uncertainty_m"] = None
         merged.append(item)
     return merged
 
@@ -806,6 +903,9 @@ def marker_popup_html(record):
 
 
 def marker_color(record):
+    method = coordinate_method(record)
+    if method in QUALITY_COLORS and method != "pubblicata":
+        return QUALITY_COLORS[method]
     precision = record.get("coordinate_precision")
     if record.get("source_collection") == "PVS" or precision == "UTM":
         return "purple"
@@ -840,6 +940,9 @@ def records_to_csv(records):
         "lat",
         "lon",
         "coordinate_source",
+        "coordinate_method",
+        "coordinate_uncertainty_m",
+        "catalog_precision",
         "matched_cam_number",
         "candidate_cam_numbers",
         "reperimento_cartografico",
@@ -907,144 +1010,5 @@ def record_source_page_labels(record):
 
 
 def render_database_styles():
-    st.markdown(
-        """
-        <style>
-            .as-db-heading {
-                align-items: end;
-                display: flex;
-                gap: 1rem;
-                justify-content: space-between;
-                margin: 0.2rem 0 1rem;
-            }
-            .as-db-eyebrow {
-                color: #d8c08a;
-                font-size: 0.78rem;
-                font-weight: 800;
-                letter-spacing: 0.12em;
-                text-transform: uppercase;
-            }
-            .as-db-heading h1 {
-                color: #fff6df;
-                font-size: 2rem;
-                line-height: 1.05;
-                margin: 0.1rem 0 0;
-                letter-spacing: 0;
-            }
-            .as-db-source {
-                border: 1px solid rgba(212, 175, 55, 0.35);
-                border-radius: 8px;
-                color: #f1c75b;
-                font-weight: 900;
-                padding: 0.55rem 0.75rem;
-            }
-            .as-db-filter-band {
-                border-bottom: 1px solid rgba(212, 175, 55, 0.22);
-                border-top: 1px solid rgba(212, 175, 55, 0.22);
-                margin-bottom: 0.9rem;
-                padding: 0.75rem 0 0.35rem;
-            }
-            .as-db-vitrine {
-                background:
-                    linear-gradient(120deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.01)),
-                    #1f160f;
-                border: 1px solid rgba(212, 175, 55, 0.38);
-                border-radius: 8px;
-                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-                margin-bottom: 0.7rem;
-                overflow: hidden;
-                position: relative;
-            }
-            .as-db-glass {
-                background: linear-gradient(100deg, rgba(255,255,255,0.18), rgba(255,255,255,0.02) 40%, rgba(255,255,255,0.1));
-                height: 58px;
-            }
-            .as-db-object {
-                align-items: center;
-                background:
-                    radial-gradient(circle at 35% 28%, #ffe5a1, #b4862b 45%, #5b3a17 76%);
-                border: 1px solid rgba(255, 235, 175, 0.55);
-                border-radius: 999px;
-                box-shadow: 0 18px 40px rgba(0,0,0,0.36), inset 0 6px 16px rgba(255,255,255,0.18);
-                color: #21170f;
-                display: flex;
-                font-weight: 900;
-                height: 116px;
-                justify-content: center;
-                margin: -22px auto 0;
-                width: 116px;
-            }
-            .as-db-object span {
-                font-size: 0.9rem;
-                letter-spacing: 0;
-            }
-            .as-db-plaque {
-                padding: 1rem 1.05rem 1.1rem;
-            }
-            .as-db-plaque-top {
-                color: #d8c08a;
-                font-size: 0.8rem;
-                font-weight: 800;
-                text-transform: uppercase;
-            }
-            .as-db-plaque h2 {
-                color: #fff6df;
-                font-size: 1.25rem;
-                line-height: 1.16;
-                margin: 0.25rem 0 0.6rem;
-                letter-spacing: 0;
-            }
-            .as-db-tags {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 0.35rem;
-                margin-bottom: 0.75rem;
-            }
-            .as-db-tags span {
-                background: rgba(212, 175, 55, 0.12);
-                border: 1px solid rgba(212, 175, 55, 0.24);
-                border-radius: 999px;
-                color: #f7ecd7;
-                font-size: 0.76rem;
-                padding: 0.22rem 0.48rem;
-            }
-            .as-db-plaque p {
-                color: #eadcc5;
-                font-size: 0.9rem;
-                line-height: 1.45;
-                margin: 0 0 0.85rem;
-                max-height: 260px;
-                overflow: auto;
-            }
-            .as-db-coords {
-                border-left: 3px solid #d4af37;
-                color: #f1c75b;
-                font-size: 0.82rem;
-                font-weight: 800;
-                margin-bottom: 0.85rem;
-                padding-left: 0.55rem;
-            }
-            .as-db-source-line {
-                border-top: 1px solid rgba(212, 175, 55, 0.18);
-                color: #cdbf9f;
-                font-size: 0.78rem;
-                line-height: 1.35;
-                padding-top: 0.55rem;
-                margin-top: 0.55rem;
-            }
-            .as-db-table-title {
-                color: #fff6df;
-                font-size: 1rem;
-                font-weight: 900;
-                margin: 1rem 0 0.35rem;
-            }
-            div[data-testid="stMetric"] {
-                background: rgba(255, 246, 223, 0.04);
-                border: 1px solid rgba(212, 175, 55, 0.18);
-                border-radius: 8px;
-                padding: 0.55rem 0.7rem;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    """The catalogue styles now live in the shared stylesheet."""
+    ui.inject_styles()
