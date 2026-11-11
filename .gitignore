@@ -30,3 +30,8 @@ env/
 
 # Benchmark rasters (rigenerabili)
 /.benchmark_cache/
+
+# Local material (not for the public repo)
+/USEFUL PAPERS/
+/tmp/
+/.venv_airch/
