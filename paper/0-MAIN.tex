@@ -1,10 +1,13 @@
 %% =====================================================================
 %% AIrch -- manuscript draft
 %% Target: Digital Applications in Archaeology and Cultural Heritage (Elsevier)
-%% Template: elsarticle (Elsevier). Compile: pdflatex + bibtex (x2).
+%% Template: elsarticle (Elsevier), review mode. Compile: pdflatex + bibtex (x2).
+%% Double-anonymised review: author details, acknowledgements, funding,
+%% competing interests and CRediT are in title-page.tex; highlights are
+%% in highlights.tex.
 %% Status: Abstract here; sections in sections/*.tex (see PAPER_PLAN.md).
 %% =====================================================================
-\documentclass[preprint,12pt,authoryear]{elsarticle}
+\documentclass[review,authoryear,12pt]{elsarticle}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -25,19 +28,14 @@
 
 \title{\airch: an AI-assisted, archaeologist-centred workbench for multi-source remote-sensing prospection}
 
-\author[aff1]{Ivan Compagnucci\corref{cor1}}
-\ead{\todo{email}}
-\cortext[cor1]{Corresponding author}
-\affiliation[aff1]{organization={\todo{Affiliation}},
-            city={\todo{City}},
-            country={Italy}}
+%% Anonymised manuscript: author details are in title-page.tex.
 
 \begin{abstract}
-Remote sensing has become a cornerstone of archaeological prospection, yet turning airborne LiDAR and open multispectral imagery into archaeological evidence still requires a chain of specialised software and programming skills that many archaeologists do not have. Artificial intelligence promises to automate parts of this chain, but detectors are seldom packaged for end users and are rarely evaluated against what the sensors can physically resolve. We present \airch, an open-source, AI-assisted workbench that brings together LiDAR-derived relief visualisation, interactive 3D terrain exploration, and multitemporal Sentinel-2/Landsat screening for crop and soil marks in a single browser-based interface designed for users with little IT background, with a georeferenced catalogue of known sites built in as ground truth. \airch{} follows an evidence-first design: acquisitions are ranked by physically motivated criteria (feature-scale local contrast, crop phenology and antecedent drought), anomaly statistics are computed inside field parcels to suppress agrarian boundaries, inferred site coordinates carry explicit uncertainty, and every detection layer can be checked against known sites with a built-in benchmark. An AI assistant guides parameter choices and explains each layer in plain language, keeping the archaeologist in the loop. We evaluate \airch{} in the Province of Macerata (Marche, Italy) using about 1,700 records from the CAM-M and Potenza Valley Survey catalogues. Field boundaries covering 7.5\% of the analysable area attracted 70\% of the candidates produced by a conventional pipeline; parcel-interior statistics reduced this contamination tenfold. The benchmark also exposes the limits of 10\,m data: buried features narrower than about 20\,m, such as the street grid of Roman \textit{Potentia}, fall below single-date detectability, and site-level AUC stays close to chance (0.34--0.58), which supports routing site-scale detection to LiDAR and very-high-resolution imagery. \todo{One sentence with the results of the user study (SUS, task success) with N archaeologists.} Code, benchmark and data provenance are released to support reproducible and accessible AI-assisted prospection.
+Turning airborne LiDAR and open multispectral imagery into archaeological evidence still requires specialised software and programming skills that many archaeologists lack. AI detectors are seldom packaged for end users and rarely evaluated against what the sensors can resolve. We present \airch, an open-source, AI-assisted workbench that combines LiDAR relief visualisation, 3D terrain exploration and multitemporal Sentinel-2/Landsat screening for crop and soil marks in a single browser interface for users with little IT background, using a catalogue of known sites as ground truth. \airch{} follows an evidence-first design: acquisitions are ranked by physically motivated criteria, anomaly statistics are computed inside field parcels to suppress agrarian boundaries, inferred site coordinates carry explicit uncertainty, and a built-in benchmark checks every detection layer against known sites. An AI assistant explains each layer in plain language, keeping the archaeologist in the loop. We evaluate \airch{} in the Province of Macerata (Italy) with about 1,700 records from the CAM-M and Potenza Valley Survey catalogues. Field boundaries covering 7.5\% of the analysable area attracted 70\% of the candidates of a conventional pipeline; parcel-interior statistics reduced this contamination tenfold. The benchmark also exposes the limits of 10\,m data: features narrower than about 20\,m, such as the streets of Roman \textit{Potentia}, fall below single-date detectability, and site-level AUC stays close to chance (0.34--0.58); site-scale detection belongs to LiDAR and very-high-resolution imagery. \todo{One sentence with the results of the user study (SUS, task success) with N archaeologists; keep the abstract within 250 words.}
 \end{abstract}
 
 \begin{keyword}
-Archaeological prospection \sep LiDAR \sep Sentinel-2 \sep Crop marks \sep Artificial intelligence \sep Human-in-the-loop \sep Usability \sep Open-source software
+Archaeological prospection \sep LiDAR \sep Sentinel-2 \sep Crop marks \sep Artificial intelligence \sep Human-in-the-loop \sep Usability
 \end{keyword}
 
 \end{frontmatter}
@@ -54,6 +52,7 @@ Archaeological prospection \sep LiDAR \sep Sentinel-2 \sep Crop marks \sep Artif
 \input{sections/7-discussion}
 \input{sections/8-conclusions}
 \input{sections/9-data-availability}
+\input{sections/10-genai-declaration}
 
 \bibliographystyle{elsarticle-harv}
 \bibliography{references}

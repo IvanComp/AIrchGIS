@@ -24,7 +24,22 @@ The known-site catalogue (CAM-M / PVS) is no longer a screen of the tool: it is 
 | npj Heritage Science (Nature) | Only with discoveries | High impact and broad audience, but it expects a strong scientific result, e.g. new sites confirmed in the field. With AUC near chance it would look weak today. Keep it for later work with field validation. |
 | Journal of Cultural Heritage (Elsevier) | Less suitable | Strongly oriented to conservation, materials and diagnostics; a prospection software paper is peripheral to its focus. |
 
-To check before submission: DAACH APC and open-access option, current SCImago quartiles, guide for authors (length, citation style: the template uses author-year `elsarticle-harv`).
+### DAACH submission format (from the Guide for Authors)
+
+Done:
+- `0-MAIN.tex` uses `elsarticle` in `review` mode with author-year Harvard references (`elsarticle-harv`). It is anonymised for double-anonymised review: no names, affiliations or acknowledgements.
+- Abstract within 250 words (224 now, leaving room for the user-study sentence); 7 keywords.
+- `title-page.tex`, a separate file with authors, affiliation, corresponding author, acknowledgements, funding, declaration of competing interest and CRediT statement.
+- `highlights.tex`, a separate file with 5 highlights of at most 85 characters each, spaces included.
+- `sections/10-genai-declaration.tex` holds the generative-AI declaration, placed right before the references.
+- Numbered sections, British spelling throughout. The draft has no tables yet; when adding them, use booktabs without vertical rules.
+- All three files compile with Tectonic (`tectonic -X compile 0-MAIN.tex`). pdflatex/BibTeX are not installed on this Mac.
+
+Still to do:
+- Fill the `\todo`s: e-mail, affiliation and city in `title-page.tex` (plain text: `\todo` cannot go inside `\ead`/`\affiliation`), acknowledgements, funding confirmation, and the tool/reason in the generative-AI declaration.
+- Check the DAACH APC amount, the open-access option and the current SCImago quartiles.
+- Graphical abstract: optional, 531 × 1328 px (h × w) or proportionally more.
+- At submission, fill in the declarations tool in Editorial Manager; it must match the title page.
 
 ## 3. Paper structure (≈ 8,000–10,000 words)
 

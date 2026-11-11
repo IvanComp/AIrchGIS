@@ -1,0 +1,45 @@
+%% =====================================================================
+%% AIrch -- title page (submitted separately for double-anonymised review)
+%% Digital Applications in Archaeology and Cultural Heritage (Elsevier)
+%% =====================================================================
+\documentclass[review,authoryear,12pt]{elsarticle}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\newcommand{\airch}{\textsc{AIrch}}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+\journal{Digital Applications in Archaeology and Cultural Heritage}
+
+\begin{document}
+
+\begin{frontmatter}
+
+\title{\airch: an AI-assisted, archaeologist-centred workbench for multi-source remote-sensing prospection}
+
+\author[aff1]{Ivan Compagnucci\corref{cor1}}
+\ead{author@example.org} % TODO: real e-mail address
+\cortext[cor1]{Corresponding author}
+%% TODO: real affiliation and city (\todo cannot be used inside \affiliation)
+\affiliation[aff1]{organization={Affiliation},
+            city={City},
+            country={Italy}}
+
+\end{frontmatter}
+
+\section*{Acknowledgements}
+\todo{Acknowledgements (data providers such as CAM-M and the Potenza Valley Survey, user-study participants), or remove this section.}
+
+\section*{Funding}
+\todo{Confirm:} This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
+
+\section*{Declaration of competing interest}
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+\section*{CRediT authorship contribution statement}
+\textbf{Ivan Compagnucci:} Conceptualization, Methodology, Software, Validation, Formal analysis, Investigation, Data curation, Writing -- original draft, Writing -- review and editing, Visualization.
+
+\end{document}
