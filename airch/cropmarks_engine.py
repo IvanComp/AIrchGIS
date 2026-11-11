@@ -130,7 +130,6 @@ def add_base_tiles(m, esri_show=True):
         show=esri_show,
     ).add_to(m)
     folium.TileLayer("OpenStreetMap", name="OpenStreetMap", overlay=False, control=True, show=not esri_show).add_to(m)
-    folium.TileLayer("CartoDB positron", name="CartoDB Positron", overlay=False, control=True, show=False).add_to(m)
 
 
 def init_ee(project):
