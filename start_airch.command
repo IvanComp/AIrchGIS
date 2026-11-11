@@ -13,8 +13,8 @@ elif [ -x "/usr/local/bin/python3" ]; then
 elif command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN="$(command -v python3)"
 else
-  echo "Python 3 non trovato."
-  read -r "x?Premi Invio per chiudere."
+  echo "Python 3 not found."
+  read -r "x?Press Enter to close."
   exit 1
 fi
 
@@ -41,8 +41,8 @@ import rasterio
 import rvt.vis
 PY
 then
-  echo "Ambiente Python incompleto. Elimina solo $VENV_DIR e riavvia AIrch."
-  read -r "x?Premi Invio per chiudere."
+  echo "Incomplete Python environment. Delete only $VENV_DIR and restart AIrch."
+  read -r "x?Press Enter to close."
   exit 1
 fi
 

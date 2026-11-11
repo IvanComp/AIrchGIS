@@ -1,34 +1,32 @@
-# RVT Lidar Explorer (GUI) — README
+# AIrch · LiDAR Explorer (RVT) — README
 
-> Nota: RVT ora e collegato all'app unica `AIrch`.
-> Avvio consigliato dalla root del repository:
+> Note: RVT is now part of the single `AIrch` app.
+> Recommended start from the repository root:
 >
 > ```bash
 > ./start_airch.command
 > ```
 >
-> La GUI descritta qui resta invariata e puo essere avviata anche direttamente con `python core.py`.
+> The desktop GUI described here still works and can be started directly with `python core.py`.
 
-Questo progetto fornisce uno script Python con interfaccia grafica (`core.py`) per esplorare ed esportare trasformazioni RVT su dati LiDAR scaricati come tripletta:
+`core.py` provides a Python GUI to explore and export RVT transformations of LiDAR data downloaded as a triplet:
 - DTM
 - DSM first return
 - DSM last return
 
-Lo script mostra un’anteprima aggiornata in tempo reale e permette di esportare il risultato corrente come GeoTIFF georiferito.
-Include anche un generatore DTM da mappa basato sul GeoTIFF regionale locale `data/regional_dtm/HRDTM5m_Umbria_Marche_Abruzzo.tif`: selezioni un rettangolo su una mappa web zoomabile e il tool crea un DTM ritagliato per Marche, Abruzzo e Umbria, poi lo carica nella sessione rapida.
+The script shows a live preview and exports the current result as a georeferenced GeoTIFF.
+It also includes a DTM-from-map generator based on the local regional GeoTIFF `data/regional_dtm/HRDTM5m_Umbria_Marche_Abruzzo.tif`: you draw a rectangle on a zoomable web map and the tool creates a clipped DTM for Marche, Abruzzo and Umbria, then loads it into the quick session.
 
-## 1) Requisiti
+## 1) Requirements
 
 - macOS
-- Python 3.10+ (consigliato 3.11 o 3.12)
-- Cartelle con i raster (GeoTIFF/ASC) per DTM, DSMfirst, DSMlast
-- Pacchetto RVT su pip: `rvt-py`
+- Python 3.10+ (3.11 or 3.12 recommended)
+- Folders with the rasters (GeoTIFF/ASC) for DTM, DSMfirst, DSMlast
+- The RVT package from pip: `rvt-py`
 
-Nota: `relief-visualization-toolbox` non è un pacchetto pip. Il pacchetto corretto è `rvt-py`.
+Note: `relief-visualization-toolbox` is not a pip package. The right package is `rvt-py`.
 
-## 2) Struttura delle cartelle
-
-Nel progetto deve esistere questa struttura:
+## 2) Folder structure
 
 ```
 project/
@@ -42,36 +40,31 @@ project/
     DSMlast/
 ```
 
-Dentro ciascuna cartella puoi:
-- mettere direttamente i `.tif/.tiff/.asc`, oppure
-- scompattare gli zip e lasciare anche eventuali sottocartelle (lo script cerca ricorsivamente).
+Inside each folder you can:
+- put the `.tif/.tiff/.asc` files directly, or
+- unzip the archives and keep any subfolders (the script searches recursively).
 
-Lo script userà solo i raster; shapefile e altri file possono restare nelle cartelle.
+Only rasters are used; shapefiles and other files can stay in the folders.
 
-## 3) Convenzioni dei nomi file (matching delle triplette)
+## 3) File-name conventions (triplet matching)
 
-Lo script costruisce una “tripletta” per tile usando il nome base comune.
+The script builds a "triplet" per tile from the common base name.
 
-Esempi supportati:
+Supported examples:
 - `xxx_DTM.tif`
 - `xxx_DSMFirst.tif`
 - `xxx_DSMLast.tif`
 
-Varianti accettate anche:
-- `_DSM_First`, `_DSM_Last`, `_dsm-first`, `_dsm-last`
+Also accepted: `_DSM_First`, `_DSM_Last`, `_dsm-first`, `_dsm-last`
 
-Il “nome base” è la parte prima del suffisso (es.: `xxx`).
-
-Se i tuoi file non seguono nessuna di queste convenzioni, rinominali così:
+The "base name" is the part before the suffix (e.g. `xxx`). If your files follow none of these conventions, rename them:
 - DTM → `BASE_DTM.tif`
 - DSM first → `BASE_DSMFirst.tif`
 - DSM last → `BASE_DSMLast.tif`
 
-## 4) Creazione di un virtual environment (consigliato)
+## 4) Virtual environment (recommended)
 
-Questa è la procedura consigliata per evitare conflitti (es.: upgrade di `numpy` a 2.x).
-
-Esegui questi comandi nel Terminale:
+This avoids conflicts (e.g. an upgrade to `numpy` 2.x).
 
 ```bash
 mkdir -p ~/venvs
@@ -84,95 +77,55 @@ python -m pip install "numpy<2" "scipy<1.14" rasterio matplotlib rvt-py
 python -c "import rvt.vis, rasterio, numpy, matplotlib; print('OK', numpy.__version__)"
 ```
 
-Uscire dall’environment:
-```bash
-deactivate
-```
+Leave the environment with `deactivate`.
 
-## 5) Come usare lo script (workflow)
+## 5) Workflow
 
-1) Scegli un’area nel sito e scarica i 3 zip (DTM, DSM First, DSM Last).
-2) Scompatta gli zip.
-3) Copia i raster in:
-   - `image/DTM/`
-   - `image/DSMfirst/`
-   - `image/DSMlast/`
-4) Attiva l’environment:
-   ```bash
-   source ~/venvs/rvt/bin/activate
-   ```
-5) Vai nella cartella del progetto:
-   ```bash
-   cd /percorso/del/progetto
-   ```
-6) Avvia la GUI:
-   ```bash
-   python core.py
-   ```
+1) Pick an area on the portal and download the 3 zips (DTM, DSM First, DSM Last).
+2) Unzip them.
+3) Copy the rasters into `image/DTM/`, `image/DSMfirst/`, `image/DSMlast/`.
+4) Activate the environment: `source ~/venvs/rvt/bin/activate`
+5) Go to the project folder: `cd /path/to/project`
+6) Start the GUI: `python core.py`
 
-## 5.1) Generare un DTM dalla mappa regionale
+## 5.1) Generate a DTM from the regional map
 
-Il pulsante `DTM da mappa` nella sezione `Sessione rapida` apre nel browser una mappa Leaflet zoomabile dell'estensione coperta dal raster regionale di Marche, Abruzzo e Umbria. La mappa usa un layer satellitare come base e permette di disegnare/modificare un rettangolo.
+The `DTM from map` button in the `Quick session` section opens a zoomable Leaflet map of the area covered by the regional raster for Marche, Abruzzo and Umbria, with satellite imagery as the base layer.
 
-Workflow:
-1) premi `DTM da mappa`;
-2) usa lo strumento rettangolo sulla mappa e zooma fino all'area desiderata;
-3) premi `Genera DTM e carica`;
-4) il GeoTIFF viene creato in `generated_dtm/DTM/` a risoluzione nativa 5 m x 5 m e caricato come DTM nella sessione rapida.
+1) press `DTM from map`;
+2) draw a rectangle and zoom to the area you want;
+3) press `Generate DTM and load`;
+4) the GeoTIFF is written to `generated_dtm/DTM/` at the native 5 m x 5 m resolution and loaded as the DTM of the quick session.
 
-Il raster sorgente resta invariato. La selezione usa solo i dati locali delle tre regioni forniti nel progetto.
+The source raster is never modified.
 
-## 6) Funzioni della GUI
+## 6) GUI features
 
-Pannello sinistro:
-- Selezione del tile (tripletta)
-- Scelta dataset:
-  - `DTM`, `DSMfirst`, `DSMlast`
-  - `nDSM` (DSMfirst − DTM)
-  - `First-Last` (DSMfirst − DSMLast)
-- Metodo RVT (in base a cosa è disponibile in `rvt.vis`):
-  - Raw
-  - Hillshade
-  - Slope
-  - Sky-View Factor
-  - Local Relief Model
-  - Positive/Negative Openness
-- Parametri (azimuth/altitude/z-factor/radius/directions) e stretch percentili
-- Export GeoTIFF del risultato corrente
-- Batch pipeline base
+Left panel:
+- tile (triplet) selection
+- dataset: `DTM`, `DSMfirst`, `DSMlast`, `nDSM` (DSMfirst − DTM), `First-Last` (DSMfirst − DSMlast)
+- RVT method (depending on what `rvt.vis` provides): Raw, Hillshade, Slope, Sky-View Factor, Local Relief Model, Positive/Negative Openness
+- parameters (azimuth/altitude/z-factor/radius/directions) and percentile stretch
+- GeoTIFF export of the current result
+- basic batch pipeline
 
-Pannello destro:
-- Anteprima (grayscale) aggiornata quando cambi metodo/parametri/dataset.
+Right panel: grayscale preview updated whenever method, parameters or dataset change.
 
 ## 7) Output
 
-- Export manuale (pulsante “Export corrente GeoTIFF”):
-  - `output_rvt_gui/<TILE_KEY>/... .tif`
+- Manual export ("Export current GeoTIFF"): `output_rvt_gui/<TILE_KEY>/... .tif`
+- Basic batch pipeline: `output_rvt_batch/<TILE_KEY>/`
+  - `1_DTM_Hillshade.tif` (if available)
+  - `2_DTM_SkyViewFactor.tif` (if available)
+  - `3_nDSM.tif`
+  - `4_FirstMinusLast.tif`
 
-- Batch pipeline base (pulsante “Batch pipeline base”):
-  - `output_rvt_batch/<TILE_KEY>/`
-    - `1_DTM_Hillshade.tif` (se disponibile)
-    - `2_DTM_SkyViewFactor.tif` (se disponibile)
-    - `3_nDSM.tif`
-    - `4_FirstMinusLast.tif`
-
-Gli output sono GeoTIFF float32, georiferiti con lo stesso profilo del raster di input.
+Outputs are float32 GeoTIFFs with the same georeferencing profile as the input.
 
 ## 8) Troubleshooting (macOS)
 
-### Tkinter / GUI non parte
-Python “framework” su macOS in genere include Tkinter. Se vedi errori tipo “_tkinter not found”, usa un Python che includa Tk (es.: python.org installer) o usa una distribuzione con Tk abilitato.
+**Tkinter / GUI does not start.** The python.org "framework" build usually includes Tkinter. If you see `_tkinter not found`, use a Python build with Tk enabled.
 
-### Errori RVT su alcuni metodi
-`rvt-py` espone funzioni in `rvt.vis`. Lo script mostra solo metodi disponibili. Se un metodo non compare, non è presente nella versione installata.
+**RVT errors on some methods.** `rvt-py` exposes its functions in `rvt.vis`. The script only shows the methods that exist in the installed version.
 
-### Raster enormi / lentezza
-Riduci la dimensione del tile (area più piccola) o lavora su downsample esterno (es.: GDAL/QGIS) per iterazioni veloci.
-
-## 9) Esecuzione rapida (riassunto)
-
-```bash
-source ~/venvs/rvt/bin/activate
-cd /percorso/del/progetto
-python core.py
-```
+**Huge rasters / slowness.** Use a smaller tile or downsample externally (GDAL/QGIS) for fast iterations.

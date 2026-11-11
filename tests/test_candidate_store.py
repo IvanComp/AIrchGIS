@@ -29,15 +29,15 @@ class CandidateStoreTests(unittest.TestCase):
         )
 
         self.assertTrue(saved["id"])
-        self.assertEqual(saved["status"], "Da verificare")
+        self.assertEqual(saved["status"], "To verify")
         self.assertEqual(len(candidate_store.load_candidates(self.path)), 1)
 
         updated = candidate_store.update_candidate(
             saved["id"],
-            {"status": "Interessante", "notes": "Persistente in tre date"},
+            {"status": "Promising", "notes": "Persistente in tre date"},
             self.path,
         )
-        self.assertEqual(updated["status"], "Interessante")
+        self.assertEqual(updated["status"], "Promising")
         self.assertEqual(len(candidate_store.load_candidates(self.path)), 1)
 
         geojson = json.loads(candidate_store.candidates_geojson([updated]))

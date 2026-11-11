@@ -9,8 +9,8 @@ elif [ -x "/usr/local/bin/python3.11" ]; then
 elif command -v python3.11 >/dev/null 2>&1; then
   PY311="$(command -v python3.11)"
 else
-  echo "Python 3.11 non trovato. Installa con: brew install python@3.11"
-  read -r "x?Premi Invio per chiudere."
+  echo "Python 3.11 not found. Install it with: brew install python@3.11"
+  read -r "x?Press Enter to close."
   exit 1
 fi
 if [ ! -x ".venv/bin/python" ] || ! ./.venv/bin/python -c "import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 11) else 1)" >/dev/null 2>&1; then
@@ -22,20 +22,20 @@ fi
 if [ -f "$PROJECT_FILE" ]; then
   PROJECT_ID="$(cat "$PROJECT_FILE" | tr -d '[:space:]')"
 else
-  echo "Inserisci il Google Earth Engine project ID. Esempio: ee-ivan-cropmarks"
+  echo "Enter the Google Earth Engine project ID. Example: ee-ivan-cropmarks"
   read -r "PROJECT_ID?Project ID: "
   echo "$PROJECT_ID" > "$PROJECT_FILE"
 fi
 export EE_PROJECT="$PROJECT_ID"
 ./.venv/bin/earthengine set_project "$PROJECT_ID" || true
 if ! ./.venv/bin/python -c "import ee, os; ee.Initialize(project=os.environ['EE_PROJECT']); print('Earth Engine OK')"; then
-  echo "Autenticazione o registrazione Earth Engine necessaria. Apro il login."
+  echo "Earth Engine authentication or registration needed. Opening the login."
   ./.venv/bin/earthengine authenticate --force
   ./.venv/bin/earthengine set_project "$PROJECT_ID" || true
   if ! ./.venv/bin/python -c "import ee, os; ee.Initialize(project=os.environ['EE_PROJECT']); print('Earth Engine OK')"; then
-    echo "Il progetto non e ancora pronto. Controlla:"
+    echo "The project is not ready yet. Check:"
     echo "https://console.cloud.google.com/earth-engine/configuration?project=$PROJECT_ID"
-    read -r "x?Premi Invio per chiudere."
+    read -r "x?Press Enter to close."
     exit 1
   fi
 fi

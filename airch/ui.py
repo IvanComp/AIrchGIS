@@ -40,7 +40,7 @@ def logo_svg():
     return markup.replace("<svg ", '<svg class="as-logo-svg" ', 1)
 
 
-def brand_markup(subtitle="AI per l’archeologia · Documenti · Satellite · LiDAR"):
+def brand_markup(subtitle="AI for archaeology · Documents · Satellite · LiDAR"):
     return f"""
     <div class="as-brandbar">
         <div class="as-logo">{logo_svg()}</div>

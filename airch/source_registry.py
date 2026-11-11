@@ -27,20 +27,20 @@ def local_document_path(document, cache_dir=SOURCE_CACHE_DIR):
 
 def document_status(document, cache_dir=SOURCE_CACHE_DIR, verify_hash=False):
     path = local_document_path(document, cache_dir)
-    status = {"path": path, "available": path.is_file(), "verified": False, "reason": "non scaricato"}
+    status = {"path": path, "available": path.is_file(), "verified": False, "reason": "not downloaded"}
     if not path.is_file():
         return status
     expected_size = document.get("size_bytes")
     if expected_size and path.stat().st_size != expected_size:
-        status["reason"] = "dimensione non corrispondente"
+        status["reason"] = "size mismatch"
         return status
     if verify_hash and document.get("sha256"):
         digest = sha256_file(path)
         status["verified"] = digest == document["sha256"]
-        status["reason"] = "checksum verificato" if status["verified"] else "checksum non corrispondente"
+        status["reason"] = "checksum verified" if status["verified"] else "checksum mismatch"
     else:
         status["verified"] = True
-        status["reason"] = "file disponibile; dimensione verificata"
+        status["reason"] = "file available; size verified"
     return status
 
 

@@ -65,7 +65,7 @@ RED_EDGE_INDEX_BANDS = ["MCARI"]
 INDEX_BANDS = BASE_INDEX_BANDS + RED_EDGE_INDEX_BANDS
 
 SENSOR_S2 = "Sentinel-2 (2016 →)"
-SENSOR_LANDSAT = "Landsat storico (1984 →)"
+SENSOR_LANDSAT = "Historical Landsat (1984 →)"
 SENSOR_BOTH = "Sentinel-2 + Landsat"
 SENSOR_OPTIONS = (SENSOR_S2, SENSOR_LANDSAT, SENSOR_BOTH)
 
@@ -98,8 +98,8 @@ PARCEL_EDGE_BUFFER_M = 60       # equals DEFAULT_LOCAL_RADIUS
 S2_SCALE = 20
 LANDSAT_SCALE = 30
 
-MODE_BEST = "Migliore singola data"
-MODE_MEDIAN = "Mediana migliori date (solo contesto)"
+MODE_BEST = "Best single date"
+MODE_MEDIAN = "Median of best dates (context only)"
 COMPOSITE_MODES = (MODE_BEST, MODE_MEDIAN)
 
 
@@ -195,7 +195,7 @@ def geom(g):
         return ee.Geometry.Polygon(g["coordinates"])
     if g["type"] == "MultiPolygon":
         return ee.Geometry.MultiPolygon(g["coordinates"])
-    raise ValueError("Disegna un poligono o un rettangolo.")
+    raise ValueError("Draw a polygon or a rectangle.")
 
 
 # ---------------------------------------------------------------------------
@@ -709,9 +709,9 @@ def crop_class(curve):
 def target_parcels(classes, target):
     """Which fields can express the kind of mark being looked for."""
     crop_type = classes.select("crop_class")
-    if target == "Soil marks (suolo nudo)":
+    if target == "Soil marks (bare soil)":
         return crop_type.eq(CLASS_CEREAL).Or(crop_type.eq(CLASS_SUMMER)).rename("target_parcel")
-    if target == "Crop marks (vegetazione)":
+    if target == "Crop marks (vegetation)":
         return crop_type.eq(CLASS_CEREAL).rename("target_parcel")
     return crop_type.neq(CLASS_GRASS).And(crop_type.neq(CLASS_OTHER)).rename("target_parcel")
 
@@ -724,9 +724,9 @@ def date_weight(img, eligible, target):
     when a soil mark is.
     """
     ndvi = img.select("NDVI")
-    if target == "Soil marks (suolo nudo)":
+    if target == "Soil marks (bare soil)":
         stage = ndvi.lt(BARE_GATE)
-    elif target == "Crop marks (vegetazione)":
+    elif target == "Crop marks (vegetation)":
         stage = ndvi.gte(CANOPY_GATE)
     else:
         stage = ndvi.gte(CANOPY_GATE).Or(ndvi.lt(BARE_GATE))
@@ -1005,43 +1005,43 @@ def add_layer(m, url, name, show=False, opacity=1.0):
 
 def build_layer_specs(base, detection, context, boundaries, interior, mask, red_edge, classes=None, eligible=None):
     specs = {}
-    add_layer_spec(specs, "RGB 4-3-2", base, {"bands": ["B4", "B3", "B2"], "min": 0.02, "max": 0.35}, "Immagini")
-    add_layer_spec(specs, "False color 8-4-3", base, {"bands": ["B8", "B4", "B3"], "min": 0.02, "max": 0.45}, "Immagini")
+    add_layer_spec(specs, "RGB 4-3-2", base, {"bands": ["B4", "B3", "B2"], "min": 0.02, "max": 0.35}, "Imagery")
+    add_layer_spec(specs, "False color 8-4-3", base, {"bands": ["B8", "B4", "B3"], "min": 0.02, "max": 0.45}, "Imagery")
     add_layer_spec(
-        specs, "Healthy vegetation 8-11-2", base, {"bands": ["B8", "B11", "B2"], "min": 0.02, "max": 0.45}, "Immagini"
+        specs, "Healthy vegetation 8-11-2", base, {"bands": ["B8", "B11", "B2"], "min": 0.02, "max": 0.45}, "Imagery"
     )
     add_layer_spec(
-        specs, "Maschera aree analizzate", mask.selfMask(), {"min": 0, "max": 1, "palette": ["ffd166"]}, "Immagini"
+        specs, "Analysed-area mask", mask.selfMask(), {"min": 0, "max": 1, "palette": ["ffd166"]}, "Imagery"
     )
     add_layer_spec(
         specs,
-        "Confini di parcella riconosciuti",
+        "Detected parcel boundaries",
         boundaries.selfMask(),
         {"min": 0, "max": 1, "palette": ["ef476f"]},
-        "Immagini",
+        "Imagery",
     )
     add_layer_spec(
         specs,
-        "Interno parcella (dove si cercano anomalie)",
+        "Parcel interior (where anomalies are searched)",
         interior.selfMask(),
         {"min": 0, "max": 1, "palette": ["4cc9f0"]},
-        "Immagini",
+        "Imagery",
     )
     if classes is not None:
         add_layer_spec(
             specs,
-            "Classe colturale della parcella",
+            "Parcel crop class",
             classes.select("crop_class"),
             {"min": 0, "max": 3, "palette": ["3d3d3d", "f1c75b", "e07a5f", "2a9d8f"]},
-            "Immagini",
+            "Imagery",
         )
     if eligible is not None:
         add_layer_spec(
             specs,
-            "Parcelle idonee alla traccia cercata",
+            "Parcels suitable for the target mark",
             eligible.selfMask(),
             {"min": 0, "max": 1, "palette": ["06d6a0"]},
-            "Immagini",
+            "Imagery",
         )
 
     green = ["313695", "ffffbf", "1a9850"]
@@ -1055,10 +1055,10 @@ def build_layer_specs(base, detection, context, boundaries, interior, mask, red_
         ("EVI", "EVI", -0.2, 0.8, green),
         ("SAVI", "SAVI", -0.2, 0.8, green),
     ]:
-        add_layer_spec(specs, name, base.select(band), {"min": vmin, "max": vmax, "palette": palette}, "Vegetazione")
+        add_layer_spec(specs, name, base.select(band), {"min": vmin, "max": vmax, "palette": palette}, "Vegetation")
     if red_edge:
         add_layer_spec(
-            specs, "MCARI", base.select("MCARI"), {"min": -0.2, "max": 0.4, "palette": ["2166ac", "f7f7f7", "b2182b"]}, "Vegetazione"
+            specs, "MCARI", base.select("MCARI"), {"min": -0.2, "max": 0.4, "palette": ["2166ac", "f7f7f7", "b2182b"]}, "Vegetation"
         )
 
     wet = ["8c510a", "f6e8c3", "01665e"]
@@ -1069,7 +1069,7 @@ def build_layer_specs(base, detection, context, boundaries, interior, mask, red_
         ("Crop band", "Crop_band", -0.9, 0.1, ["542788", "f7f7f7", "b35806"]),
         ("Soil band", "Soil_band", -1.0, 0.2, ["2166ac", "f7f7f7", "b2182b"]),
     ]:
-        add_layer_spec(specs, name, base.select(band), {"min": vmin, "max": vmax, "palette": palette}, "Umidita e suolo")
+        add_layer_spec(specs, name, base.select(band), {"min": vmin, "max": vmax, "palette": palette}, "Moisture and soil")
 
     for name, band, vmin, vmax, palette in [
         ("TCT brightness", "TCT_brightness", -0.2, 0.8, ["000004", "f89540", "fcfdbf"]),
@@ -1087,35 +1087,35 @@ def build_layer_specs(base, detection, context, boundaries, interior, mask, red_
 
     add_layer_spec(
         specs,
-        "Vegetazione in deficit - possibili muri",
+        "Vegetation deficit - possible walls",
         detection.select("Vegetation_deficit"),
         {"min": 0, "max": 1.6, "palette": ["ffffff", "ffd166", "ef476f", "6a040f"]},
         "Anomalie",
     )
     add_layer_spec(
         specs,
-        "Vegetazione in eccesso - possibili fossati",
+        "Vegetation excess - possible ditches",
         detection.select("Vegetation_excess"),
         {"min": 0, "max": 1.6, "palette": ["ffffff", "bde0fe", "219ebc", "023047"]},
         "Anomalie",
     )
     add_layer_spec(
         specs,
-        "Marks lineari - anomalie orientate",
+        "Linear marks - oriented anomalies",
         detection.select("Linear_marks"),
         {"min": 0, "max": 1.2, "palette": ["000000", "3a0ca3", "f72585", "ffd166"]},
         "Anomalie",
     )
     add_layer_spec(
         specs,
-        "Coerenza direzionale",
+        "Directional coherence",
         detection.select("Coherence"),
         {"min": 0, "max": 1, "palette": ["000000", "4cc9f0", "ffffff"]},
         "Anomalie",
     )
     add_layer_spec(
         specs,
-        "Soil marks - contrasto suolo nudo",
+        "Soil marks - bare-soil contrast",
         detection.select("Soil_mark_index"),
         {"min": 0, "max": 2.5, "palette": ["ffffff", "e9c46a", "bc6c25", "3d1e00"]},
         "Anomalie",
@@ -1123,43 +1123,43 @@ def build_layer_specs(base, detection, context, boundaries, interior, mask, red_
 
     add_layer_spec(
         specs,
-        "Persistenza complessiva",
+        "Overall persistence",
         detection.select("Persistent_any"),
         {"min": 0, "max": 1, "palette": ["000000", "fee08b", "d73027"]},
-        "Persistenza temporale",
+        "Temporal persistence",
     )
     add_layer_spec(
         specs,
-        "Persistenza deficit",
+        "Deficit persistence",
         detection.select("Persistent_deficit"),
         {"min": 0, "max": 1, "palette": ["000000", "ffd166", "9d0208"]},
-        "Persistenza temporale",
+        "Temporal persistence",
     )
     add_layer_spec(
         specs,
-        "Persistenza eccesso",
+        "Excess persistence",
         detection.select("Persistent_excess"),
         {"min": 0, "max": 1, "palette": ["000000", "90e0ef", "0077b6"]},
-        "Persistenza temporale",
+        "Temporal persistence",
     )
     add_layer_spec(
         specs,
-        "Ricorrenza pluriennale",
+        "Multi-year recurrence",
         detection.select("Multi_year_recurrence"),
         {"min": 0, "max": 1, "palette": ["000000", "fca311", "e63946", "ffffff"]},
-        "Persistenza temporale",
+        "Temporal persistence",
     )
 
     add_layer_spec(
         specs,
-        "Anomaly score (contesto, singola data)",
+        "Anomaly score (context, single date)",
         context.select("Anomaly_score"),
         {"min": 0, "max": 10, "palette": ["000000", "ffff00", "ff0000"]},
         "Contesto",
     )
     add_layer_spec(
         specs,
-        "Local contrast (contesto, singola data)",
+        "Local contrast (context, single date)",
         context.select("Local_contrast"),
         {"min": -2, "max": 2, "palette": ["0000ff", "ffffff", "ff0000"]},
         "Contesto",
@@ -1169,7 +1169,7 @@ def build_layer_specs(base, detection, context, boundaries, interior, mask, red_
     )
     add_layer_spec(
         specs,
-        "Date utili per pixel",
+        "Usable dates per pixel",
         detection.select("Effective_dates"),
         {"min": 0, "max": 12, "palette": ["000000", "4cc9f0", "ffd166"]},
         "Contesto",
@@ -1300,7 +1300,7 @@ def run_analysis(
 
     total = granules.size().getInfo()
     if total == 0:
-        raise ValueError("Nessuna immagine trovata con questi parametri.")
+        raise ValueError("No image found with these parameters.")
 
     mask = analysis_mask(open_land_only)
     measured = granules.map(lambda image: scene_statistics(image, aoi, mask, scale)).filter(
@@ -1309,8 +1309,8 @@ def run_analysis(
     valid_count = measured.size().getInfo()
     if valid_count == 0:
         raise ValueError(
-            "Nessuna immagine con pixel validi dopo la maschera. Allarga l'area, alza la soglia nuvole "
-            "o disattiva il filtro sulle aree aperte."
+            "No image with valid pixels after masking. Widen the area, raise the cloud threshold "
+            "or turn off the open-area filter."
         )
 
     scenes = scene_table(measured, min(MAX_RANKED_SCENES, valid_count))
@@ -1322,7 +1322,7 @@ def run_analysis(
 
     selected_ids = [scene["scene_id"] for scene in ranked if scene["selected_for_composite"]]
     if not selected_ids:
-        raise ValueError("Nessuna data selezionabile con i filtri correnti.")
+        raise ValueError("No selectable date with the current filters.")
     top = granules.filter(ee.Filter.inList("scene_id", selected_ids))
     dated = top.map(
         lambda image: image.set("year", ee.Date(image.get("system:time_start")).get("year"))
@@ -1332,7 +1332,7 @@ def run_analysis(
     # The reference image is for looking at, never for detecting on: see
     # detection_layers.
     best = ee.Image(granules.filter(ee.Filter.eq("scene_id", selected_ids[0])).first()).clip(aoi)
-    base = top.median().clip(aoi) if str(mode).startswith("Mediana") else best
+    base = top.median().clip(aoi) if str(mode).startswith("Median") else best
 
     signature = seasonal_signature(granules, aoi, scale)
     boundaries = field_boundaries(signature, aoi, scale)
@@ -1422,19 +1422,19 @@ DISPLAY_COLUMNS = [
     ("scene_cloud", "cloud"),
     ("pixel_cloud_mean", "pixel_cloud_mean"),
     ("valid_pixels", "valid_pixels"),
-    ("coverage", "copertura"),
-    ("phenology", "fase"),
-    ("rain_30d_mm", "pioggia_30gg_mm"),
-    ("rain_30d_normal_mm", "pioggia_30gg_media_mm"),
-    ("dryness", "siccita"),
-    ("contrast", "contrasto_locale"),
+    ("coverage", "coverage"),
+    ("phenology", "phase"),
+    ("rain_30d_mm", "rain_30d_mm"),
+    ("rain_30d_normal_mm", "rain_30d_normal_mm"),
+    ("dryness", "dryness"),
+    ("contrast", "local_contrast"),
     ("score", "score"),
     ("scene_id", "id"),
 ]
 
 
 def scenes_dataframe(scenes):
-    """Client-side ranking table, with the legacy column names preserved."""
+    """Client-side ranking table shown to the user."""
     rows = []
     for scene in scenes:
         row = {label: scene.get(key) for key, label in DISPLAY_COLUMNS}
@@ -1449,11 +1449,11 @@ def scenes_dataframe(scenes):
         "cloud",
         "pixel_cloud_mean",
         "valid_pixels",
-        "pioggia_30gg_mm",
-        "pioggia_30gg_media_mm",
-        "copertura",
-        "siccita",
-        "contrasto_locale",
+        "rain_30d_mm",
+        "rain_30d_normal_mm",
+        "coverage",
+        "dryness",
+        "local_contrast",
         "score",
     ] + [band.lower() + "_mean" for band in TIMESERIES_BANDS]
     for column in numeric:

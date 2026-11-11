@@ -112,7 +112,7 @@ def main():
     payload = build(tuple(args.bbox), args.out, args.url)
     print(
         f"{payload['metadata']['place_count']} toponimi e "
-        f"{payload['metadata']['municipality_count']} comuni scritti in {args.out}"
+        f"{payload['metadata']['municipality_count']} municipalities written to {args.out}"
     )
 
 

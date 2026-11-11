@@ -9,7 +9,7 @@ from .paths import RVT_DIR
 
 CANDIDATE_DIR = RVT_DIR / "output_rvt_gui" / "airch_candidates"
 CANDIDATE_PATH = CANDIDATE_DIR / "candidates.json"
-CANDIDATE_STATUSES = ("Da verificare", "Interessante", "Falso positivo", "Verificato")
+CANDIDATE_STATUSES = ("To verify", "Promising", "False positive", "Verified")
 
 
 def utc_now():
@@ -67,7 +67,7 @@ def update_candidate(candidate_id, updates, path=CANDIDATE_PATH):
         if candidate.get("id") == candidate_id:
             candidate.update(json_safe(updates))
             return save_candidate(candidate, path)
-    raise KeyError(f"Candidato {candidate_id} non trovato.")
+    raise KeyError(f"Candidate {candidate_id} not found.")
 
 
 def candidates_json(candidates):

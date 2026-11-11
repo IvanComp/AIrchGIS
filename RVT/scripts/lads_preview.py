@@ -50,7 +50,7 @@ LADS_Z_EXAGGERATION = 2.5
 CLOUD_PREPROCESS_PROFILES = {
     "original": {
         "label": "Original",
-        "description": "Mostra il terreno com'e, senza effetti aggiuntivi. E la vista piu fedele al dato originale.",
+        "description": "Shows the terrain as it is, with no added effects. The view most faithful to the original data.",
         "sanitize": False,
         "sigma": 0.0,
         "blend": 0.0,
@@ -68,7 +68,7 @@ CLOUD_PREPROCESS_PROFILES = {
     },
     "cloud1": {
         "label": "Cloud 1",
-        "description": "Mostra solo i punti del terreno. Ti fa vedere il dato grezzo e la sua grana reale, senza unirlo in una superficie continua.",
+        "description": "Shows only the terrain points: the raw data and its real grain, without joining it into a continuous surface.",
         "sanitize": False,
         "sigma": 0.0,
         "blend": 0.0,
@@ -86,7 +86,7 @@ CLOUD_PREPROCESS_PROFILES = {
     },
     "cloud2": {
         "label": "Cloud 2",
-        "description": "Unisce i punti in una superficie continua e lascia vedere anche la trama della superficie. Di solito rende il terreno piu leggibile e ordinato.",
+        "description": "Joins the points into a continuous surface and still shows its texture. Usually makes the terrain more readable and tidy.",
         "sanitize": True,
         "sigma": 0.0,
         "blend": 0.0,
@@ -104,7 +104,7 @@ CLOUD_PREPROCESS_PROFILES = {
     },
     "cloud3": {
         "label": "Cloud 3",
-        "description": "Spinge in evidenza avvallamenti, gobbe e piccoli segni del terreno. E utile per cercare anomalie, ma puo deformare un po' la forma reale.",
+        "description": "Emphasises hollows, bumps and small terrain marks. Useful to look for anomalies, but it can slightly distort the real shape.",
         "sanitize": True,
         "sigma": 0.0,
         "blend": 0.0,
@@ -366,35 +366,35 @@ def _archaeology_label(kind, shape):
     if shape == "linear":
         if kind == "negative":
             return (
-                "Possibile fossato o linea artificiale",
-                "Dislivello lineare abbastanza continuo. Potrebbe essere un fossato, un bordo, una strada antica o un limite di terreno.",
+                "Possible ditch or artificial line",
+                "Fairly continuous linear drop. It could be a ditch, an edge, an ancient road or a field boundary.",
             )
         return (
-            "Possibile argine o linea rialzata",
-            "Rialzo lineare abbastanza continuo. Potrebbe essere un argine, un terrapieno o il margine di una struttura.",
+            "Possible bank or raised line",
+            "Fairly continuous linear rise. It could be a bank, an earthwork or the edge of a structure.",
         )
     if shape == "enclosure":
         if kind == "negative":
             return (
-                "Possibile recinto o fossato chiuso",
-                "Forma chiusa o semicircolare con dislivello continuo. Potrebbe ricordare una cinta, un recinto o un fossato ad anello.",
+                "Possible enclosure or closed ditch",
+                "Closed or semicircular shape with a continuous drop. It may recall a circuit wall, an enclosure or a ring ditch.",
             )
         return (
-            "Possibile cinta o terrapieno chiuso",
-            "Forma chiusa o quasi chiusa in rilievo. Potrebbe ricordare una cinta, un terrapieno o un perimetro artificiale.",
+            "Possible circuit wall or closed earthwork",
+            "Closed or nearly closed raised shape. It may recall a circuit wall, an earthwork or an artificial perimeter.",
         )
     return (
-        "Possibile struttura regolare",
-        "Forma abbastanza ordinata e continua rispetto al contesto. Potrebbe valere un controllo per capire se ha origine artificiale.",
+        "Possible regular structure",
+        "Shape fairly regular and continuous compared with its surroundings. Worth checking whether it is artificial.",
     )
 
 
 def _score_to_confidence(score):
     if score >= 2.6:
-        return "alta"
+        return "high"
     if score >= 1.7:
-        return "media"
-    return "bassa"
+        return "medium"
+    return "low"
 
 
 def detect_archaeology_candidates(x, y, z_source, z_display, valid, max_items=8):
@@ -803,14 +803,14 @@ def detect_gdal_terrain_candidates(x, y, z_source, z_display, valid, max_items=8
 
         kind = "negative" if mean_relief < 0 else "positive"
         if shape == "linear":
-            title = "GDAL: possibile linea di terreno"
-            summary = "La combinazione di pendenza, rugosita e rilievo locale segnala una rottura lineare abbastanza continua. Puo valere un controllo come fossato, bordo o strada."
+            title = "GDAL: possible terrain line"
+            summary = "The combination of slope, roughness and local relief flags a fairly continuous linear break. Worth checking as a ditch, edge or road."
         elif shape == "enclosure":
-            title = "GDAL: possibile recinto o cinta"
-            summary = "Le derivate del terreno evidenziano una forma chiusa o quasi chiusa. Puo essere utile per cercare recinti, cinte o fossati ad anello."
+            title = "GDAL: possible enclosure or circuit wall"
+            summary = "Terrain derivatives highlight a closed or nearly closed shape. Useful to look for enclosures, circuit walls or ring ditches."
         else:
-            title = "GDAL: possibile anomalia regolare"
-            summary = "La superficie mostra una zona piu ordinata del contesto. Non e una prova, ma puo meritare un controllo sul terreno."
+            title = "GDAL: possible regular anomaly"
+            summary = "The surface shows an area more regular than its surroundings. Not proof, but it may deserve a field check."
 
         center_dist = (x_arr[mask] - float(shape_info["center_x"])) ** 2 + (y_arr[mask] - float(shape_info["center_y"])) ** 2
         rr, cc = np.where(mask)
@@ -898,8 +898,8 @@ def detect_opencv_line_candidates(x, y, z_source, z_display, valid, max_items=8)
         mean_relief = float(np.nanmean(line_resid))
         angle_deg = (math.degrees(math.atan2(y2 - y1, x2 - x1)) + 180.0) % 180.0
         score = float((length_m / 10.0) * max(0.9, contrast / max(residual_threshold, 1e-6)))
-        title = "OpenCV: possibile linea artificiale"
-        summary = "OpenCV ha trovato un bordo lineare continuo. E utile per cercare fossati, strade, muri sepolti o margini regolari."
+        title = "OpenCV: possible artificial line"
+        summary = "OpenCV found a continuous linear edge. Useful to look for ditches, roads, buried walls or regular margins."
         results.append(
             {
                 "title": title,
@@ -1003,11 +1003,11 @@ def detect_opencv_enclosure_candidates(x, y, z_source, z_display, valid, max_ite
             center_c = int(np.clip(round(cx), 0, z_base.shape[1] - 1))
             score = float(shape_score * max(1.0, math.log1p(area_m2) / 2.2) * (1.0 + abs(mean_relief)))
             if shape == "enclosure":
-                title = "OpenCV: possibile recinto o forma chiusa"
-                summary = "OpenCV ha trovato un contorno chiuso abbastanza regolare. Puo essere utile per cercare cinte, recinti, tombe o fossati ad anello."
+                title = "OpenCV: possible enclosure or closed shape"
+                summary = "OpenCV found a fairly regular closed contour. Useful to look for circuit walls, enclosures, tombs or ring ditches."
             else:
-                title = "OpenCV: possibile struttura regolare"
-                summary = "OpenCV ha trovato una forma chiusa ordinata rispetto al contesto. Non e una prova, ma puo meritare un controllo."
+                title = "OpenCV: possible regular structure"
+                summary = "OpenCV found a closed shape that is regular compared with its surroundings. Not proof, but it may deserve a check."
             results.append(
                 {
                     "title": title,
@@ -1038,7 +1038,7 @@ def apply_cloud_preprocessing(dtm, cloud_preprocess_key="cloud1"):
     key = cloud_preprocess_key or "cloud1"
     cfg = CLOUD_PREPROCESS_PROFILES.get(key)
     if cfg is None:
-        raise RuntimeError(f"Cloud preprocessing non valido: {key}")
+        raise RuntimeError(f"Invalid cloud preprocessing: {key}")
     sanitize = bool(cfg.get("sanitize"))
     sigma = float(cfg.get("sigma", 0.0) or 0.0)
     blend = float(cfg.get("blend", 0.0) or 0.0)
@@ -1099,16 +1099,16 @@ def _sample_valid_indices(valid, total_points, max_points):
 def build_lads_point_cloud(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS, max_points=LADS_MAX_POINTS, cloud_preprocess_key="original"):
     arr = apply_cloud_preprocessing(dtm, cloud_preprocess_key=cloud_preprocess_key)
     if arr.ndim != 2:
-        raise RuntimeError("Il DTM LADS deve essere mono-banda.")
+        raise RuntimeError("The LADS DTM must be single-band.")
     if profile is None or profile.get("transform") is None:
-        raise RuntimeError("Transform georiferito non disponibile per LADS.")
+        raise RuntimeError("Georeferenced transform not available for LADS.")
     if src_crs is None:
-        raise RuntimeError("CRS del raster non disponibile per LADS.")
+        raise RuntimeError("Raster CRS not available for LADS.")
 
     valid = np.isfinite(arr)
     total_points = int(valid.sum())
     if total_points <= 0:
-        raise RuntimeError("Il DTM non contiene celle valide.")
+        raise RuntimeError("The DTM contains no valid cells.")
 
     rows, cols, step = _sample_valid_indices(valid, total_points, max_points)
 
@@ -1353,15 +1353,15 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
     source = np.asarray(dtm)
     cfg = CLOUD_PREPROCESS_PROFILES.get(cloud_preprocess_key, CLOUD_PREPROCESS_PROFILES["cloud1"])
     if source.ndim != 2:
-        raise RuntimeError("Il DTM browser deve essere mono-banda.")
+        raise RuntimeError("The browser DTM must be single-band.")
     if profile is None or profile.get("transform") is None:
-        raise RuntimeError("Transform georiferito non disponibile per il browser 3D.")
+        raise RuntimeError("Georeferenced transform not available for the 3D browser.")
     if src_crs is None:
-        raise RuntimeError("CRS del raster non disponibile per il browser 3D.")
+        raise RuntimeError("Raster CRS not available for the 3D browser.")
 
     h, w = source.shape
     if h <= 1 or w <= 1:
-        raise RuntimeError("Raster troppo piccolo per il viewer 3D.")
+        raise RuntimeError("Raster too small for the 3D viewer.")
     step = max(1, int(math.ceil(max(h, w) / float(max_side))))
     rows = np.arange(0, h, step, dtype=np.int32)
     cols = np.arange(0, w, step, dtype=np.int32)
@@ -1383,7 +1383,7 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
 
     valid = np.isfinite(z_render)
     if not valid.any():
-        raise RuntimeError("Nessuna cella valida per il viewer 3D.")
+        raise RuntimeError("No valid cell for the 3D viewer.")
 
     xs, ys = rasterio.transform.xy(profile["transform"], rr.ravel().tolist(), cc.ravel().tolist(), offset="center")
     x = np.asarray(xs, dtype=np.float64).reshape(z_render.shape)
@@ -1429,7 +1429,7 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
             "label": "OpenCV",
             "button_label": "OpenCV",
             "accent": "#3da5ff",
-            "note": "Usa OpenCV per cercare sia linee continue sia forme chiuse o regolari. E la modalita piu orientata a fossati, strade, cinte e recinti.",
+            "note": "Uses OpenCV to look for both continuous lines and closed or regular shapes. The mode best suited to ditches, roads, circuit walls and enclosures.",
             "candidates": opencv_candidates,
         },
     ]
@@ -1501,7 +1501,7 @@ def write_browser_cloud_viewer(
             "label": "OpenCV",
             "button_label": "OpenCV",
             "accent": "#3da5ff",
-            "note": "Usa OpenCV per cercare sia linee continue sia forme chiuse o regolari. E la modalita piu orientata a fossati, strade, cinte e recinti.",
+            "note": "Uses OpenCV to look for both continuous lines and closed or regular shapes. The mode best suited to ditches, roads, circuit walls and enclosures.",
             "candidates": terrain.get("archaeology_candidates", []) or [],
         }
     ]
@@ -1519,9 +1519,9 @@ def write_browser_cloud_viewer(
     analysis_profiles_json = json.dumps(analysis_profiles, ensure_ascii=False)
     las_button = ""
     if las_href:
-        las_button = f'<a class="toolbar-btn" href="{las_href}" download>Esporta .LAS</a>'
+        las_button = f'<a class="toolbar-btn" href="{las_href}" download>Export .LAS</a>'
     analysis_button_html = "".join(
-        f'<button class="toolbar-btn toolbar-btn--button analysis-mode-btn" type="button" data-analysis-key="{escape(str(item.get("key", "")), quote=True)}">{escape(str(item.get("button_label", item.get("label", "Analisi"))))}</button>'
+        f'<button class="toolbar-btn toolbar-btn--button analysis-mode-btn" type="button" data-analysis-key="{escape(str(item.get("key", "")), quote=True)}">{escape(str(item.get("button_label", item.get("label", "Analysis"))))}</button>'
         for item in analysis_profiles
     )
     variant_html = ""
@@ -1563,7 +1563,7 @@ def write_browser_cloud_viewer(
             cloud_preprocess_desc_html = f'<div class="toolbar-help">{escape(current_description)}</div>'
 
     html = f"""<!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -1732,7 +1732,7 @@ def write_browser_cloud_viewer(
   <div id="toolbar">{las_button}{analysis_button_html}{variant_html}{cloud_preprocess_html}{cloud_preprocess_desc_html}</div>
   <div id="app"></div>
   <aside id="analysis-panel">
-    <h3 id="analysis-title">Analisi</h3>
+    <h3 id="analysis-title">Analysis</h3>
     <p id="analysis-note" class="analysis-note"></p>
     <div id="analysis-list" class="analysis-list"></div>
   </aside>
@@ -1747,7 +1747,7 @@ def write_browser_cloud_viewer(
     }}
     try {{
       if (!window.THREE) {{
-        throw new Error('Three.js non caricato.');
+        throw new Error('Three.js not loaded.');
       }}
     const variantSelect = document.getElementById('variant-select');
     if (variantSelect) {{
@@ -1853,7 +1853,7 @@ def write_browser_cloud_viewer(
       if (pz > maxZ) maxZ = pz;
     }}
     if (!isFinite(minX) || !isFinite(minY) || !isFinite(minZ)) {{
-      throw new Error('Nessun punto valido generato per il viewer 3D.');
+      throw new Error('No valid point generated for the 3D viewer.');
     }}
     const centerX = (minX + maxX) * 0.5;
     const centerY = (minY + maxY) * 0.5;
@@ -1916,10 +1916,10 @@ def write_browser_cloud_viewer(
     }}
 
     function shapeLabel(value) {{
-      if (value === 'enclosure') return 'chiusa o circolare';
-      if (value === 'linear') return 'lineare';
-      if (value === 'regular') return 'regolare';
-      return 'anomalia';
+      if (value === 'enclosure') return 'closed or circular';
+      if (value === 'linear') return 'linear';
+      if (value === 'regular') return 'regular';
+      return 'anomaly';
     }}
 
     let radius = Math.max(DEFAULT_RADIUS, sceneRadius);
@@ -1939,7 +1939,7 @@ def write_browser_cloud_viewer(
         }}
       }}
       if (!indices.length) {{
-        throw new Error('Nessun triangolo valido generato per il terrain viewer.');
+        throw new Error('No valid triangle generated for the terrain viewer.');
       }}
       geometry.setIndex(indices);
       geometry.computeVertexNormals();
@@ -2007,7 +2007,7 @@ def write_browser_cloud_viewer(
     function buildAnalysisUI(profile) {{
       if (!analysisList) return;
       if (analysisTitle) {{
-        analysisTitle.textContent = (profile && profile.label) || 'Analisi';
+        analysisTitle.textContent = (profile && profile.label) || 'Analysis';
       }}
       if (analysisNote) {{
         analysisNote.textContent = (profile && profile.note) || '';
@@ -2015,7 +2015,7 @@ def write_browser_cloud_viewer(
       const candidates = (profile && profile.candidates) || [];
       const markers = analysisMarkers.get((profile && profile.key) || '') || [];
       if (!candidates.length) {{
-        analysisList.innerHTML = '<div class="analysis-item"><div class="analysis-summary">Nessuna anomalia abbastanza chiara da segnalare in questa vista.</div></div>';
+        analysisList.innerHTML = '<div class="analysis-item"><div class="analysis-summary">No anomaly clear enough to flag in this view.</div></div>';
         return;
       }}
       const frag = document.createDocumentFragment();
@@ -2032,11 +2032,11 @@ def write_browser_cloud_viewer(
           </div>
           <p class="analysis-summary">${{candidate.summary}}</p>
           <div class="analysis-meta">
-            Forma: ${{shapeLabel(candidate.shape)}}<br />
-            Rilievo: ${{formatMeters(candidate.relief_m)}}<br />
-            Bordo: ${{Number(candidate.invalid_distance_cells || 0).toFixed(1)}} celle<br />
-            Estensione: ${{Number(candidate.length_m || 0).toFixed(1)}} x ${{Number(candidate.width_m || 0).toFixed(1)}} m<br />
-            Area stimata: ${{Number(candidate.area_m2 || 0).toFixed(1)}} m²
+            Shape: ${{shapeLabel(candidate.shape)}}<br />
+            Relief: ${{formatMeters(candidate.relief_m)}}<br />
+            Edge: ${{Number(candidate.invalid_distance_cells || 0).toFixed(1)}} cells<br />
+            Extent: ${{Number(candidate.length_m || 0).toFixed(1)}} x ${{Number(candidate.width_m || 0).toFixed(1)}} m<br />
+            Estimated area: ${{Number(candidate.area_m2 || 0).toFixed(1)}} m²
           </div>
         `;
         item.addEventListener('click', () => focusCandidate(markers[index]));
@@ -2167,9 +2167,9 @@ def export_lads_las(
     max_points=None,
 ):
     if laspy is None:
-        raise RuntimeError("Modulo `laspy` non disponibile per esportare .LAS.")
+        raise RuntimeError("`laspy` module not available to export .LAS.")
     if pyproj is None:
-        raise RuntimeError("Modulo `pyproj` non disponibile per esportare .LAS.")
+        raise RuntimeError("`pyproj` module not available to export .LAS.")
 
     cloud = build_lads_point_cloud(
         dtm,
@@ -2215,11 +2215,11 @@ def _load_raster_for_cli(path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Preview LADS 3D da un DTM raster.")
-    parser.add_argument("raster_path", help="Path del raster DTM da convertire in point cloud")
-    parser.add_argument("--target-crs", default=LADS_TARGET_CRS, help="CRS metrico di destinazione per la preview 3D")
-    parser.add_argument("--max-points", type=int, default=LADS_MAX_POINTS, help="Numero massimo di punti da plottare nella preview")
-    parser.add_argument("--output", default="", help="PNG di output facoltativo; se omesso salva nulla")
+    parser = argparse.ArgumentParser(description="LADS 3D preview from a DTM raster.")
+    parser.add_argument("raster_path", help="Path of the DTM raster to convert to a point cloud")
+    parser.add_argument("--target-crs", default=LADS_TARGET_CRS, help="Metric target CRS for the 3D preview")
+    parser.add_argument("--max-points", type=int, default=LADS_MAX_POINTS, help="Maximum number of points to plot in the preview")
+    parser.add_argument("--output", default="", help="Optional output PNG; nothing is saved if omitted")
     args = parser.parse_args()
 
     arr, profile, crs = _load_raster_for_cli(args.raster_path)
@@ -2230,8 +2230,8 @@ def main():
         print(args.output)
         return
     print(
-        f"LADS pronto | src={cloud['source_crs']} | dst={cloud['target_crs']} | "
-        f"punti={cloud['preview_points']}/{cloud['total_points']} | step={cloud['sample_step']}"
+        f"LADS ready | src={cloud['source_crs']} | dst={cloud['target_crs']} | "
+        f"points={cloud['preview_points']}/{cloud['total_points']} | step={cloud['sample_step']}"
     )
 
 

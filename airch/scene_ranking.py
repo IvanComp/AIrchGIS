@@ -28,7 +28,7 @@ RANK_FEATURES = (
 RANK_BANDS = [item[0] for item in RANK_FEATURES]
 TIMESERIES_BANDS = ["NDVI", "GNDVI", "SAVI", "NDMI", "TCT_greenness"]
 
-TARGETS = ("Automatico", "Crop marks (vegetazione)", "Soil marks (suolo nudo)")
+TARGETS = ("Automatico", "Crop marks (vegetation)", "Soil marks (bare soil)")
 
 # NDVI below this value over the analysis mask means the field is essentially bare.
 BARE_NDVI = 0.25
@@ -37,17 +37,17 @@ CANOPY_NDVI = 0.45
 # Share of the mask that must be bare before the scene is called a soil-mark scene.
 BARE_FRACTION = 0.55
 
-PHENOLOGY_SOIL = "suolo nudo"
-PHENOLOGY_CANOPY = "vegetazione"
-PHENOLOGY_MIXED = "misto"
+PHENOLOGY_SOIL = "bare soil"
+PHENOLOGY_CANOPY = "vegetation"
+PHENOLOGY_MIXED = "mixed"
 
 # How much a dry antecedent period may boost a scene. Crop marks are a
 # moisture-stress phenomenon: the same field shows nothing after a wet month.
 DRYNESS_WEIGHT = 0.45
 
 TARGET_WEIGHTS = {
-    "Crop marks (vegetazione)": {PHENOLOGY_CANOPY: 1.0, PHENOLOGY_MIXED: 0.6, PHENOLOGY_SOIL: 0.15},
-    "Soil marks (suolo nudo)": {PHENOLOGY_CANOPY: 0.15, PHENOLOGY_MIXED: 0.6, PHENOLOGY_SOIL: 1.0},
+    "Crop marks (vegetation)": {PHENOLOGY_CANOPY: 1.0, PHENOLOGY_MIXED: 0.6, PHENOLOGY_SOIL: 0.15},
+    "Soil marks (bare soil)": {PHENOLOGY_CANOPY: 0.15, PHENOLOGY_MIXED: 0.6, PHENOLOGY_SOIL: 1.0},
 }
 
 

@@ -125,7 +125,7 @@ def boundary_strength(stack):
     """
     a = np.asarray(stack, dtype=float)
     if a.ndim != 3:
-        raise ValueError("stack deve essere (date, righe, colonne)")
+        raise ValueError("stack must be (dates, rows, cols)")
     filled = np.where(np.isfinite(a), a, np.nan)
     out = np.zeros(a.shape[1:], dtype=float)
     for dr, dc in ((0, 1), (1, 0), (0, -1), (-1, 0)):
@@ -150,10 +150,10 @@ def summarise(report):
     """One-line rendering of a metric dictionary, for logs and reports."""
     def fmt(key, digits=3):
         value = report.get(key)
-        return "n.d." if value is None else f"{value:.{digits}f}"
+        return "n/a" if value is None else f"{value:.{digits}f}"
 
     return (
         f"AUC {fmt('auc',2)} | precision@{report.get('k', 20)} {fmt('precision')} "
-        f"(caso {fmt('precision_random')}) | su bordi {fmt('edge_contamination')} "
-        f"| candidati {report.get('peaks', 0)}"
+        f"(chance {fmt('precision_random')}) | on edges {fmt('edge_contamination')} "
+        f"| candidates {report.get('peaks', 0)}"
     )

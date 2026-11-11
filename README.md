@@ -1,132 +1,120 @@
 # AIrch
 
-AIrch (AI + archaeology) è il tool unico per analisi territoriale e archeologica preliminare. AIrch integra gli strumenti principali del progetto in un'unica app web:
+AIrch (AI + archaeology) is a single web app for preliminary landscape and archaeological prospection. It is built for archaeologists with little IT background and brings the project's tools together in one interface:
 
-- screening multispettrale Sentinel-2 per crop marks e soil marks;
-- esplorazione LiDAR/DTM con RVT, filtri, export, report e viewer 3D;
-- database dei siti archeologici noti CAM-M/PVS con mappa, filtri, schede di dettaglio e provenienza documentaria verificabile;
-- dossier di candidati che collegano fonte documentale, AOI, ranking temporale e stato di verifica.
+- **RVT (LiDAR)**: DTM/DSM exploration with RVT relief visualisations, filters, exports, method grid, reports and the interactive **3D Cloud** viewer;
+- **Crop Marks**: multispectral screening for crop marks and soil marks on Sentinel-2 (from 2016) and Landsat (from 1984);
+- **Candidates**: a local archive of verification dossiers that link each anomaly to its area, its date ranking and its verification status.
 
-## Avvio consigliato
+The catalogue of known sites (CAM-M / Potenza Valley Survey) is no longer a separate screen. It stays in `airch/data/` as the ground truth used to draw known sites on the Crop Marks map and to run the built-in check against known sites. Scores are investigation priorities, not archaeological probabilities.
+
+## Quick start
 
 ```bash
 cd "/Users/ivan/Desktop/Neural-Detecting"
 ./start_airch.command
 ```
 
-In alternativa:
+Or manually:
 
 ```bash
-cd "/Users/ivan/Desktop/Neural-Detecting"
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv_airch
+source .venv_airch/bin/activate
 pip install -r requirements.txt
 streamlit run airch_app.py
 ```
 
-## Cosa trovi nell'app unica
+## How the Crop Marks engine picks dates
 
-- `RVT`: schermata web per Database, upload raster, DTM da mappa, metodi RVT, preset, basemap, export TIFF/PNG, griglia metodi, 3D Cloud, report PDF/KML.
-- `Crop Marks`: AOI su mappa, scelta dell'archivio (Sentinel-2 dal 2016, Landsat dal 1984, o entrambi), ranking delle date, indici, Tasseled Cap, PCA, mappe di anomalia, download GeoTIFF ed export Drive.
-- `Database`: catalogo CAM-M/PVS deduplicato, con ricerca per metadati, filtri cronologici, fonti primarie collegate, coda dei join incerti, tavole comunali ufficiali e mappa interattiva. I riferimenti bibliografici espliciti uniscono le schede PVS alle corrispondenti CAM-M; i casi composti non vengono georiferiti automaticamente.
-- `Candidati`: archivio locale dei dossier di verifica, mappa delle AOI, aggiornamento dello stato ed export JSON/GeoJSON.
+The ranking does not reward the images with the most variance: field boundaries and different crops produce that, not buried structures. Each acquisition is scored on three independent axes.
 
-Le schede georeferenziate del Database possono aprire direttamente un'area di analisi in Crop Marks, con il raggio preimpostato sull'incertezza della posizione. I punteggi sono priorità di indagine, non probabilità archeologiche.
+1. **Local contrast.** For every index the engine measures the deviation from the neighbourhood mean (60 m), the scale of a wall or a ditch rather than of the landscape.
+2. **Crop phase.** Mean NDVI and bare-soil fraction classify the scene as *vegetation*, *bare soil* or *mixed*. Crop marks need a growing crop, soil marks a ploughed field: the «Target mark» option decides which dates enter the composite.
+3. **Antecedent dryness.** Rainfall in the 30 days before each scene is compared with the 1991-2020 ERA5-Land mean. A mark that does not show after a wet month can show after a dry one, and the ranking takes this into account.
 
-## Come sceglie le date il motore Crop Marks
+Statistics are computed only on arable land and open areas (ESA WorldCover): a roof edge produces more contrast than any buried structure, and without the mask the score follows the built-up area.
 
-Il ranking non premia le immagini con più varianza: quella la producono i confini di campo e le colture diverse, non le strutture sepolte. Ogni acquisizione viene invece valutata su tre assi indipendenti.
+Besides the vegetation deficit and excess maps, the engine produces:
 
-1. **Contrasto locale.** Per ogni indice si misura lo scarto dalla media del vicinato (60 m), cioè la scala di un muro o di un fossato, non quella del paesaggio.
-2. **Fase della coltura.** NDVI medio e frazione di suolo nudo classificano la scena come *vegetazione*, *suolo nudo* o *misto*. Le crop marks vogliono una coltura in crescita, le soil marks un campo arato: la voce «Traccia cercata» decide quali date entrano nel composito.
-3. **Siccità precedente.** La pioggia dei 30 giorni prima di ogni scena viene confrontata con la media 1991-2020 di ERA5-Land. Una traccia che non compare dopo un mese piovoso compare dopo un mese secco, e il ranking lo tiene in conto.
+- **Linear marks**, the anomaly weighted by the directional coherence of the local gradient: natural soil variability is isotropic, a wall or a ditch is not;
+- **Soil marks**, the brightness and colour contrast of bare soil;
+- **Persistence**, how many of the selected dates show the anomaly, and **Multi-year recurrence**, in how many different years it reappears, which is the strongest clue;
+- **Check against known sites**: samples the layer at the catalogued sites inside the AOI and at random control points, and reports the AUC. It is a sanity check on a small, non-random sample, not a statistical validation.
 
-Le statistiche sono calcolate solo su seminativi e aree aperte (ESA WorldCover): un bordo di tetto produce più contrasto di qualunque struttura sepolta, e senza maschera il punteggio segue l'urbanizzato.
+## Georeferencing toponyms
 
-Oltre alle mappe di deficit ed eccesso di vegetazione, il motore produce:
+The CAM-M PDF publishes no coordinates: it describes places in words. Only 148 of 1,708 records come with a point from the linked sources.
 
-- **Marks lineari**, l'anomalia pesata per la coerenza direzionale del gradiente locale: la variabilità naturale del suolo è isotropa, un muro o un fossato no;
-- **Soil marks**, il contrasto di brillantezza e colore del suolo nudo;
-- **Persistenza**, quante delle date scelte mostrano l'anomalia, e **Ricorrenza pluriennale**, in quanti anni diversi ricompare - che è l'indizio più solido;
-- **Controllo sui siti noti**: campiona il layer sui siti catalogati dentro l'AOI e su punti di controllo casuali, e riporta l'AUC. È un controllo di sanità su un campione piccolo e non casuale, non una validazione statistica.
-
-## Georeferenziazione dei toponimi
-
-Il PDF CAM-M non pubblica coordinate: descrive i luoghi a parole. Solo 148 schede su 1708 arrivano con un punto dalle fonti collegate, e le altre resterebbero fuori sia dalla mappa sia dall'analisi satellitare.
-
-Il gazetteer locale colma il divario:
+The local gazetteer closes the gap:
 
 ```bash
 python scripts/build_gazetteer.py
 ```
 
-Lo script scarica il dump GeoNames per l'Italia, tiene i toponimi dell'area di studio e scrive `airch/data/gazetteer.json` (GeoNames, CC BY 4.0). A quel punto `airch/geocoding.py` abbina la località di ogni scheda al gazetteer, disambigua gli omonimi sulla distanza dal centro del comune e scarta i risultati oltre i 9 km. Circa 390 schede ottengono una posizione entro qualche centinaio di metri, ~1100 restano posizionate sul solo comune.
+The script downloads the GeoNames dump for Italy, keeps the toponyms of the study area and writes `airch/data/gazetteer.json` (GeoNames, CC BY 4.0). `airch/geocoding.py` then matches the locality of each record against the gazetteer, disambiguates homonyms by distance from the municipality centre and discards matches beyond 9 km. About 390 records get a position within a few hundred metres; about 1,100 stay at municipality level.
 
-Una coordinata dedotta non viene mai presentata come pubblicata: porta la propria etichetta di precisione, il proprio raggio di incertezza e il nome su cui è stata abbinata. Il filtro «Origine delle coordinate» mostra di default solo le posizioni pubblicate e quelle da toponimo; il controllo sui siti noti usa esclusivamente le coordinate pubblicate, perché verificare il rilevatore su posizioni dedotte misurerebbe il gazetteer.
+An inferred coordinate is never presented as published: it carries its own precision label, uncertainty radius and the name it was matched on. The check against known sites uses published coordinates only, because testing the detector on inferred positions would measure the gazetteer.
 
-## Fonti documentarie locali
+## Local documentary sources
 
-Le copie locali autorizzate dei documenti e, facoltativamente, le 53 tavole/varianti comunali CAM-M possono essere sincronizzate nella cache ignorata da Git:
+Authorised local copies of the documents and, optionally, the 53 CAM-M municipal maps can be synchronised into the git-ignored cache:
 
 ```bash
 python scripts/sync_archaeological_sources.py --maps
 ```
 
-Il manifest `airch/data/source_manifest.json` conserva URL istituzionali, licenze, copertura, dimensioni e checksum. L'app non trasforma abbinamenti ambigui in coordinate: li espone nella coda di revisione.
+The manifest `airch/data/source_manifest.json` stores institutional URLs, licences, coverage, sizes and checksums.
 
-MASE e Google Earth sono disponibili come risorse esterne nella barra superiore, non come sezioni operative dell'app.
+MASE and Google Earth are available as external resources in the top bar.
 
-## Struttura
+## Structure
 
 ```text
 Neural-Detecting/   (AIrch)
   airch_app.py
   start_airch.command
   airch/
-    app.py
-    ui.py                     tema, animazioni e logo
-    archaeological_database.py
-    database_enrichment.py
-    geocoding.py              toponimi -> coordinate, con incertezza esplicita
-    site_index.py             catalogo come punti, per le mappe satellitari
+    app.py                    shell and navigation
+    ui.py                     theme, animations and logo
+    rvt_web.py                RVT (LiDAR) screen, including 3D Cloud
+    cropmarks_engine.py       collections, masks and anomaly maps
+    scene_ranking.py          date ranking, no Earth Engine dependency
+    candidate_store.py        verification dossiers
+    benchmark.py              metrics against known sites
+    site_index.py             known-site catalogue as points
+    geocoding.py              toponyms -> coordinates, with explicit uncertainty
+    database_enrichment.py    CAM-M / PVS joins
     source_registry.py
-    cropmarks_engine.py       collezioni, maschere e mappe di anomalia
-    scene_ranking.py          ranking delle date, senza dipendenze Earth Engine
-    data/cam_m_sites.json
-    data/potenza_valley_sites.json
-    data/pvs_2017_enrichment.json
-    data/source_manifest.json
-    data/gazetteer.json       generato da scripts/build_gazetteer.py
     paths.py
+    data/                     catalogues, gazetteer, calibration regions
     assets/logo.svg
   RVT/
-    core.py
-    scripts/lads_preview.py
-    README_RVT_Lidar_Explorer.md
-  Crop marks Tool/
-    s2_cropmarks_gui.py
-    requirements.txt
-    start_mac.command
-    README.md
+    core.py                   RVT engine (and the legacy Tk desktop GUI)
+    scripts/lads_preview.py   3D Cloud viewer
+  Crop marks Tool/            standalone Crop Marks launcher
+  paper/                      manuscript (0-MAIN.tex + sections/)
+  docs/
+  scripts/
+  tests/
 ```
 
-## Crop Marks standalone
+## Standalone Crop Marks
 
 ```bash
 cd "/Users/ivan/Desktop/Neural-Detecting/Crop marks Tool"
 ./start_mac.command
 ```
 
-Dettagli: `Crop marks Tool/README.md`.
+Details: `Crop marks Tool/README.md`.
 
-## Test
+## Tests
 
 ```bash
-python -m unittest tests.test_scene_ranking tests.test_geocoding tests.test_cropmarks_helpers tests.test_candidate_store tests.test_database_enrichment
+python -m unittest tests.test_scene_ranking tests.test_geocoding tests.test_cropmarks_helpers tests.test_candidate_store tests.test_database_enrichment tests.test_benchmark
 ```
 
-La logica di ranking e di georeferenziazione è scritta in moduli puri proprio per essere verificabile senza rete: i test coprono classificazione fenologica, indice di siccità, ordinamento delle date, AUC, disambiguazione degli omonimi e conteggi della georeferenziazione.
+Ranking and georeferencing logic live in pure modules so they can be tested without network access: the tests cover phenological classification, dryness index, date ordering, AUC, homonym disambiguation and georeferencing counts.
 
-## Note
+## Notes
 
-La cartella `.venv`, gli output RVT, i dati raster locali, i DTM generati e le credenziali/progetti Earth Engine sono locali e non dovrebbero essere versionati.
+The `.venv*` folders, RVT outputs, local raster data, generated DTMs and Earth Engine credentials/projects are local and should not be versioned.

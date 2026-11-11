@@ -1,6 +1,6 @@
 """Georeferenced view over the documentary catalogue.
 
-The catalogue lives in ``archaeological_database`` for browsing; this module
+The catalogue data lives in ``airch/data``; this module
 exposes the same records as plain points so that satellite screens can draw
 known sites over an area of interest and compare an anomaly map against them.
 It deliberately avoids importing Streamlit or Earth Engine so it stays usable

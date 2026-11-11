@@ -27,7 +27,7 @@ GAZETTEER_PATH = Path(__file__).resolve().parent / "data" / "gazetteer.json"
 MAX_ANCHOR_DISTANCE_KM = 9.0
 
 PRECISION_TOPONYM = "toponimo (derivata)"
-PRECISION_MUNICIPALITY = "comune (derivata)"
+PRECISION_MUNICIPALITY = "municipality (derived)"
 
 # Radius within which the real site is expected to fall, used as the default
 # area of interest when the record is sent to the satellite screen.
@@ -140,7 +140,7 @@ def load_gazetteer():
 
 
 def geocode_record(record, gazetteer, allow_municipality=True):
-    """Best available position for a record that has no published coordinate.
+    """Best available position for a record that has no published coordinates.
 
     Returns ``None`` when nothing can be said, otherwise a dict with the point,
     the precision label, the radius of uncertainty and how it was obtained.
@@ -168,8 +168,8 @@ def geocode_record(record, gazetteer, allow_municipality=True):
                 "coordinate_precision": PRECISION_TOPONYM,
                 "coordinate_uncertainty_m": UNCERTAINTY_TOPONYM_M,
                 "coordinate_source": (
-                    f"toponimo «{place['name']}» da gazetteer GeoNames, "
-                    f"a {distance:.1f} km dal centro di {comune}"
+                    f"toponimo «{place['name']}» from GeoNames gazetteer, "
+                    f"a {distance:.1f} km from the centre of {comune}"
                 ),
                 "coordinate_method": "toponimo",
                 "coordinate_match": place["name"],
@@ -181,7 +181,7 @@ def geocode_record(record, gazetteer, allow_municipality=True):
             "lon": place["lon"],
             "coordinate_precision": PRECISION_TOPONYM,
             "coordinate_uncertainty_m": UNCERTAINTY_TOPONYM_M * 2,
-            "coordinate_source": f"toponimo «{place['name']}» da gazetteer GeoNames, comune non ancorato",
+            "coordinate_source": f"toponimo «{place['name']}» from GeoNames gazetteer, municipality not anchored",
             "coordinate_method": "toponimo",
             "coordinate_match": place["name"],
         }
@@ -191,7 +191,7 @@ def geocode_record(record, gazetteer, allow_municipality=True):
             "lon": anchor["lon"],
             "coordinate_precision": PRECISION_MUNICIPALITY,
             "coordinate_uncertainty_m": UNCERTAINTY_MUNICIPALITY_M,
-            "coordinate_source": f"centro del comune di {comune}, posizione indicativa",
+            "coordinate_source": f"centre of the municipality of {comune}, approximate position",
             "coordinate_method": "comune",
             "coordinate_match": comune,
         }

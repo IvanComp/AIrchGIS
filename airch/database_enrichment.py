@@ -42,7 +42,7 @@ def enrich_database(database, pvs_database=None, pvs_2017=None):
         if attach_external_source(target, source, "pvs_2006_catalogue"):
             sources_attached_2006 += 1
         target.setdefault("documentary_links", []).append(
-            documentary_link("pvs_2006_catalogue", source_id, "citazione bibliografica esplicita", "alta")
+            documentary_link("pvs_2006_catalogue", source_id, "explicit bibliographic citation", "alta")
         )
         if not has_coordinates(target) and has_coordinates(source):
             transfer_coordinates(target, source, "PVS 2006")
@@ -67,7 +67,7 @@ def enrich_database(database, pvs_database=None, pvs_2017=None):
             if attach_external_source(target, source, "pvs_2017"):
                 sources_attached_2017 += 1
             target.setdefault("documentary_links", []).append(
-                documentary_link("pvs_2017", source_id, "riferimento CAM-M alla scheda PVS 2017", "alta")
+                documentary_link("pvs_2017", source_id, "CAM-M reference to PVS 2017 record", "alta")
             )
             if not has_coordinates(target) and has_coordinates(source):
                 transfer_coordinates(target, source, "PVS 2017")
@@ -117,18 +117,18 @@ def citation_links(records, pvs_by_id):
     for cam_number, source_ids in sorted(candidates.items()):
         record = find_record(records, cam_number)
         if len(source_ids) != 1:
-            review.append(review_item(cam_number, source_ids, "scheda CAM-M collegata a piu schede PVS"))
+            review.append(review_item(cam_number, source_ids, "CAM-M record linked to several PVS records"))
             continue
         source_id = source_ids[0]
         source = pvs_by_id.get(source_id)
         if len(source_targets[source_id]) != 1:
-            review.append(review_item(cam_number, source_ids, "scheda PVS citata da piu schede CAM-M"))
+            review.append(review_item(cam_number, source_ids, "PVS record cited by several CAM-M records"))
             continue
         if not source or not has_coordinates(source):
-            review.append(review_item(cam_number, source_ids, "coordinate PVS non disponibili"))
+            review.append(review_item(cam_number, source_ids, "PVS coordinates not available"))
             continue
         if normalise(record.get("comune")) != normalise(source.get("comune")):
-            review.append(review_item(cam_number, source_ids, "comune CAM-M/PVS non coincidente"))
+            review.append(review_item(cam_number, source_ids, "CAM-M/PVS municipality mismatch"))
             continue
         accepted[cam_number] = source_id
     return accepted, review
@@ -169,12 +169,12 @@ def transfer_coordinates(target, source, label):
     target["lon"] = float(source["lon"])
     source_id = str(source.get("source_id", "")).zfill(3)
     if label == "PVS 2017":
-        target["coordinate_source"] = f"PVS 2017, scheda {source_id}, coordinate WGS84 pubblicate"
+        target["coordinate_source"] = f"PVS 2017, record {source_id}, published WGS84 coordinates"
         target["coordinate_precision"] = "WGS84 pubblicata"
     else:
-        target["coordinate_source"] = f"PVS 2006, scheda {source_id}, UTM EPSG:32633 convertita in WGS84"
-        target["coordinate_precision"] = "UTM pubblicata"
-    target["coordinate_status"] = "verificata da riferimento documentario"
+        target["coordinate_source"] = f"PVS 2006, record {source_id}, UTM EPSG:32633 converted to WGS84"
+        target["coordinate_precision"] = "published UTM"
+    target["coordinate_status"] = "verified by documentary reference"
 
 
 def standalone_2017_record(source):
@@ -187,10 +187,10 @@ def standalone_2017_record(source):
         "comune": source.get("comune", ""),
         "localita": source.get("localita", ""),
         "coordinate_precision": "WGS84 pubblicata",
-        "coordinate_status": "verificata da riferimento documentario",
+        "coordinate_status": "verified by documentary reference",
         "lat": source.get("lat"),
         "lon": source.get("lon"),
-        "coordinate_source": f"PVS 2017, scheda {source_id}, WGS84 pubblicata",
+        "coordinate_source": f"PVS 2017, record {source_id}, WGS84 pubblicata",
         "definition": source.get("definition", ""),
         "dating": source.get("dating", ""),
         "description": source.get("description", ""),
@@ -209,9 +209,9 @@ def standalone_2017_record(source):
         "find_type": source.get("find_type", ""),
         "validation_flags": source.get("validation_flags", []),
         "documentary_links": [
-            documentary_link("pvs_2017", source_id, "scheda PVS 2017", "alta")
+            documentary_link("pvs_2017", source_id, "PVS 2017 record", "alta")
         ],
-        "provenance_status": "fonte primaria collegata",
+        "provenance_status": "linked primary source",
     }
 
 
@@ -232,10 +232,10 @@ def record_document_keys(record):
 
 def provenance_status(record):
     if record.get("source_document_keys"):
-        return "fonte primaria collegata"
+        return "linked primary source"
     if record.get("bibliography") or record.get("archive_sources"):
-        return "riferimenti testuali"
-    return "da integrare"
+        return "textual references"
+    return "to be completed"
 
 
 def documentary_link(document_key, source_id, method, confidence):
@@ -288,5 +288,5 @@ def dynamic_stats(records):
 def count_by(records, field):
     counts = defaultdict(int)
     for record in records:
-        counts[str(record.get(field) or "Non indicato")] += 1
+        counts[str(record.get(field) or "Not stated")] += 1
     return counts

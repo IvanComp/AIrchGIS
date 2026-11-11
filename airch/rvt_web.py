@@ -37,14 +37,14 @@ def render_rvt_web():
         params = render_rvt_controls(core)
 
     with viewer:
-        if params["source_mode"] == "DTM da mappa" and not params["source_payload"].get("generated_dtm"):
+        if params["source_mode"] == "DTM from map" and not params["source_payload"].get("generated_dtm"):
             render_regional_dtm_selector(core)
             return
 
         data = current_rvt_data(core, params)
         if data is None or not data.loaded:
             msg = getattr(data, "error", None) if data is not None else None
-            st.warning(msg or "Nessun dato RVT caricato.")
+            st.warning(msg or "No RVT data loaded.")
             return
 
         render_rvt_viewer(core, data, params)
@@ -57,7 +57,7 @@ def load_rvt_core():
         sys.path.insert(0, rvt_path)
     spec = importlib.util.spec_from_file_location("airch_rvt_core", RVT_DIR / "core.py")
     if spec is None or spec.loader is None:
-        raise RuntimeError("RVT/core.py non trovato.")
+        raise RuntimeError("RVT/core.py not found.")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -90,7 +90,7 @@ def init_rvt_state(core):
         "as_rvt_overlay_opacity": 1.0,
         "as_rvt_image_tool": "coordinate",
         "as_rvt_last_click_info": None,
-        "as_rvt_dtm_map_view": "Satellite attuale",
+        "as_rvt_dtm_map_view": "Current satellite",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -106,8 +106,8 @@ def init_rvt_state(core):
 
 def render_rvt_controls(core):
     source_mode = st.radio(
-        "Sorgente",
-        ["Database", "Upload", "DTM da mappa"],
+        "Source",
+        ["Database", "Upload", "DTM from map"],
         key="as_rvt_source_mode",
         horizontal=True,
     )
@@ -119,12 +119,12 @@ def render_rvt_controls(core):
             if st.session_state.as_rvt_place not in places:
                 st.session_state.as_rvt_place = places[0]
             source_payload["place"] = st.selectbox(
-                "Posto",
+                "Place",
                 places,
                 key="as_rvt_place",
             )
         else:
-            st.warning("Database RVT vuoto.")
+            st.warning("RVT database is empty.")
             source_payload["place"] = ""
 
     elif source_mode == "Upload":
@@ -135,7 +135,7 @@ def render_rvt_controls(core):
         source_payload["generated_dtm"] = generated
         if generated:
             st.caption(Path(generated).name)
-            if st.button("Nuova area", width="stretch"):
+            if st.button("New area", width="stretch"):
                 st.session_state.as_rvt_generated_dtm = None
                 st.session_state.as_rvt_data_sig = None
                 st.rerun()
@@ -148,13 +148,13 @@ def render_rvt_controls(core):
             apply_archaeology_preset(core)
             st.rerun()
     with preset_cols[1]:
-        if st.button("Preset Rett/Fossati", width="stretch"):
+        if st.button("Preset Rect/Ditches", width="stretch"):
             apply_rectangles_preset(core)
             st.rerun()
 
     method_values = available_methods(core)
     dataset_values = ["DTM", "DSM_First", "DSM_Last", "nDSM", "First-Last", "Original"]
-    waiting_for_map_dtm = source_mode == "DTM da mappa" and not source_payload.get("generated_dtm")
+    waiting_for_map_dtm = source_mode == "DTM from map" and not source_payload.get("generated_dtm")
 
     if waiting_for_map_dtm:
         st.session_state.as_rvt_dataset = "DTM"
@@ -165,7 +165,7 @@ def render_rvt_controls(core):
             st.session_state.as_rvt_method = method
     else:
         dataset = st.radio("Dataset", dataset_values, key="as_rvt_dataset", horizontal=False)
-        method = st.selectbox("Metodo RVT", method_values, key="as_rvt_method")
+        method = st.selectbox("RVT method", method_values, key="as_rvt_method")
 
     is_original = dataset == "Original"
     azimuth = st.slider("Azimuth", 0.0, 360.0, key="as_rvt_azimuth", disabled=is_original)
@@ -178,7 +178,7 @@ def render_rvt_controls(core):
     invert = st.checkbox("Invert", key="as_rvt_invert", disabled=is_original)
 
     basemap_years = ["Current"] + cached_wayback_years(core)
-    basemap_year = st.selectbox("Originale", basemap_years, key="as_rvt_basemap_year")
+    basemap_year = st.selectbox("Original", basemap_years, key="as_rvt_basemap_year")
     overlay_opacity = float(st.session_state.as_rvt_overlay_opacity)
 
     return {
@@ -223,7 +223,7 @@ def render_upload_controls(core):
 def render_regional_dtm_selector(core):
     src = core.regional_dtm_source_path(RVT_DIR)
     if not src.exists():
-        st.warning("DTM regionale non trovato.")
+        st.warning("Regional DTM not found.")
         return
 
     try:
@@ -239,14 +239,14 @@ def render_regional_dtm_selector(core):
     selector_cols = st.columns([0.56, 0.44], gap="medium")
     with selector_cols[0]:
         st.selectbox(
-            "Tipo di mappa da generare dal DTM",
+            "Map type to generate from the DTM",
             method_values,
             key="as_rvt_method",
         )
     with selector_cols[1]:
         map_view = st.selectbox(
-            "Visualizzazione mappa",
-            ["Satellite attuale", "Citta e strade"],
+            "Map display",
+            ["Current satellite", "Towns and roads"],
             key="as_rvt_dtm_map_view",
         )
 
@@ -255,20 +255,20 @@ def render_regional_dtm_selector(core):
     folium.TileLayer(
         tiles=core.ARCGIS_CURRENT_TILE_TEMPLATE,
         attr="Esri",
-        name="Satellite attuale",
-        show=map_view == "Satellite attuale",
+        name="Current satellite",
+        show=map_view == "Current satellite",
     ).add_to(fmap)
     folium.TileLayer(
         tiles="OpenStreetMap",
-        name="Citta e strade",
-        show=map_view == "Citta e strade",
+        name="Towns and roads",
+        show=map_view == "Towns and roads",
     ).add_to(fmap)
     folium.Rectangle(
         bounds=[[bounds[1], bounds[0]], [bounds[3], bounds[2]]],
         color="#10b981",
         fill=False,
         weight=2,
-        tooltip="Copertura DTM",
+        tooltip="DTM coverage",
     ).add_to(fmap)
     Draw(
         export=False,
@@ -283,7 +283,7 @@ def render_regional_dtm_selector(core):
         edit_options={"edit": True},
     ).add_to(fmap)
     folium.LayerControl(collapsed=False).add_to(fmap)
-    map_key = "city" if map_view == "Citta e strade" else "satellite"
+    map_key = "city" if map_view == "Towns and roads" else "satellite"
     draw = st_folium(
         fmap,
         width=1200,
@@ -292,16 +292,16 @@ def render_regional_dtm_selector(core):
         returned_objects=["all_drawings"],
     )
 
-    if st.button("Genera DTM e mostra mappa", type="primary", width="stretch"):
+    if st.button("Generate DTM and show map", type="primary", width="stretch"):
         drawings = draw.get("all_drawings") or []
         if not drawings:
-            st.error("Disegna un rettangolo sulla mappa.")
+            st.error("Draw a rectangle on the map.")
         else:
             coords = drawings[-1]["geometry"]["coordinates"][0]
             lon = [pt[0] for pt in coords]
             lat = [pt[1] for pt in coords]
             selected_bounds = [min(lon), min(lat), max(lon), max(lat)]
-            with st.spinner("Generazione DTM in corso..."):
+            with st.spinner("Generating DTM..."):
                 out_path, _meta = core.create_regional_dtm_crop(RVT_DIR, selected_bounds)
             st.session_state.as_rvt_generated_dtm = str(out_path)
             st.session_state.as_rvt_data_sig = None
@@ -344,7 +344,7 @@ def current_rvt_data(core, params):
     if st.session_state.as_rvt_data is not None and st.session_state.as_rvt_data_sig == sig:
         return st.session_state.as_rvt_data
 
-    with st.spinner("Caricamento RVT..."):
+    with st.spinner("Loading RVT..."):
         data = load_input_data(core, params)
     st.session_state.as_rvt_data = data
     st.session_state.as_rvt_data_sig = sig
@@ -442,7 +442,7 @@ def ensure_preprocessed_groups(core, src_groups, profile):
 def render_rvt_viewer(core, data, params):
     available = dataset_options(data)
     if params["dataset"] not in available:
-        st.info("Dataset non disponibile per questa sorgente.")
+        st.info("Dataset not available for this source.")
         params = dict(params)
         params["dataset"] = available[0] if available else "DTM"
 
@@ -450,7 +450,7 @@ def render_rvt_viewer(core, data, params):
         if params["dataset"] == "Original":
             rgb, raw_out, status = compose_current_view(core, data, params)
         else:
-            with st.spinner("Calcolo RVT..."):
+            with st.spinner("Computing RVT..."):
                 rgb, raw_out, status = compose_current_view(core, data, params)
         st.session_state.as_rvt_last_rgb = rgb
         if rgb is not None and params["dataset"] != "Original":
@@ -463,7 +463,7 @@ def render_rvt_viewer(core, data, params):
 
     render_view_toolbar(core, data, rgb, params)
 
-    action_tabs = st.tabs(["Export", "Griglia metodi", "3D Cloud", "Report"])
+    action_tabs = st.tabs(["Export", "Method grid", "3D Cloud", "Report"])
     with action_tabs[0]:
         render_exports(core, data, params, rgb, raw_out)
     with action_tabs[1]:
@@ -480,7 +480,7 @@ def render_view_toolbar(core, data, rgb, params):
         if st.button(
             "📍",
             key="as_rvt_coordinate_tool_button",
-            help="Coordinate",
+            help="Coordinates",
             type="primary" if st.session_state.as_rvt_image_tool == "coordinate" else "secondary",
             width="stretch",
         ):
@@ -490,7 +490,7 @@ def render_view_toolbar(core, data, rgb, params):
         if st.button(
             "📏",
             key="as_rvt_measure_tool_button",
-            help="Misura",
+            help="Measure",
             type="primary" if st.session_state.as_rvt_image_tool == "measure" else "secondary",
             width="stretch",
         ):
@@ -498,11 +498,11 @@ def render_view_toolbar(core, data, rgb, params):
             st.rerun()
     with tool_cols[2]:
         st.slider(
-            "Opacita RVT su Originale",
+            "RVT opacity over Original",
             0.0,
             1.0,
             key="as_rvt_overlay_opacity",
-            help="1 mostra solo RVT, 0 mostra solo l'immagine originale sottostante.",
+            help="1 shows only RVT, 0 shows only the underlying original image.",
         )
 
     render_view_map(core, data, rgb, params)
@@ -522,7 +522,7 @@ def render_view_map(core, data, rgb, params):
     bounds = bounds_lonlat(core, data)
     if bounds is None:
         if rgb is None:
-            st.warning("Mappa originale non disponibile per questa area.")
+            st.warning("Original map not available for this area.")
         else:
             st.image(rgb_to_image(rgb), width="stretch")
         return
@@ -533,7 +533,7 @@ def render_view_map(core, data, rgb, params):
     folium.TileLayer(
         tiles=satellite_template(core, params["basemap_year"]),
         attr="Esri",
-        name=f"Originale {params['basemap_year']}",
+        name=f"Original {params['basemap_year']}",
         show=True,
     ).add_to(fmap)
     overlay_rgb = st.session_state.get("as_rvt_last_rvt_rgb") if params["dataset"] == "Original" else rgb
@@ -673,7 +673,7 @@ def compose_current_view(core, data, params):
 
     dem = get_dataset_array(data, dataset)
     if dem is None:
-        raise RuntimeError("Dataset non disponibile.")
+        raise RuntimeError("Dataset not available.")
 
     out = compute_raw_method(core, data, dem, params)
     if out.ndim == 3 or core.is_rgb_method(params["method"]):
@@ -772,8 +772,8 @@ def render_exports(core, data, params, rgb, raw_out):
             st.session_state.as_rvt_batch_log = str(path)
 
     for state_key, label, mime in [
-        ("as_rvt_export_tiff", "Scarica TIFF", "image/tiff"),
-        ("as_rvt_export_png", "Scarica PNG", "image/png"),
+        ("as_rvt_export_tiff", "Download TIFF", "image/tiff"),
+        ("as_rvt_export_png", "Download PNG", "image/png"),
     ]:
         value = st.session_state.get(state_key)
         if value and Path(value).exists():
@@ -786,7 +786,7 @@ def render_exports(core, data, params, rgb, raw_out):
 
 def export_tiff(core, data, params, raw_out):
     if params["dataset"] == "Original":
-        raise RuntimeError("Export TIFF non disponibile su Original.")
+        raise RuntimeError("TIFF export not available on Original.")
     out = raw_out
     if out is None:
         dem = get_dataset_array(data, params["dataset"])
@@ -828,7 +828,7 @@ def run_batch(core, data):
     try:
         res = float(data.res)
         if data.dtm is None or data.dsmf is None or data.dsml is None:
-            raise RuntimeError("Input incompleti per batch.")
+            raise RuntimeError("Incomplete inputs for batch.")
         if hasattr(core.rvt.vis, "hillshade"):
             hs = core.compute_method("Hillshade", data.dtm, res, 315.0, 45.0, 1.0, 10.0, 16)
             core.save_geotiff(out_root / "1_DTM_Hillshade.tif", hs, data.profile)
@@ -846,23 +846,23 @@ def run_batch(core, data):
 
 def render_method_grid(core, data, params):
     if params["dataset"] == "Original":
-        st.info("Seleziona un dataset diverso da Original.")
+        st.info("Select a dataset other than Original.")
         return
-    if st.button("Crea griglia metodi", type="primary", width="stretch"):
-        with st.spinner("Calcolo griglia metodi..."):
+    if st.button("Build method grid", type="primary", width="stretch"):
+        with st.spinner("Computing method grid..."):
             path = build_method_grid(core, data, params)
         st.session_state.as_rvt_grid_path = str(path)
 
     grid_path = st.session_state.get("as_rvt_grid_path")
     if grid_path and Path(grid_path).exists():
         st.image(str(grid_path), width="stretch")
-        st.download_button("Scarica griglia", Path(grid_path).read_bytes(), file_name=Path(grid_path).name, mime="image/png")
+        st.download_button("Download grid", Path(grid_path).read_bytes(), file_name=Path(grid_path).name, mime="image/png")
 
 
 def build_method_grid(core, data, params):
     dem = get_dataset_array(data, params["dataset"])
     if dem is None:
-        raise RuntimeError("Dataset non disponibile.")
+        raise RuntimeError("Dataset not available.")
     images = []
     thumb = 420
     for method in available_methods(core):
@@ -880,7 +880,7 @@ def build_method_grid(core, data, params):
         except Exception:
             continue
     if not images:
-        raise RuntimeError("Nessun metodo calcolabile.")
+        raise RuntimeError("No computable method.")
 
     cols = int(math.ceil(math.sqrt(len(images))))
     rows = int(math.ceil(len(images) / cols))
@@ -907,8 +907,8 @@ def render_3d_cloud(core, data, params):
         format_func=lambda key: core.CLOUD_PREPROCESS_PROFILES[key]["label"],
         key="as_rvt_cloud_key",
     )
-    if st.button("Crea 3D Cloud", type="primary", width="stretch"):
-        with st.spinner("Preparazione 3D Cloud..."):
+    if st.button("Build 3D Cloud", type="primary", width="stretch"):
+        with st.spinner("Preparing 3D Cloud..."):
             html_path, las_path, cloud_meta = build_3d_cloud(core, data, params, cloud_key)
         st.session_state.as_rvt_cloud_html = str(html_path)
         st.session_state.as_rvt_cloud_las = str(las_path)
@@ -924,8 +924,8 @@ def render_3d_cloud(core, data, params):
             total_points = int(meta.get("total_points") or 0)
             exported_points = int(meta.get("preview_points") or 0)
             if total_points and exported_points and exported_points < total_points:
-                st.caption(f".LAS campionato: {exported_points:,} punti su {total_points:,}.")
-            st.download_button("Scarica .LAS", Path(las_path).read_bytes(), file_name=Path(las_path).name)
+                st.caption(f"Sampled .LAS: {exported_points:,} points of {total_points:,}.")
+            st.download_button("Download .LAS", Path(las_path).read_bytes(), file_name=Path(las_path).name)
 
 
 def build_3d_cloud(core, data, params, cloud_key):
@@ -970,18 +970,18 @@ def build_3d_cloud(core, data, params, cloud_key):
 
 def current_loaded_dtm_surface(data):
     if data.dtm is None:
-        raise RuntimeError("DTM non caricato.")
+        raise RuntimeError("DTM not loaded.")
     if data.profile is None or data.profile.get("transform") is None:
-        raise RuntimeError("Profilo georiferito del DTM non disponibile.")
+        raise RuntimeError("Georeferenced DTM profile not available.")
     if data.crs is None:
-        raise RuntimeError("CRS del DTM non disponibile.")
+        raise RuntimeError("DTM CRS not available.")
     return data.dtm, data.profile, data.crs
 
 
 def load_original_dtm_surface(core, data):
     src_paths = data.src_original_dtm_paths or data.src_dtm_paths
     if not src_paths:
-        raise RuntimeError("Sorgente DTM originale non disponibile.")
+        raise RuntimeError("Original DTM source not available.")
     paths = [Path(p).expanduser().resolve() for p in src_paths if p]
     dtm, _res, profile, _nodata, bounds, crs = core.load_raster_source(paths)
     if data.area_geojson_path:
@@ -1005,14 +1005,14 @@ def load_original_dtm_surface(core, data):
 
 def render_report(core, data, params, rgb):
     if rgb is None:
-        st.info("Il report immagine e disponibile sui layer RVT. In Original puoi comunque usare coordinate e misura sulla mappa.")
-        with st.expander("Coordinate e misura"):
+        st.info("The image report is available on RVT layers. In Original you can still use coordinates and measuring on the map.")
+        with st.expander("Coordinates and measuring"):
             render_measure_tools(core, data)
         return
 
     st.session_state.as_rvt_report_items = st.session_state.get("as_rvt_report_items") or []
     with st.form("as_rvt_report_form", clear_on_submit=False):
-        name = st.text_input("Nome posto", key="as_rvt_report_name")
+        name = st.text_input("Place name", key="as_rvt_report_name")
         notes = st.text_area("Note", key="as_rvt_report_notes", height=90)
         max_row = int(data.dtm.shape[0] - 1)
         max_col = int(data.dtm.shape[1] - 1)
@@ -1021,14 +1021,14 @@ def render_report(core, data, params, rgb):
         default_col = min(max(int(last_click.get("col", max_col // 2)), 0), max_col)
         c1, c2 = st.columns(2)
         with c1:
-            row = st.number_input("Riga", min_value=0, max_value=max_row, value=default_row, step=1)
+            row = st.number_input("Row", min_value=0, max_value=max_row, value=default_row, step=1)
         with c2:
-            col = st.number_input("Colonna", min_value=0, max_value=max_col, value=default_col, step=1)
-        submitted = st.form_submit_button("Aggiungi punto")
+            col = st.number_input("Column", min_value=0, max_value=max_col, value=default_col, step=1)
+        submitted = st.form_submit_button("Add point")
 
     if submitted:
         if not name.strip():
-            st.error("Inserisci il nome del posto.")
+            st.error("Enter the place name.")
         else:
             item = build_report_item(core, data, params, rgb, int(row), int(col), name.strip(), notes.strip())
             st.session_state.as_rvt_report_items.append(item)
@@ -1041,33 +1041,33 @@ def render_report(core, data, params, rgb):
             hide_index=True,
             width="stretch",
         )
-        remove_idx = st.number_input("Rimuovi punto", min_value=1, max_value=len(items), value=1, step=1)
+        remove_idx = st.number_input("Remove point", min_value=1, max_value=len(items), value=1, step=1)
         col_a, col_b, col_c = st.columns(3)
         with col_a:
-            if st.button("Rimuovi selezionato", width="stretch"):
+            if st.button("Remove selected", width="stretch"):
                 del items[int(remove_idx) - 1]
                 st.rerun()
         with col_b:
-            if st.button("Svuota tutto", width="stretch"):
+            if st.button("Clear all", width="stretch"):
                 items.clear()
                 st.rerun()
         with col_c:
-            if st.button("Genera PDF", width="stretch"):
+            if st.button("Generate PDF", width="stretch"):
                 path = generate_report_pdf(core, params, items)
                 st.session_state.as_rvt_report_pdf = str(path)
-        if st.button("Esporta KML", width="stretch"):
+        if st.button("Export KML", width="stretch"):
             path = export_report_kml(core, params, items)
             st.session_state.as_rvt_report_kml = str(path)
 
     for key, label, mime in [
-        ("as_rvt_report_pdf", "Scarica PDF", "application/pdf"),
-        ("as_rvt_report_kml", "Scarica KML", "application/vnd.google-earth.kml+xml"),
+        ("as_rvt_report_pdf", "Download PDF", "application/pdf"),
+        ("as_rvt_report_kml", "Download KML", "application/vnd.google-earth.kml+xml"),
     ]:
         path = st.session_state.get(key)
         if path and Path(path).exists():
             st.download_button(label, Path(path).read_bytes(), file_name=Path(path).name, mime=mime)
 
-    with st.expander("Coordinate e misura"):
+    with st.expander("Coordinates and measuring"):
         render_measure_tools(core, data)
 
 
@@ -1076,17 +1076,17 @@ def render_measure_tools(core, data):
     max_col = int(data.dtm.shape[1] - 1)
     cols = st.columns(4)
     with cols[0]:
-        r1 = st.number_input("Riga A", min_value=0, max_value=max_row, value=max_row // 3, step=1)
+        r1 = st.number_input("Row A", min_value=0, max_value=max_row, value=max_row // 3, step=1)
     with cols[1]:
         c1 = st.number_input("Col A", min_value=0, max_value=max_col, value=max_col // 3, step=1)
     with cols[2]:
-        r2 = st.number_input("Riga B", min_value=0, max_value=max_row, value=(max_row * 2) // 3, step=1)
+        r2 = st.number_input("Row B", min_value=0, max_value=max_row, value=(max_row * 2) // 3, step=1)
     with cols[3]:
         c2 = st.number_input("Col B", min_value=0, max_value=max_col, value=(max_col * 2) // 3, step=1)
     p1 = pixel_geo(core, data, int(r1), int(c1))
     p2 = pixel_geo(core, data, int(r2), int(c2))
     dist = math.hypot(float(p1["x"]) - float(p2["x"]), float(p1["y"]) - float(p2["y"]))
-    st.write(f"A: {p1['dms']} | B: {p2['dms']} | Distanza: {dist:.2f} m")
+    st.write(f"A: {p1['dms']} | B: {p2['dms']} | Distance: {dist:.2f} m")
 
 
 def build_report_item(core, data, params, rgb, row, col, name, notes):
@@ -1201,17 +1201,17 @@ def build_report_page(core, item, index, total):
     text_font = core.load_pdf_font(26)
 
     draw.rectangle((70, 70, 1584, 2269), outline=(30, 30, 30), width=3)
-    draw.text((110, 110), f"Report di esplorazione  {index}/{total}", fill=(20, 20, 20), font=title_font)
-    draw.text((110, 190), f"Posto: {item['name']}", fill=(20, 20, 20), font=section_font)
-    draw.text((110, 250), f"Coordinate: {item['coords_dms']}", fill=(20, 20, 20), font=text_font)
+    draw.text((110, 110), f"Exploration report  {index}/{total}", fill=(20, 20, 20), font=title_font)
+    draw.text((110, 190), f"Place: {item['name']}", fill=(20, 20, 20), font=section_font)
+    draw.text((110, 250), f"Coordinates: {item['coords_dms']}", fill=(20, 20, 20), font=text_font)
     draw.text((110, 295), f"Scenario: {item['place']} | {item['dataset']} | {item['method']} | Original {item.get('original_year', 'Current')}", fill=(20, 20, 20), font=text_font)
 
     left_x = 110
     right_x = 824
     img_y = 420
     label_y = 370
-    draw.text((left_x, label_y), "Originale", fill=(20, 20, 20), font=section_font)
-    draw.text((right_x, label_y), "Filtro corrente", fill=(20, 20, 20), font=section_font)
+    draw.text((left_x, label_y), "Original", fill=(20, 20, 20), font=section_font)
+    draw.text((right_x, label_y), "Current filter", fill=(20, 20, 20), font=section_font)
     page.paste(item["original_crop_img"], (left_x, img_y))
     page.paste(item["current_crop_img"], (right_x, img_y))
     draw.rectangle((left_x, img_y, left_x + item["original_crop_img"].width, img_y + item["original_crop_img"].height), outline=(40, 40, 40), width=2)
@@ -1235,10 +1235,10 @@ def export_report_kml(core, params, items):
     out_dir = RVT_OUTPUT_DIR / "maps"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"poi_mymaps__{current_place_label(params)}__{datetime.now().strftime('%Y%m%d_%H%M%S')}.kml"
-    doc_name = xml_escape(f"Punti di interesse - {current_place_label(params)}")
+    doc_name = xml_escape(f"Points of interest - {current_place_label(params)}")
     placemarks = []
     for idx, item in enumerate(items, start=1):
-        name = xml_escape(item.get("name") or f"Punto {idx}")
+        name = xml_escape(item.get("name") or f"Point {idx}")
         notes = item.get("notes") or "-"
         coords_dms = item.get("coords_dms") or "-"
         lat = float(item.get("lat"))
@@ -1247,7 +1247,7 @@ def export_report_kml(core, params, items):
         description = xml_escape(
             "\n".join(
                 [
-                    f"Coordinate: {coords_dms}",
+                    f"Coordinates: {coords_dms}",
                     f"Lat/Lon: {lat:.8f}, {lon:.8f}",
                     f"Scenario: {item.get('place')} | {item.get('dataset')} | {item.get('method')}",
                     f"Google Maps: {maps_url}",
@@ -1327,7 +1327,7 @@ def current_place_label(params):
     payload = params.get("source_payload") or {}
     if mode == "Database":
         label = payload.get("place") or "database"
-    elif mode == "DTM da mappa":
+    elif mode == "DTM from map":
         path = payload.get("generated_dtm") or "dtm_da_mappa"
         label = Path(path).stem
     else:
