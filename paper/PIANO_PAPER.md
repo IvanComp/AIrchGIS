@@ -28,7 +28,7 @@ Da verificare prima della submission: APC e opzione open access di DAACH, quarti
 
 ## 3. Struttura del paper (≈ 8.000–10.000 parole)
 
-1. **Introduction** ✅ scritta (`main.tex`)
+1. **Introduction** ✅ scritta (`0-MAIN.tex` + `sections/`)
 2. **Related work**: LiDAR visualisation; multispectral/multitemporal; AI/ML; tools, usability e riproducibilità. Chiude con una tabella del gap (tool × LiDAR/MS/catalogo/3D/AI/no-code/auto-valutazione).
 3. **Requirements & design principles**: R1 no-code e un solo punto d'ingresso; R2 multi-sorgente; R3 incertezza e provenienza esplicite; R4 punteggi come priorità; R5 auto-valutazione; R6 local-first e gestione responsabile delle posizioni dei siti.
 4. **Architecture & implementation**: moduli Terrain / Spectral / Sites / Candidates / Assistant, con figura dell'architettura.
