@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from archaeoscope import benchmark
+from airch import benchmark
 
 
 class LocalMaximaTests(unittest.TestCase):

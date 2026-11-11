@@ -6,7 +6,7 @@
 
 Writes one JSON per run under ``docs/benchmarks/`` so that phases can be
 compared on identical numbers. The metrics themselves live in
-``archaeoscope/benchmark.py`` and carry their own tests.
+``airch/benchmark.py`` and carry their own tests.
 """
 
 import argparse
@@ -23,11 +23,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import ee  # noqa: E402
 
-from archaeoscope import benchmark, cropmarks_engine as c, site_index  # noqa: E402
-from archaeoscope.scene_ranking import roc_auc  # noqa: E402
+from airch import benchmark, cropmarks_engine as c, site_index  # noqa: E402
+from airch.scene_ranking import roc_auc  # noqa: E402
 
 
-REGION_PATH = Path(__file__).resolve().parents[1] / "archaeoscope" / "data" / "calibration_region.json"
+REGION_PATH = Path(__file__).resolve().parents[1] / "airch" / "data" / "calibration_region.json"
 OUT_DIR = Path(__file__).resolve().parents[1] / "docs" / "benchmarks"
 CACHE = Path(__file__).resolve().parents[1] / ".benchmark_cache"
 

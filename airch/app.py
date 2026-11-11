@@ -29,9 +29,9 @@ PRIMARY_TOOLS = ("RVT", "Crop Marks", "Database", "Candidati")
 
 def main():
     try:
-        st.set_page_config(page_title="ArchaeoScope", layout="wide", page_icon=str(LOGO_PATH))
+        st.set_page_config(page_title="AIrch", layout="wide", page_icon=str(LOGO_PATH))
     except Exception:  # a missing or unsupported icon must never block the app
-        st.set_page_config(page_title="ArchaeoScope", layout="wide")
+        st.set_page_config(page_title="AIrch", layout="wide")
     init_state()
     tool = render_navbar()
     if tool == "RVT":
@@ -694,14 +694,14 @@ def render_candidates():
     download_cols[0].download_button(
         "Esporta archivio JSON",
         candidate_store.candidates_json(candidates),
-        file_name="archaeoscope_candidates.json",
+        file_name="airch_candidates.json",
         mime="application/json",
         width="stretch",
     )
     download_cols[1].download_button(
         "Esporta aree GeoJSON",
         candidate_store.candidates_geojson(candidates),
-        file_name="archaeoscope_candidates.geojson",
+        file_name="airch_candidates.geojson",
         mime="application/geo+json",
         width="stretch",
     )

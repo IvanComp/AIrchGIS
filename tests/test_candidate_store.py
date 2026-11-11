@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from archaeoscope import candidate_store
+from airch import candidate_store
 
 
 class CandidateStoreTests(unittest.TestCase):

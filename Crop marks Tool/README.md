@@ -1,10 +1,10 @@
 # Sentinel-2 Crop Marks GUI
 
-> Nota: questo tool ora e integrato nell'app unica `ArchaeoScope`.
+> Nota: questo tool ora e integrato nell'app unica `AIrch`.
 > Avvio consigliato dalla root del repository:
 >
 > ```bash
-> ./start_archaeoscope.command
+> ./start_airch.command
 > ```
 >
 > Le istruzioni sotto restano valide per l'avvio standalone.

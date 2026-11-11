@@ -1237,7 +1237,7 @@ def regional_dtm_map_html(bounds_lonlat, max_cells=REGIONAL_DTM_MAX_RECOMMENDED_
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RVT - DTM da mappa</title>
+  <title>AIrch · DTM da mappa</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
@@ -1583,7 +1583,7 @@ class InputData:
 class App(BaseTk):
     def __init__(self):
         super().__init__()
-        self.title("RVT LiDAR Explorer")
+        self.title("AIrch · LiDAR Explorer")
         self.geometry("1600x920")
         self.minsize(1320, 820)
 

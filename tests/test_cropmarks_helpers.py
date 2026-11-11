@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from archaeoscope import cropmarks_engine as cropmarks
+from airch import cropmarks_engine as cropmarks
 
 
 class CropmarksGeometryTests(unittest.TestCase):

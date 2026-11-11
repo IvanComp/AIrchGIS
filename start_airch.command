@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-VENV_DIR=".venv_archaeoscope"
+VENV_DIR=".venv_airch"
 REQUIREMENTS_FILE="requirements.txt"
 
 if [ -x "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12" ]; then
@@ -41,7 +41,7 @@ import rasterio
 import rvt.vis
 PY
 then
-  echo "Ambiente Python incompleto. Elimina solo $VENV_DIR e riavvia ArchaeoScope."
+  echo "Ambiente Python incompleto. Elimina solo $VENV_DIR e riavvia AIrch."
   read -r "x?Premi Invio per chiudere."
   exit 1
 fi
@@ -54,4 +54,4 @@ fi
 
 export PYTHONDONTWRITEBYTECODE=1
 
-exec "$VENV_DIR/bin/python" -m streamlit run archaeoscope_app.py
+exec "$VENV_DIR/bin/python" -m streamlit run airch_app.py

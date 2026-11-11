@@ -1,4 +1,4 @@
-"""Visual identity and motion for the ArchaeoScope shell.
+"""Visual identity and motion for the AIrch shell.
 
 Everything here is presentation only: CSS injected once per rerun plus a couple
 of markup helpers. No widget state passes through this module, so the theme can
@@ -40,12 +40,12 @@ def logo_svg():
     return markup.replace("<svg ", '<svg class="as-logo-svg" ', 1)
 
 
-def brand_markup(subtitle="Documenti · Satellite · LiDAR"):
+def brand_markup(subtitle="AI per l’archeologia · Documenti · Satellite · LiDAR"):
     return f"""
     <div class="as-brandbar">
         <div class="as-logo">{logo_svg()}</div>
         <div class="as-brandtext">
-            <div class="as-brand">Archaeo<span>Scope</span></div>
+            <div class="as-brand"><span>AI</span>rch</div>
             <div class="as-brand-sub">{subtitle}</div>
         </div>
     </div>

@@ -14,7 +14,7 @@ del 10% di alberi entro 400 m, e NDVI invernale sotto 0.15 — cioè campi davve
 
 Ne restano 20. Il gruppo più denso è **Pollenza / Treia, C.da San Marco Vecchio**:
 8 ville e fattorie romane in 3 km, 29 siti pubblicati in totale, 3.8 × 4.7 km.
-Definizione in `archaeoscope/data/calibration_region.json`.
+Definizione in `airch/data/calibration_region.json`.
 
 Sono bersagli compatibili con i 10 m: piattaforme e cortili di decine di metri.
 

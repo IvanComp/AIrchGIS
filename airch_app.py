@@ -1,4 +1,4 @@
-from archaeoscope.app import main
+from airch.app import main
 
 
 if __name__ == "__main__":

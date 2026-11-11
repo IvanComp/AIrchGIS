@@ -1,6 +1,6 @@
 import unittest
 
-from archaeoscope import scene_ranking as ranking
+from airch import scene_ranking as ranking
 
 
 def scene(**overrides):

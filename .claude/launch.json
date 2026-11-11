@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "archaeoscope",
-      "runtimeExecutable": ".venv_archaeoscope/bin/streamlit",
-      "runtimeArgs": ["run", "archaeoscope_app.py", "--server.port", "8511", "--server.headless", "true"],
+      "name": "airch",
+      "runtimeExecutable": ".venv_airch/bin/streamlit",
+      "runtimeArgs": ["run", "airch_app.py", "--server.port", "8511", "--server.headless", "true"],
       "port": 8511
     }
   ]

@@ -55,7 +55,7 @@ def load_rvt_core():
     rvt_path = str(RVT_DIR)
     if rvt_path not in sys.path:
         sys.path.insert(0, rvt_path)
-    spec = importlib.util.spec_from_file_location("archaeoscope_rvt_core", RVT_DIR / "core.py")
+    spec = importlib.util.spec_from_file_location("airch_rvt_core", RVT_DIR / "core.py")
     if spec is None or spec.loader is None:
         raise RuntimeError("RVT/core.py non trovato.")
     module = importlib.util.module_from_spec(spec)

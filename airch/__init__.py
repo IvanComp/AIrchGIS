@@ -1,4 +1,4 @@
-"""Unified ArchaeoScope application package."""
+"""Unified AIrch application package."""
 
 __all__ = ["__version__"]
 

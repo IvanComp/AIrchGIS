@@ -1,6 +1,6 @@
-# ArchaeoScope
+# AIrch
 
-Tool unico per analisi territoriale e archeologica preliminare. ArchaeoScope integra gli strumenti principali del progetto in un'unica app web:
+AIrch (AI + archaeology) è il tool unico per analisi territoriale e archeologica preliminare. AIrch integra gli strumenti principali del progetto in un'unica app web:
 
 - screening multispettrale Sentinel-2 per crop marks e soil marks;
 - esplorazione LiDAR/DTM con RVT, filtri, export, report e viewer 3D;
@@ -10,18 +10,18 @@ Tool unico per analisi territoriale e archeologica preliminare. ArchaeoScope int
 ## Avvio consigliato
 
 ```bash
-cd "/Users/ivan/Desktop/ArchaeoScope"
-./start_archaeoscope.command
+cd "/Users/ivan/Desktop/Neural-Detecting"
+./start_airch.command
 ```
 
 In alternativa:
 
 ```bash
-cd "/Users/ivan/Desktop/ArchaeoScope"
+cd "/Users/ivan/Desktop/Neural-Detecting"
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run archaeoscope_app.py
+streamlit run airch_app.py
 ```
 
 ## Cosa trovi nell'app unica
@@ -60,7 +60,7 @@ Il gazetteer locale colma il divario:
 python scripts/build_gazetteer.py
 ```
 
-Lo script scarica il dump GeoNames per l'Italia, tiene i toponimi dell'area di studio e scrive `archaeoscope/data/gazetteer.json` (GeoNames, CC BY 4.0). A quel punto `archaeoscope/geocoding.py` abbina la località di ogni scheda al gazetteer, disambigua gli omonimi sulla distanza dal centro del comune e scarta i risultati oltre i 9 km. Circa 390 schede ottengono una posizione entro qualche centinaio di metri, ~1100 restano posizionate sul solo comune.
+Lo script scarica il dump GeoNames per l'Italia, tiene i toponimi dell'area di studio e scrive `airch/data/gazetteer.json` (GeoNames, CC BY 4.0). A quel punto `airch/geocoding.py` abbina la località di ogni scheda al gazetteer, disambigua gli omonimi sulla distanza dal centro del comune e scarta i risultati oltre i 9 km. Circa 390 schede ottengono una posizione entro qualche centinaio di metri, ~1100 restano posizionate sul solo comune.
 
 Una coordinata dedotta non viene mai presentata come pubblicata: porta la propria etichetta di precisione, il proprio raggio di incertezza e il nome su cui è stata abbinata. Il filtro «Origine delle coordinate» mostra di default solo le posizioni pubblicate e quelle da toponimo; il controllo sui siti noti usa esclusivamente le coordinate pubblicate, perché verificare il rilevatore su posizioni dedotte misurerebbe il gazetteer.
 
@@ -72,17 +72,17 @@ Le copie locali autorizzate dei documenti e, facoltativamente, le 53 tavole/vari
 python scripts/sync_archaeological_sources.py --maps
 ```
 
-Il manifest `archaeoscope/data/source_manifest.json` conserva URL istituzionali, licenze, copertura, dimensioni e checksum. L'app non trasforma abbinamenti ambigui in coordinate: li espone nella coda di revisione.
+Il manifest `airch/data/source_manifest.json` conserva URL istituzionali, licenze, copertura, dimensioni e checksum. L'app non trasforma abbinamenti ambigui in coordinate: li espone nella coda di revisione.
 
 MASE e Google Earth sono disponibili come risorse esterne nella barra superiore, non come sezioni operative dell'app.
 
 ## Struttura
 
 ```text
-ArchaeoScope/
-  archaeoscope_app.py
-  start_archaeoscope.command
-  archaeoscope/
+Neural-Detecting/   (AIrch)
+  airch_app.py
+  start_airch.command
+  airch/
     app.py
     ui.py                     tema, animazioni e logo
     archaeological_database.py
@@ -113,7 +113,7 @@ ArchaeoScope/
 ## Crop Marks standalone
 
 ```bash
-cd "/Users/ivan/Desktop/ArchaeoScope/Crop marks Tool"
+cd "/Users/ivan/Desktop/Neural-Detecting/Crop marks Tool"
 ./start_mac.command
 ```
 

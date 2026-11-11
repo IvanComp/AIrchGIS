@@ -1,10 +1,10 @@
 # RVT Lidar Explorer (GUI) — README
 
-> Nota: RVT ora e collegato all'app unica `ArchaeoScope`.
+> Nota: RVT ora e collegato all'app unica `AIrch`.
 > Avvio consigliato dalla root del repository:
 >
 > ```bash
-> ./start_archaeoscope.command
+> ./start_airch.command
 > ```
 >
 > La GUI descritta qui resta invariata e puo essere avviata anche direttamente con `python core.py`.

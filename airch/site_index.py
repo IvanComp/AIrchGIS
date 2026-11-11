@@ -16,7 +16,7 @@ from .database_enrichment import enrich_database
 from .paths import PROJECT_ROOT, RVT_DIR
 
 
-DATA_PATH = PROJECT_ROOT / "archaeoscope" / "data" / "cam_m_sites.json"
+DATA_PATH = PROJECT_ROOT / "airch" / "data" / "cam_m_sites.json"
 COORDINATES_PATH = RVT_DIR / "output_rvt_gui" / "cam_m_database" / "coordinate_overrides.json"
 
 

@@ -19,7 +19,7 @@ I tick della figura sono stati misurati sul render a 400 dpi e interpolati con u
 | Residuo massimo GCP | **0.31 m** |
 | Estensione inquadratura | 1099.8 × 1637.8 m |
 
-Parametri salvati in `archaeoscope/data/potentia_reference.json`.
+Parametri salvati in `airch/data/potentia_reference.json`.
 
 ### Correzione al piano: la figura non è ad alta risoluzione
 

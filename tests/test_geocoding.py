@@ -1,6 +1,6 @@
 import unittest
 
-from archaeoscope import geocoding
+from airch import geocoding
 
 
 def gazetteer():

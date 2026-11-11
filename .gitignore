@@ -6,7 +6,7 @@ __pycache__/
 
 # Local virtual environments and credentials
 .venv/
-.venv_archaeoscope/
+.venv_airch/
 venv/
 env/
 .ee_project
