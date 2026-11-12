@@ -124,7 +124,7 @@ def render_cropmarks(standalone=False):
 
     ui.section_title(
         "Multispectral screening",
-        eyebrow="Crop marks e soil marks",
+        eyebrow="Crop marks and soil marks",
         hint=(
             "Load your own images, or use a public archive. The engine ranks every acquisition by "
             "local contrast and crop state, then combines only the dates that can actually show something."
