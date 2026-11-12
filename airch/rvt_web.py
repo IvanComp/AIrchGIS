@@ -38,6 +38,8 @@ def render_rvt_web():
 
     with viewer:
         if params["source_mode"] == "DTM from map" and not params["source_payload"].get("generated_dtm"):
+            render_public_terrain_sources()
+            st.markdown("**Italy: regional DTM, cut from the map**")
             render_regional_dtm_selector(core)
             return
 
@@ -107,7 +109,12 @@ def init_rvt_state(core):
 def render_rvt_controls(core):
     source_mode = st.radio(
         "Source",
-        ["Database", "Upload", "DTM from map"],
+        ["Upload", "DTM from map", "Database"],
+        format_func={
+            "Upload": "Upload your files",
+            "DTM from map": "Download from a public source",
+            "Database": "Example data",
+        }.get,
         key="as_rvt_source_mode",
         horizontal=True,
     )
@@ -203,21 +210,95 @@ def render_rvt_controls(core):
 
 
 def render_upload_controls(core):
+    from airch import data_input as di
+    from airch.input_ui import render_file_input
+
+    st.caption("Your own terrain data, from any country and in any coordinate system. DSM First/Last are optional.")
     uploads = {}
     specs = [
-        ("DTM", "DTM"),
-        ("DSM_First", "DSM First"),
-        ("DSM_Last", "DSM Last"),
+        ("DTM", "DTM (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ)"),
+        ("DSM_First", "DSM First (optional)"),
+        ("DSM_Last", "DSM Last (optional)"),
     ]
     for key, label in specs:
-        files = st.file_uploader(
-            label,
-            type=["tif", "tiff", "asc", "zip"],
-            accept_multiple_files=True,
-            key=f"as_rvt_upload_{key}",
-        )
-        uploads[key] = save_uploaded_rasters(core, files, key) if files else []
+        exts = {".tif", ".tiff", ".asc", ".zip"} | ({".las", ".laz"} if key == "DTM" else set())
+        with st.expander(label, expanded=key == "DTM"):
+            paths = render_file_input(label, exts, f"as_rvt_in_{key}", f"terrain_{key}")
+            if key == "DTM" and any(p.suffix.lower() in di.POINT_CLOUD_EXTS for p in paths):
+                res = st.number_input("DTM cell size from the point cloud (m)", 0.1, 10.0, 1.0, 0.1, key="as_rvt_las_res")
+            out = []
+            for p in paths:
+                try:
+                    if p.suffix.lower() == ".zip":
+                        out.extend(extract_zip_rasters(core, p, key))
+                    elif p.suffix.lower() in di.POINT_CLOUD_EXTS:
+                        tif = di.UPLOAD_DIR / "dtm_from_point_cloud" / f"{p.stem}_{res:g}m.tif"
+                        if not tif.exists():
+                            with st.spinner(f"Gridding {p.name} into a DTM..."):
+                                di.rasterize_point_cloud(p, tif, resolution=res)
+                        out.append(str(tif))
+                    else:
+                        out.append(str(p))
+                    info = di.describe_raster(out[-1])
+                    st.caption(f"{p.name}: {di.plain_description(info)}")
+                except Exception as exc:
+                    st.error(f"{p.name}: cannot be read ({exc}).")
+            uploads[key] = out
     return uploads
+
+
+def extract_zip_rasters(core, path, dataset_key):
+    extract_dir = Path(path).with_suffix("")
+    marker = extract_dir / ".unzipped"
+    if not marker.exists():
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "r") as zf:
+            zf.extractall(extract_dir)
+        marker.write_text("ok", encoding="utf-8")
+    return [str(p) for p in core.list_rasters(extract_dir)]
+
+
+def render_public_terrain_sources():
+    from airch import data_input as di
+    from airch import sources
+    from airch.spectral.screen import render_provider_table
+
+    st.markdown("**Public terrain sources**")
+    with st.expander("What each source covers and how to get it"):
+        render_provider_table("terrain")
+    st.caption("Automatic download of a global surface model for an area (lon/lat, WGS84). For LiDAR, download from the "
+               "national portal and use the upload tab.")
+    c = st.columns(4)
+    west = c[0].number_input("West", -180.0, 180.0, 13.40, 0.01, format="%.4f", key="as_rvt_dl_w")
+    south = c[1].number_input("South", -90.0, 90.0, 42.00, 0.01, format="%.4f", key="as_rvt_dl_s")
+    east = c[2].number_input("East", -180.0, 180.0, 13.50, 0.01, format="%.4f", key="as_rvt_dl_e")
+    north = c[3].number_input("North", -90.0, 90.0, 42.08, 0.01, format="%.4f", key="as_rvt_dl_n")
+    src = st.selectbox("Source", ["Copernicus DEM GLO-30 (no account)", "OpenTopography (your API key)"], key="as_rvt_dl_src")
+    dem = None
+    if src.startswith("OpenTopography"):
+        dem = st.selectbox("Dataset", list(sources.OPENTOPO_DEMS), format_func=sources.OPENTOPO_DEMS.get, key="as_rvt_dl_dem")
+        if not sources.has_secret("opentopography_api_key"):
+            key = st.text_input("OpenTopography API key", type="password", key="as_rvt_dl_key",
+                                help="Stored only in your user folder (~/.airch/config.json), never in the project.")
+            if key and st.button("Save key", key="as_rvt_dl_save"):
+                sources.save_config_value("opentopography_api_key", key.strip())
+                st.rerun()
+    if st.button("Download DEM", type="primary", key="as_rvt_dl_go"):
+        if east <= west or north <= south:
+            st.error("East must be greater than West and North greater than South.")
+            return
+        out = di.UPLOAD_DIR / "downloads" / f"{'cop30' if dem is None else dem}_{west:.3f}_{south:.3f}_{east:.3f}_{north:.3f}.tif"
+        try:
+            with st.spinner("Downloading..."):
+                if dem is None:
+                    sources.download_cop_dem((west, south, east, north), out)
+                else:
+                    sources.download_opentopography((west, south, east, north), out, dem=dem)
+            st.session_state.as_rvt_generated_dtm = str(out)
+            st.session_state.as_rvt_data_sig = None
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Download not completed: {exc}")
 
 
 def render_regional_dtm_selector(core):

@@ -440,13 +440,71 @@ register(Tool("qgis_run_algorithm", "Run any QGIS Processing algorithm by id wit
               _native_qgis_run, output_keys=(), tags=("qgis",)))
 
 
+# ---------------------------------------------------------------- loaders (bring your own data)
+def _native_load_raster(input):
+    from airch.data_input import describe_raster, plain_description
+
+    info = describe_raster(input)
+    info.pop("tags", None)
+    info["summary"] = plain_description(info)
+    return info
+
+
+def _native_load_point_cloud(input, output=None, resolution_m=1.0, ground_only=True):
+    from airch.data_input import describe_point_cloud, rasterize_point_cloud
+
+    info = describe_point_cloud(input)
+    if output:
+        info["dtm"] = str(rasterize_point_cloud(input, output, resolution=resolution_m, ground_only=ground_only))
+    return info
+
+
+def _native_load_sites(input, crs=None):
+    from airch.data_input import read_sites
+
+    sites = read_sites(input, crs=crs)
+    return {"count": len(sites), "sites": [{"name": s.name, "lon": s.lon, "lat": s.lat} for s in sites[:500]]}
+
+
+def _native_check_raster(input, feature_width_m, n_dates=1):
+    from airch.data_input import describe_raster
+
+    info = describe_raster(input)
+    kind = "lidar" if info["bands"] == 1 else "sentinel-2"
+    r = check_resolvability(feature_width_m, sensor=kind, gsd_m=info["pixel_size_m"], n_dates=n_dates).to_dict()
+    r["pixel_size_from_file_m"] = info["pixel_size_m"]
+    return r
+
+
+register(Tool("load_raster", "Open the user's own raster (any country, sensor or CRS) and describe it in plain language: bands, pixel size, extent, CRS.",
+              _schema(["input"], input={"type": "string", "description": "Path of a GeoTIFF or other GDAL raster."}),
+              _native_load_raster, input_keys=("input",), output_keys=(), tags=("input",)))
+register(Tool("load_point_cloud", "Open the user's LAS/LAZ point cloud; optionally grid its ground points into a DTM GeoTIFF.",
+              _schema(["input"], input={"type": "string", "description": "Path of the .las or .laz file."},
+                      output={"type": "string", "description": "Optional output DTM GeoTIFF."},
+                      resolution_m={"type": "number", "minimum": 0.05, "default": 1.0, "description": "DTM cell size in metres."},
+                      ground_only={"type": "boolean", "default": True, "description": "Use only points classified as ground (class 2) when present."}),
+              _native_load_point_cloud, input_keys=("input",), output_keys=("dtm",), tags=("input", "lidar")))
+register(Tool("load_sites", "Read the user's list of known sites (CSV with longitude/latitude or x/y, GeoJSON, GeoPackage, Shapefile, KML) to use as ground truth.",
+              _schema(["input"], input={"type": "string", "description": "Path of the site list."},
+                      crs={"type": "string", "description": "CRS of x/y columns if not longitude/latitude, e.g. EPSG:32633."}),
+              _native_load_sites, input_keys=("input",), output_keys=(), tags=("input",)))
+register(Tool("check_raster_resolvability", "Check a feature width against the real pixel size of a loaded raster (not a default sensor value).",
+              _schema(["input", "feature_width_m"], input={"type": "string", "description": "Path of the raster."},
+                      feature_width_m={"type": "number", "minimum": 0.01, "description": "Width of the feature in metres."},
+                      n_dates={"type": "integer", "minimum": 1, "default": 1, "description": "Independent dates that show the mark."}),
+              _native_check_raster, input_keys=("input",), output_keys=()))
+
+
 # ---------------------------------------------------------------- execution
 def _guard(tool, params):
     width = params.get("target_feature_width_m")
     if not width or "input" not in params:
         return None
     try:
-        gsd = _native_raster_info(params["input"])["resolution_m"][0]
+        from airch.data_input import describe_raster
+
+        gsd = describe_raster(params["input"])["pixel_size_m"]
     except Exception:
         return None
     return check_resolvability(width, sensor="lidar", gsd_m=gsd)
