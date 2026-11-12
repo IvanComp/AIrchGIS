@@ -927,6 +927,39 @@ def render_3d_cloud(core, data, params):
                 st.caption(f"Sampled .LAS: {exported_points:,} points of {total_points:,}.")
             st.download_button("Download .LAS", Path(las_path).read_bytes(), file_name=Path(las_path).name)
 
+    render_research_export(data, params)
+
+
+def render_research_export(data, params):
+    with st.expander("Export 3D for research"):
+        st.caption(
+            "Georeferenced point cloud (LAZ/LAS, PLY), terrain mesh (glTF .glb) and a JSON metadata file "
+            "(source, CRS, date, visualization, vertical exaggeration). Opens in QGIS 3D, CloudCompare and Blender; "
+            "the .zip can be archived on Zenodo to get a DOI."
+        )
+        col1, col2 = st.columns(2)
+        exaggeration = col1.number_input("Vertical exaggeration", 0.1, 20.0, 1.0, 0.5, key="as_rvt_export3d_ve")
+        acquisition = col2.text_input("Acquisition date (optional)", key="as_rvt_export3d_date")
+        source = st.text_input("Data source and licence (optional)", key="as_rvt_export3d_source")
+        if st.button("Build research package", key="as_rvt_export3d_go"):
+            from airch.terrain.export3d import export_terrain_3d, zip_package
+
+            dtm, profile, crs = current_loaded_dtm_surface(data)
+            stem = f"{current_place_label(params)}__3D__{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            out_dir = RVT_OUTPUT_DIR / "3d_research" / stem
+            with st.spinner("Exporting 3D data..."):
+                meta = export_terrain_3d(
+                    dtm, profile["transform"], crs, out_dir, stem=stem, nodata=profile.get("nodata"),
+                    vertical_exaggeration=float(exaggeration), visualization="DTM (no relief visualization)",
+                    source=source or ", ".join(str(p) for p in (data.src_dtm_paths or [])) or None,
+                    acquisition_date=acquisition or None,
+                )
+                st.session_state.as_rvt_export3d_zip = str(zip_package(meta, out_dir.with_suffix(".zip")))
+        zip_path = st.session_state.get("as_rvt_export3d_zip")
+        if zip_path and Path(zip_path).exists():
+            st.download_button("Download research package (.zip)", Path(zip_path).read_bytes(), file_name=Path(zip_path).name,
+                               key="as_rvt_export3d_dl")
+
 
 def build_3d_cloud(core, data, params, cloud_key):
     dtm, profile, crs = current_loaded_dtm_surface(data)
