@@ -37,3 +37,6 @@ env/
 /.venv_airchgis/
 
 /paper/
+
+# User uploads, downloads and outputs
+/workspace/
