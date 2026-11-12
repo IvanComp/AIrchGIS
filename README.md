@@ -1,155 +1,163 @@
-# AIrchGIS
+<p align="center">
+  <img src="docs/assets/airchgis-logo.svg" alt="AIrchGIS" width="620">
+</p>
 
-AIrchGIS (AI + archaeology) is a single web app for preliminary landscape and archaeological prospection. It is built for archaeologists with little IT background and brings the project's tools together in one interface:
+<p align="center"><b>An AI-assisted archaeological GIS for LiDAR and multispectral prospection, on your own data, anywhere in the world.</b></p>
 
-- **RVT (LiDAR)**: DTM/DSM exploration with RVT relief visualisations, filters, exports, method grid, reports and the interactive **3D Cloud** viewer;
-- **Crop Marks**: multispectral screening for crop marks and soil marks on Sentinel-2 (from 2016) and Landsat (from 1984);
-- **Candidates**: a local archive of verification dossiers that link each anomaly to its area, its date ranking and its verification status;
-- **GIS tool layer** (`airchgis/gis/`): QGIS Processing algorithms and ready-made archaeological workflows exposed as tools an AI assistant can call, with a resolvability guardrail and a provenance log that replays as a script;
-- **3D export for research** (`airchgis/terrain/export3d.py`): georeferenced point cloud (LAZ/LAS, PLY), terrain mesh (glTF) and metadata sidecar, from the "Export 3D for research" panel of 3D Cloud.
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/Streamlit-1.58-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit 1.58">
+  <img src="https://img.shields.io/badge/QGIS-optional%20backend-589632?logo=qgis&logoColor=white" alt="QGIS optional backend">
+  <img src="https://img.shields.io/badge/LiDAR-RVT%20%C2%B7%20LAS%2FLAZ-8a6d3b" alt="LiDAR">
+  <img src="https://img.shields.io/badge/3D%20export-LAZ%20%C2%B7%20PLY%20%C2%B7%20glTF-c99a26" alt="3D export">
+  <img src="https://img.shields.io/badge/tests-95%20passing-2ea44f" alt="95 tests passing">
+  <img src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-555" alt="Platforms">
+  <img src="https://img.shields.io/badge/status-paper%20in%20preparation%20(DAACH)-orange" alt="Paper in preparation">
+</p>
 
-The catalogue of known sites (CAM-M / Potenza Valley Survey) is kept in `airchgis/data/` only as an example dataset: users load their own site lists. Scores are investigation priorities, not archaeological probabilities.
+AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-date screening for crop and soil marks into one browser app, built for archaeologists with little IT background. You start from your own files (any country, sensor or coordinate system); public archives are an optional download. AI assists rather than decides: it calls GIS tools, records every step as a re-runnable script, and says plainly when the data cannot show what you are looking for.
 
-## Quick start
+<p align="center">
+  <img src="docs/assets/screenshot-terrain.jpg" alt="AIrchGIS terrain screen: LiDAR hillshade over satellite imagery" width="900">
+</p>
 
-```bash
-cd "/Users/ivan/Desktop/Neural-Detecting"
-./start_airchgis.command
-```
+# Table of contents
 
-Or manually:
+- [What it does](#what-it-does)
+- [Bring your own data](#bring-your-own-data)
+- [Honest limits](#honest-limits)
+- [AI and GIS tools](#ai-and-gis-tools)
+- [3D export for research](#3d-export-for-research)
+- [Quick start](#quick-start)
+- [How the field-marks engine works](#how-the-field-marks-engine-works)
+- [Project structure](#project-structure)
+- [Tests](#tests)
+- [Citation](#citation)
 
-```bash
-python -m venv .venv_airchgis
-source .venv_airchgis/bin/activate
-pip install -r requirements.txt
-streamlit run airchgis_app.py
-```
+# What it does
 
-## How the Crop Marks engine picks dates
+| Screen | For | What you get |
+|---|---|---|
+| **Terrain (LiDAR)** | Earthworks, mounds, ditches, terraces under vegetation | RVT relief visualizations (hillshade, sky-view factor, openness, local relief model, MSRM, e3MSTP…), side-by-side comparison, method grid, reports, interactive 3D point cloud |
+| **Field marks** | Crop and soil marks of buried features | Date ranking by local contrast and crop phase, per-date anomaly maps, linear marks, persistence across dates, field-boundary mask, check against your known sites |
+| **Candidates** | Keeping track of what you found | Verification dossiers that link each anomaly to its evidence, area and status; GeoJSON export |
+| **AI assistant** *(in progress)* | Asking in plain language | Tool calling over the GIS layer below: the assistant runs tools, never invents results or coordinates |
 
-The ranking does not reward the images with the most variance: field boundaries and different crops produce that, not buried structures. Each acquisition is scored on three independent axes.
+Scores are investigation priorities, not archaeological probabilities.
 
-1. **Local contrast.** For every index the engine measures the deviation from the neighbourhood mean (60 m), the scale of a wall or a ditch rather than of the landscape.
-2. **Crop phase.** Mean NDVI and bare-soil fraction classify the scene as *vegetation*, *bare soil* or *mixed*. Crop marks need a growing crop, soil marks a ploughed field: the «Target mark» option decides which dates enter the composite.
-3. **Antecedent dryness.** Rainfall in the 30 days before each scene is compared with the 1991-2020 ERA5-Land mean. A mark that does not show after a wet month can show after a dry one, and the ranking takes this into account.
+# Bring your own data
 
-Statistics are computed only on arable land and open areas (ESA WorldCover): a roof edge produces more contrast than any buried structure, and without the mask the score follows the built-up area.
+Every screen opens on **Upload your files**; you can also point to files already on your computer (no copy, useful for multi-GB tiles). Uploads up to 4 GB.
 
-Besides the vegetation deficit and excess maps, the engine produces:
+- **Terrain**: DTM/DSM as GeoTIFF, ASCII grid or zip; LAS/LAZ point clouds, gridded to a DTM from their ground points.
+- **Images**: one multiband file per date, or one file per band (`…_B04.jp2`, `…_SR_B4.TIF`). Presets for Sentinel-2, Landsat 4–9, PlanetScope 4/8-band, drone multispectral and RGB orthophotos, plus a band editor. Dates are read from file names and can be edited.
+- **Known sites**: your own list (CSV with lon/lat or x/y, GeoJSON, GeoPackage, zipped Shapefile, KML), used as ground truth for every layer (AUC against random controls). A sample catalogue is included only as an example.
 
-- **Linear marks**, the anomaly weighted by the directional coherence of the local gradient: natural soil variability is isotropic, a wall or a ditch is not;
-- **Soil marks**, the brightness and colour contrast of bare soil;
-- **Persistence**, how many of the selected dates show the anomaly, and **Multi-year recurrence**, in how many different years it reappears, which is the strongest clue;
-- **Check against known sites**: samples the layer at the catalogued sites inside the AOI and at random control points, and reports the AUC. It is a sanity check on a small, non-random sample, not a statistical validation.
+**Download from a public source** is the second option:
 
-## Georeferencing toponyms
+| Source | Coverage | Access in AIrchGIS |
+|---|---|---|
+| Copernicus DEM GLO-30 | Global, 30 m | Automatic, no account |
+| OpenTopography | Global DEMs, national LiDAR | Automatic with your API key (kept in `~/.airchgis/config.json`) |
+| Sentinel-2, Landsat (Google Earth Engine) | Global, from 2016 / 1984 | Processed in Earth Engine, with rainfall and land-cover weighting |
+| Copernicus Data Space, Planetary Computer, USGS EarthExplorer | Global | Link and expected format; download, then upload |
+| National LiDAR: England, Netherlands, Denmark, France, Spain, Slovenia, Italy, USA… | National, 0.25–2 m | Link and expected format |
 
-The CAM-M PDF publishes no coordinates: it describes places in words. Only 148 of 1,708 records come with a point from the linked sources.
+# Honest limits
 
-The local gazetteer closes the gap:
+Before any detection, a **resolvability check** compares the width of the feature you are looking for with the pixel size read from your file (sensor blur, pixel averaging and measured field noise). A 5 m Roman street is refused on 10 m Sentinel-2 (SNR ≈ 1.3) and accepted on 3 m imagery; at 10 m, features of about 20 m and more are reliable. When the data cannot answer, AIrchGIS says so and points to LiDAR or very-high-resolution imagery.
 
-```bash
-python scripts/build_gazetteer.py
-```
+# AI and GIS tools
 
-The script downloads the GeoNames dump for Italy, keeps the toponyms of the study area and writes `airchgis/data/gazetteer.json` (GeoNames, CC BY 4.0). `airchgis/geocoding.py` then matches the locality of each record against the gazetteer, disambiguates homonyms by distance from the municipality centre and discards matches beyond 9 km. About 390 records get a position within a few hundred metres; about 1,100 stay at municipality level.
+`airchgis/gis/` exposes GIS operations as tools with plain-language descriptions and JSON schemas, ready for LLM tool calling (Claude API, or a local model through Ollama).
 
-An inferred coordinate is never presented as published: it carries its own precision label, uncertainty radius and the name it was matched on. The check against known sites uses published coordinates only, because testing the detector on inferred positions would measure the gazetteer.
-
-## Local documentary sources
-
-Authorised local copies of the documents and, optionally, the 53 CAM-M municipal maps can be synchronised into the git-ignored cache:
-
-```bash
-python scripts/sync_archaeological_sources.py --maps
-```
-
-The manifest `airchgis/data/source_manifest.json` stores institutional URLs, licences, coverage, sizes and checksums.
-
-Google Earth is available as an external resource in the top bar.
-
-## Bring your own data (upload first)
-
-Every screen starts from the user's own files, from any country, sensor and coordinate system; public archives come second.
-
-- **RVT (LiDAR)**: DTM/DSM as GeoTIFF, ASCII grid or zip, or a LAS/LAZ point cloud (gridded to a DTM from its ground points). Files can be uploaded (up to 4 GB, `.streamlit/config.toml`) or read in place from a local path, with no copy. "Download from a public source" lists national LiDAR portals and downloads Copernicus DEM GLO-30 automatically (no account) or OpenTopography DEMs with the user's API key (stored only in `~/.airchgis/config.json`). "Example data" is the Abruzzo sample.
-- **Crop Marks**: multiband GeoTIFFs (one per date) or one file per band (Sentinel-2 `..._B04.jp2`, Landsat `..._SR_B4.TIF`), with presets for Sentinel-2, Landsat, PlanetScope, drone multispectral and RGB orthophotos, and a band editor. Dates come from file names and can be edited. `airchgis/spectral/local_engine.py` runs locally (no Earth Engine): indices, local contrast, crop phase and date ranking, per-date anomalies, linear marks, persistence and, with three or more dates, a field-boundary mask. The Earth Engine engine (Sentinel-2, Landsat, rainfall and land-cover weighting) stays under "Download from a public source".
-- **Known sites**: the user's own list (CSV with lon/lat or x/y, GeoJSON, GeoPackage, zipped Shapefile, KML) is checked against every layer (AUC vs random controls). The CAM-M/PVS catalogue is only an example dataset.
-- The resolvability check uses the pixel size read from the user's file.
-- `airchgis/sources.py` lists the public sources (coverage, resolution, licence, access); `airchgis/data_input.py` holds the loaders, also registered as tools (`load_raster`, `load_point_cloud`, `load_sites`, `check_raster_resolvability`).
-
-## GIS tool layer
-
-The assistant does not compute results itself: it calls tools.
-
-- `airchgis/gis/tools.py` is the registry. Each tool has a plain-language description and a JSON schema, so `tool_specs()` can be passed as tool definitions to the Claude API (`tool_specs("openai")` gives the function format of Ollama and OpenAI-compatible servers). Tools: `raster_info`, `hillshade`, `slope`, `sky_view_factor`, `openness`, `local_relief_model`, `clip_raster_to_aoi`, `reproject`, `zonal_stats`, `check_resolvability`, `export_3d`, plus `qgis_list_algorithms` and `qgis_run_algorithm` for any QGIS Processing algorithm.
-- `airchgis/gis/backend.py` finds `qgis_process` (PATH, `/Applications/QGIS*.app`, or `AIRCHGIS_QGIS_PROCESS`). With QGIS installed, hillshade, slope, clip, reproject and zonal statistics run in QGIS Processing; without it every tool falls back to rvt-py/rasterio, and each result says which backend ran.
-- `airchgis/gis/guardrails.py` checks, before any detection, whether a feature of a given width can be resolved by the sensor (Phase 0 model: PSF blur, pixel averaging, measured NDVI noise). On Sentinel-2 a 5 m street is refused (SNR ~1.3), 10 m gets a warning, 20 m passes.
-- `airchgis/gis/provenance.py` records every run (parameters, input SHA-256, outputs, backend, versions, exact `qgis_process` command) and saves it as JSON, a Python replay script and a shell script of QGIS commands.
-- `airchgis/gis/workflows.py`: `lidar_micro_relief` (clip, local relief model, sky-view factor, positive and negative openness, hillshade) and `crop_mark_screening` (resolvability check, then the settings for the Crop Marks engine).
+- **Backends**: QGIS Processing through `qgis_process` when QGIS is installed (found automatically, or via `AIRCHGIS_QGIS_PROCESS`); otherwise rvt-py/rasterio. Each result says which backend ran. Any QGIS algorithm can be listed and run.
+- **Workflows**: *LiDAR micro-relief* (clip, local relief model, sky-view factor, positive and negative openness, hillshade) and *crop-mark screening* (resolvability check first).
+- **Provenance**: every run is logged with parameters, input SHA-256, software versions and the exact QGIS command, and saved as JSON, a Python replay script and a shell script.
 
 ```python
 from airchgis.gis import ProvenanceLog, run_tool
+
 log = ProvenanceLog("My survey")
 run_tool("local_relief_model", log=log, input="dtm.tif", output="lrm.tif", radius_m=20, target_feature_width_m=2)
 log.save_scripts("outputs/")
 ```
 
-ArcGIS (`arcpy`) is not supported: it needs a proprietary licence. A backend for it could be added next to `backend.py`.
+ArcGIS (`arcpy`) is not supported because it needs a proprietary licence; a backend could be added next to `backend.py`.
 
-LAZ compression needs `lazrs` (`pip install lazrs`); without it the point cloud is written as LAS.
+# 3D export for research
 
-## Structure
+From the 3D Cloud tab, **Export 3D for research** writes a georeferenced point cloud (LAZ/LAS and PLY), a terrain mesh (glTF `.glb`) and a JSON sidecar (source, CRS, bounds, resolution, date, relief visualization, vertical exaggeration), zipped for archiving on Zenodo. The files open in QGIS 3D, CloudCompare and Blender. LAZ needs `pip install lazrs`; without it the cloud is written as LAS.
+
+# Quick start
+
+macOS (double-click, or from a terminal):
+
+```bash
+./start_airchgis.command
+```
+
+Linux and Windows:
+
+```bash
+python -m venv .venv_airchgis
+source .venv_airchgis/bin/activate    # Windows: .venv_airchgis\Scripts\activate
+pip install -r requirements.txt
+streamlit run airchgis_app.py
+```
+
+The app opens at http://localhost:8501. QGIS and a Google Earth Engine project are optional.
+
+# How the field-marks engine works
+
+The ranking does not reward the images with the most variance: field boundaries and different crops produce that, not buried structures. Each date is scored on:
+
+1. **Local contrast**: deviation of each index from its neighbourhood (60 m by default, the scale of a wall or ditch).
+2. **Crop phase**: vegetation, bare soil or mixed. Crop marks need a growing crop, soil marks a ploughed field; the *target mark* option decides which dates are combined.
+3. **Antecedent dryness** *(Earth Engine only)*: rainfall of the 30 days before each scene against the 1991–2020 ERA5-Land mean.
+
+Anomalies are computed date by date and aggregated afterwards (a median composite would erase transient marks): vegetation deficit and excess, soil marks, linear marks (gradient coherence), persistence and multi-year recurrence. With three or more dates, pixels whose seasonal curve changes shape across a neighbour are masked as field boundaries; a buried feature only shifts the curve, so it is kept.
+
+<p align="center">
+  <img src="docs/assets/screenshot-field-marks.jpg" alt="Field marks screen, upload first" width="760">
+</p>
+
+# Project structure
 
 ```text
-Neural-Detecting/   (AIrchGIS)
-  airchgis_app.py
-  start_airchgis.command
-  airchgis/
-    app.py                    shell and navigation
-    ui.py                     theme, animations and logo
-    rvt_web.py                RVT (LiDAR) screen, including 3D Cloud and 3D research export
-    gis/                      tool registry, QGIS backend, guardrails, provenance, workflows
-    terrain/export3d.py       LAZ/LAS, PLY, glTF export with metadata sidecar
-    cropmarks_engine.py       collections, masks and anomaly maps
-    scene_ranking.py          date ranking, no Earth Engine dependency
-    candidate_store.py        verification dossiers
-    benchmark.py              metrics against known sites
-    site_index.py             known-site catalogue as points
-    geocoding.py              toponyms -> coordinates, with explicit uncertainty
-    database_enrichment.py    CAM-M / PVS joins
-    source_registry.py
-    paths.py
-    data/                     catalogues, gazetteer, calibration regions
-    assets/logo.svg
-  RVT/
-    core.py                   RVT engine (and the legacy Tk desktop GUI)
-    scripts/lads_preview.py   3D Cloud viewer
-  Crop marks Tool/            standalone Crop Marks launcher
-  paper/                      manuscript (0-MAIN.tex + sections/)
-  docs/
-  scripts/
-  tests/
+.
+├── airchgis_app.py            # entry point
+├── start_airchgis.command     # macOS launcher (creates .venv_airchgis)
+├── airchgis/
+│   ├── app.py                 # shell and navigation
+│   ├── rvt_web.py             # Terrain screen, 3D Cloud, 3D research export
+│   ├── data_input.py          # loaders: rasters, LAS/LAZ, multispectral scenes, site lists
+│   ├── input_ui.py            # shared "upload or local path" input
+│   ├── sources.py             # public data sources and downloads
+│   ├── spectral/              # local field-marks engine and screen
+│   ├── cropmarks_engine.py    # Earth Engine engine (Sentinel-2, Landsat)
+│   ├── gis/                   # tool registry, QGIS backend, guardrails, provenance, workflows
+│   ├── terrain/export3d.py    # LAZ/LAS, PLY, glTF export with metadata
+│   ├── candidate_store.py     # verification dossiers
+│   ├── benchmark.py           # metrics against known sites
+│   └── data/                  # example catalogue, gazetteer, calibration regions
+├── RVT/                       # RVT engine, 3D viewer, legacy desktop GUI
+├── Crop marks Tool/           # standalone Earth Engine launcher
+├── docs/                      # method notes, benchmarks, assets
+├── scripts/                   # benchmark and data-preparation scripts
+└── tests/
 ```
 
-## Standalone Crop Marks
+Method notes: [`docs/PHASE0_RESOLVABILITY.md`](docs/PHASE0_RESOLVABILITY.md), [`docs/PHASE_A.md`](docs/PHASE_A.md), [`docs/AIRCHGIS_STRUCTURE.md`](docs/AIRCHGIS_STRUCTURE.md).
+
+# Tests
 
 ```bash
-cd "/Users/ivan/Desktop/Neural-Detecting/Crop marks Tool"
-./start_mac.command
+python -m unittest discover -s tests
 ```
 
-Details: `Crop marks Tool/README.md`.
+95 tests, no network needed: loaders, band mapping, local engine (synthetic buried wall), guardrails, tool schemas, provenance replay, 3D export round trip, scene ranking, geocoding and benchmark metrics.
 
-## Tests
+# Citation
 
-```bash
-python -m unittest tests.test_scene_ranking tests.test_geocoding tests.test_cropmarks_helpers tests.test_candidate_store tests.test_database_enrichment tests.test_benchmark
-```
-
-Ranking and georeferencing logic live in pure modules so they can be tested without network access: the tests cover phenological classification, dryness index, date ordering, AUC, homonym disambiguation and georeferencing counts.
-
-## Notes
-
-The `.venv*` folders, RVT outputs, local raster data, generated DTMs and Earth Engine credentials/projects are local and should not be versioned.
+A paper describing AIrchGIS is in preparation for *Digital Applications in Archaeology and Cultural Heritage*. Citation details will be added here after publication.
