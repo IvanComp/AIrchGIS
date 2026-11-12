@@ -6,7 +6,7 @@ __pycache__/
 
 # Local virtual environments and credentials
 .venv/
-.venv_airch/
+.venv_airchgis/
 venv/
 env/
 .ee_project
@@ -34,6 +34,6 @@ env/
 # Local material (not for the public repo)
 /USEFUL PAPERS/
 /tmp/
-/.venv_airch/
+/.venv_airchgis/
 
 /paper/

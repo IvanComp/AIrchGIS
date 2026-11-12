@@ -1,7 +1,7 @@
 """Bring your own data: loaders for rasters, point clouds, multispectral scenes and site lists.
 
 Every screen starts from the user's own files (any country, any sensor, any
-CRS). Public archives are an optional second route (see :mod:`airch.sources`).
+CRS). Public archives are an optional second route (see :mod:`airchgis.sources`).
 Nothing here depends on Streamlit; the UI helpers live in
 :func:`render_file_input`.
 """
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-from airch.paths import PROJECT_ROOT
+from airchgis.paths import PROJECT_ROOT
 
 WORKSPACE_DIR = PROJECT_ROOT / "workspace"
 UPLOAD_DIR = WORKSPACE_DIR / "uploads"

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from airch.data_input import resolve_local_paths, save_upload
+from airchgis.data_input import resolve_local_paths, save_upload
 
 
 def render_file_input(label, exts, key, subdir, multiple=True, help=None):

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from airch import candidate_store
+from airchgis import candidate_store
 
 
 class CandidateStoreTests(unittest.TestCase):

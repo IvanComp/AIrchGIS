@@ -1,10 +1,10 @@
-# AIrch · Crop Marks (standalone)
+# AIrchGIS · Crop Marks (standalone)
 
-> Note: this tool is part of the single `AIrch` app.
+> Note: this tool is part of the single `AIrchGIS` app.
 > Recommended start from the repository root:
 >
 > ```bash
-> ./start_airch.command
+> ./start_airchgis.command
 > ```
 >
 > The instructions below still apply to the standalone launcher.

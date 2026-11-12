@@ -8,9 +8,9 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from airch.gis import backend, guardrails, tools, workflows
-from airch.gis.provenance import ProvenanceLog, file_sha256
-from airch.terrain import export3d
+from airchgis.gis import backend, guardrails, tools, workflows
+from airchgis.gis.provenance import ProvenanceLog, file_sha256
+from airchgis.terrain import export3d
 
 
 def synthetic_dtm(folder, size=60, res=1.0):

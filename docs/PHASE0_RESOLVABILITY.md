@@ -18,7 +18,7 @@ The figure ticks were measured on the 400 dpi render and interpolated with an af
 | Max GCP residual | **0.31 m** |
 | Frame extent | 1099.8 × 1637.8 m |
 
-Parameters saved in `airch/data/potentia_reference.json`.
+Parameters saved in `airchgis/data/potentia_reference.json`.
 
 ### Correction to the plan: the figure is not high resolution
 

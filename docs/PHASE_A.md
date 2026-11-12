@@ -8,7 +8,7 @@ All figures come from `scripts/benchmark_cropmarks.py`, which runs on the same r
 
 Potentia cannot be used for the Sentinel-2 branch (see `PHASE0_RESOLVABILITY.md`). The target was chosen by measurement, not by fame: among the 148 sites with published coordinates, those with at least 70% arable land, less than 5% built-up area, less than 10% trees within 400 m, and winter NDVI below 0.15, that is fields that are really ploughed.
 
-Twenty remain. The densest group is **Pollenza / Treia, C.da San Marco Vecchio**: 8 Roman villas and farms within 3 km, 29 published sites in total, 3.8 × 4.7 km. Definition in `airch/data/calibration_region.json`.
+Twenty remain. The densest group is **Pollenza / Treia, C.da San Marco Vecchio**: 8 Roman villas and farms within 3 km, 29 published sites in total, 3.8 × 4.7 km. Definition in `airchgis/data/calibration_region.json`.
 
 These targets are compatible with 10 m pixels: platforms and courtyards tens of metres across.
 

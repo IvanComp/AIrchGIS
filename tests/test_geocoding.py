@@ -1,6 +1,6 @@
 import unittest
 
-from airch import geocoding
+from airchgis import geocoding
 
 
 def gazetteer():

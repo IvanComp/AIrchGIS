@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from airch import benchmark
+from airchgis import benchmark
 
 
 class LocalMaximaTests(unittest.TestCase):

@@ -10,12 +10,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from airch import source_registry
-from airch.database_enrichment import load_json
+from airchgis import source_registry
+from airchgis.database_enrichment import load_json
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Synchronise the AIrch documentary sources.")
+    parser = argparse.ArgumentParser(description="Synchronise the AIrchGIS documentary sources.")
     parser.add_argument("--maps", action="store_true", help="Also download the 52 CAM-M municipal maps.")
     parser.add_argument("--force", action="store_true", help="Download or copy again files already present.")
     args = parser.parse_args()
@@ -58,7 +58,7 @@ def find_legacy_file(document):
 
 
 def sync_maps(cache_dir, force=False):
-    database = load_json(PROJECT_ROOT / "airch" / "data" / "cam_m_sites.json")
+    database = load_json(PROJECT_ROOT / "airchgis" / "data" / "cam_m_sites.json")
     map_dir = cache_dir / "cam_m_maps"
     map_dir.mkdir(parents=True, exist_ok=True)
     items = sorted(database.get("map_links", {}).items())
@@ -76,7 +76,7 @@ def sync_maps(cache_dir, force=False):
 
 
 def download(url, target):
-    request = urllib.request.Request(url, headers={"User-Agent": "AIrch/1.0"})
+    request = urllib.request.Request(url, headers={"User-Agent": "AIrchGIS/1.0"})
     temporary = target.with_suffix(target.suffix + ".part")
     with urllib.request.urlopen(request, timeout=120) as response, temporary.open("wb") as handle:
         shutil.copyfileobj(response, handle)

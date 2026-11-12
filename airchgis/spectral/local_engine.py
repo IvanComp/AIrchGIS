@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy import ndimage
 
-from airch import benchmark
+from airchgis import benchmark
 
 EPS = 1e-6
 

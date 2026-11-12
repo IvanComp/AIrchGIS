@@ -8,11 +8,11 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from airch import data_input as di
-from airch import sources
-from airch.gis import tools
-from airch.gis.guardrails import check_resolvability
-from airch.spectral import local_engine as le
+from airchgis import data_input as di
+from airchgis import sources
+from airchgis.gis import tools
+from airchgis.gis.guardrails import check_resolvability
+from airchgis.spectral import local_engine as le
 
 ORIGIN = (500000, 6200000)  # UTM 32N, Denmark: the tool is not tied to Italy
 

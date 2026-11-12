@@ -1567,7 +1567,7 @@ def write_browser_cloud_viewer(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AIrch · 3D Cloud</title>
+  <title>AIrchGIS · 3D Cloud</title>
   <style>
     html, body {{
       margin: 0;

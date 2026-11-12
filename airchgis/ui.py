@@ -1,4 +1,4 @@
-"""Visual identity and motion for the AIrch shell.
+"""Visual identity and motion for the AIrchGIS shell.
 
 Everything here is presentation only: CSS injected once per rerun plus a couple
 of markup helpers. No widget state passes through this module, so the theme can
@@ -45,7 +45,7 @@ def brand_markup(subtitle="AI for archaeology · Documents · Satellite · LiDAR
     <div class="as-brandbar">
         <div class="as-logo">{logo_svg()}</div>
         <div class="as-brandtext">
-            <div class="as-brand"><span>AI</span>rch</div>
+            <div class="as-brand"><span>AI</span>rchGIS</div>
             <div class="as-brand-sub">{subtitle}</div>
         </div>
     </div>

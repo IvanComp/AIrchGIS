@@ -1,6 +1,6 @@
 """Georeferenced view over the documentary catalogue.
 
-The catalogue data lives in ``airch/data``; this module
+The catalogue data lives in ``airchgis/data``; this module
 exposes the same records as plain points so that satellite screens can draw
 known sites over an area of interest and compare an anomaly map against them.
 It deliberately avoids importing Streamlit or Earth Engine so it stays usable
@@ -16,7 +16,7 @@ from .database_enrichment import enrich_database
 from .paths import PROJECT_ROOT, RVT_DIR
 
 
-DATA_PATH = PROJECT_ROOT / "airch" / "data" / "cam_m_sites.json"
+DATA_PATH = PROJECT_ROOT / "airchgis" / "data" / "cam_m_sites.json"
 COORDINATES_PATH = RVT_DIR / "output_rvt_gui" / "cam_m_database" / "coordinate_overrides.json"
 
 

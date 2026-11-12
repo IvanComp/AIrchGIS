@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-VENV_DIR=".venv_airch"
+VENV_DIR=".venv_airchgis"
 REQUIREMENTS_FILE="requirements.txt"
 
 if [ -x "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12" ]; then
@@ -41,7 +41,7 @@ import rasterio
 import rvt.vis
 PY
 then
-  echo "Incomplete Python environment. Delete only $VENV_DIR and restart AIrch."
+  echo "Incomplete Python environment. Delete only $VENV_DIR and restart AIrchGIS."
   read -r "x?Press Enter to close."
   exit 1
 fi
@@ -54,4 +54,4 @@ fi
 
 export PYTHONDONTWRITEBYTECODE=1
 
-exec "$VENV_DIR/bin/python" -m streamlit run airch_app.py
+exec "$VENV_DIR/bin/python" -m streamlit run airchgis_app.py

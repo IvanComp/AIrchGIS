@@ -22,9 +22,9 @@ from typing import Callable
 
 import numpy as np
 
-from airch.gis import backend
-from airch.gis.guardrails import SENSORS, check_resolvability
-from airch.gis.provenance import ProvenanceLog, Step
+from airchgis.gis import backend
+from airchgis.gis.guardrails import SENSORS, check_resolvability
+from airchgis.gis.provenance import ProvenanceLog, Step
 
 
 class ToolError(RuntimeError):
@@ -313,7 +313,7 @@ def _native_resolvability(feature_width_m, sensor, gsd_m=None, n_dates=1):
 def _native_export_3d(input, output_dir, vertical_exaggeration, formats, visualization=None, source=None, acquisition_date=None):
     import rasterio
 
-    from airch.terrain.export3d import export_terrain_3d
+    from airchgis.terrain.export3d import export_terrain_3d
 
     with rasterio.open(input) as src:
         dtm = src.read(1).astype(np.float64)
@@ -442,7 +442,7 @@ register(Tool("qgis_run_algorithm", "Run any QGIS Processing algorithm by id wit
 
 # ---------------------------------------------------------------- loaders (bring your own data)
 def _native_load_raster(input):
-    from airch.data_input import describe_raster, plain_description
+    from airchgis.data_input import describe_raster, plain_description
 
     info = describe_raster(input)
     info.pop("tags", None)
@@ -451,7 +451,7 @@ def _native_load_raster(input):
 
 
 def _native_load_point_cloud(input, output=None, resolution_m=1.0, ground_only=True):
-    from airch.data_input import describe_point_cloud, rasterize_point_cloud
+    from airchgis.data_input import describe_point_cloud, rasterize_point_cloud
 
     info = describe_point_cloud(input)
     if output:
@@ -460,14 +460,14 @@ def _native_load_point_cloud(input, output=None, resolution_m=1.0, ground_only=T
 
 
 def _native_load_sites(input, crs=None):
-    from airch.data_input import read_sites
+    from airchgis.data_input import read_sites
 
     sites = read_sites(input, crs=crs)
     return {"count": len(sites), "sites": [{"name": s.name, "lon": s.lon, "lat": s.lat} for s in sites[:500]]}
 
 
 def _native_check_raster(input, feature_width_m, n_dates=1):
-    from airch.data_input import describe_raster
+    from airchgis.data_input import describe_raster
 
     info = describe_raster(input)
     kind = "lidar" if info["bands"] == 1 else "sentinel-2"
@@ -502,7 +502,7 @@ def _guard(tool, params):
     if not width or "input" not in params:
         return None
     try:
-        from airch.data_input import describe_raster
+        from airchgis.data_input import describe_raster
 
         gsd = describe_raster(params["input"])["pixel_size_m"]
     except Exception:

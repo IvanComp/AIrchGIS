@@ -1,15 +1,15 @@
-# AIrch: unified structure
+# AIrchGIS: unified structure
 
-## Done (branch `airch-unify`)
+## Done (branch `airchgis-unify`)
 
-- Package `archaeoscope/` renamed to `airch/` with `git mv`, so file history is kept.
-- `archaeoscope_app.py` → `airch_app.py`, `start_archaeoscope.command` → `start_airch.command`, venv `.venv_airch`.
-- Every "ArchaeoScope" in code, READMEs, docs, scripts and tests now reads "AIrch"; the text logo is `<span>AI</span>rch`.
-- Standalone tools carry the AIrch brand: Tk window "AIrch · LiDAR Explorer", pages "AIrch · DTM from map", "AIrch · 3D Cloud", "AIrch · Crop Marks".
+- Package `archaeoscope/` renamed to `airchgis/` with `git mv`, so file history is kept.
+- `archaeoscope_app.py` → `airchgis_app.py`, `start_archaeoscope.command` → `start_airchgis.command`, venv `.venv_airchgis`.
+- Every "ArchaeoScope" in code, READMEs, docs, scripts and tests now reads "AIrchGIS"; the text logo is `<span>AI</span>rchGIS`.
+- Standalone tools carry the AIrchGIS brand: Tk window "AIrchGIS · LiDAR Explorer", pages "AIrchGIS · DTM from map", "AIrchGIS · 3D Cloud", "AIrchGIS · Crop Marks".
 - **The 3D visualisation is unchanged**, apart from its page title.
 - The whole interface, READMEs and docs are in English.
-- The **Database screen has been removed**: the tool is tailored to the paper. The CAM-M/PVS catalogue stays in `airch/data/` only as the ground truth for known sites on the Crop Marks map and for the built-in benchmark.
-- Git clean-up: `Crop marks Tool/.venv`, `*.pyc` and `tmp/` are no longer tracked; `USEFUL PAPERS/`, `tmp/` and `.venv_airch/` are ignored.
+- The **Database screen has been removed**: the tool is tailored to the paper. The CAM-M/PVS catalogue stays in `airchgis/data/` only as the ground truth for known sites on the Crop Marks map and for the built-in benchmark.
+- Git clean-up: `Crop marks Tool/.venv`, `*.pyc` and `tmp/` are no longer tracked; `USEFUL PAPERS/`, `tmp/` and `.venv_airchgis/` are ignored.
 
 ## Target layout
 
@@ -17,10 +17,10 @@ The archaeologist sees **one app with task-oriented screens**, not technology-or
 
 ```text
 Neural-Detecting/
-  start_airch.command             double-click: single entry point (macOS)
-  start_airch.bat                 [to do] Windows equivalent
-  airch_app.py
-  airch/
+  start_airchgis.command             double-click: single entry point (macOS)
+  start_airchgis.bat                 [to do] Windows equivalent
+  airchgis_app.py
+  airchgis/
     app.py                        shell, navigation, state
     ui.py                         theme and logo
     paths.py                      every path in one place
@@ -63,10 +63,10 @@ Neural-Detecting/
 - Configurable backend: the Claude API, or a local model through Ollama for users who do not want data to leave their machine.
 - Anonymous logging, so the user study has data on what archaeologists ask.
 
-**Done: the tool layer under the assistant** (`airch/gis/`). The assistant calls tools instead of computing results: a registry with JSON schemas for Claude API / Ollama tool calling, a QGIS Processing backend (`qgis_process`) with rvt-py/rasterio fallback, ready-made workflows (`lidar_micro_relief`, `crop_mark_screening`), a resolvability guardrail based on Phase 0, and a provenance log exported as Python and `qgis_process` replay scripts. Still to do: the chat panel itself and the model loop that hands `tool_specs()` to the LLM.
+**Done: the tool layer under the assistant** (`airchgis/gis/`). The assistant calls tools instead of computing results: a registry with JSON schemas for Claude API / Ollama tool calling, a QGIS Processing backend (`qgis_process`) with rvt-py/rasterio fallback, ready-made workflows (`lidar_micro_relief`, `crop_mark_screening`), a resolvability guardrail based on Phase 0, and a provenance log exported as Python and `qgis_process` replay scripts. Still to do: the chat panel itself and the model loop that hands `tool_specs()` to the LLM.
 
-**Done: 3D export for research** (`airch/terrain/export3d.py`, panel "Export 3D for research" in 3D Cloud): LAZ/LAS, PLY, glTF and a JSON sidecar, zipped for Zenodo. The existing 3D viewer is unchanged.
+**Done: 3D export for research** (`airchgis/terrain/export3d.py`, panel "Export 3D for research" in 3D Cloud): LAZ/LAS, PLY, glTF and a JSON sidecar, zipped for Zenodo. The existing 3D viewer is unchanged.
 
 ## Remaining step
 
-Physically moving `RVT/` and `Crop marks Tool/` into `airch/terrain` and `airch/spectral`. This is the most delicate step, because `RVT/core.py` (4,400 lines) uses paths relative to the data in `RVT/image`, `RVT/data` and `RVT/generated_dtm`. It should be done together with moving the data into `workspace/`, and tested by hand on the app.
+Physically moving `RVT/` and `Crop marks Tool/` into `airchgis/terrain` and `airchgis/spectral`. This is the most delicate step, because `RVT/core.py` (4,400 lines) uses paths relative to the data in `RVT/image`, `RVT/data` and `RVT/generated_dtm`. It should be done together with moving the data into `workspace/`, and tested by hand on the app.

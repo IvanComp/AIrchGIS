@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from airch import cropmarks_engine as cropmarks
+from airchgis import cropmarks_engine as cropmarks
 
 
 class CropmarksGeometryTests(unittest.TestCase):

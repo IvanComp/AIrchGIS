@@ -3,7 +3,7 @@
 A log holds one step per run: tool, parameters, input files with their
 SHA-256, outputs, backend, the exact ``qgis_process`` command when QGIS ran,
 software versions and timing. It is saved as JSON and as a Python script
-that re-runs the same steps through :func:`airch.gis.tools.run_tool`, plus a
+that re-runs the same steps through :func:`airchgis.gis.tools.run_tool`, plus a
 shell script with the QGIS commands.
 """
 
@@ -38,7 +38,7 @@ def environment() -> dict:
         except Exception:
             env[name] = None
     try:
-        from airch.gis.backend import qgis_version
+        from airchgis.gis.backend import qgis_version
 
         env["qgis"] = qgis_version()
     except Exception:
@@ -61,7 +61,7 @@ class Step:
 
 
 class ProvenanceLog:
-    def __init__(self, title: str = "AIrch session"):
+    def __init__(self, title: str = "AIrchGIS session"):
         self.title = title
         self.created = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.environment = environment()
@@ -91,15 +91,15 @@ class ProvenanceLog:
 
     def to_python(self) -> str:
         lines = [
-            '"""Replay of an AIrch session, generated automatically.',
+            '"""Replay of an AIrchGIS session, generated automatically.',
             "",
             f"Title: {self.title}",
             f"Recorded: {self.created}",
-            "Run with the AIrch virtual environment: python <this file>",
+            "Run with the AIrchGIS virtual environment: python <this file>",
             '"""',
             "",
-            "from airch.gis.provenance import ProvenanceLog, file_sha256",
-            "from airch.gis.tools import run_tool",
+            "from airchgis.gis.provenance import ProvenanceLog, file_sha256",
+            "from airchgis.gis.tools import run_tool",
             "",
             f"log = ProvenanceLog({self.title!r} + ' (replay)')",
             "",
@@ -134,7 +134,7 @@ class ProvenanceLog:
             lines.append("# No step ran on QGIS: use the Python replay script.")
         return "\n".join(lines) + "\n"
 
-    def save_scripts(self, folder, stem="airch_session") -> dict:
+    def save_scripts(self, folder, stem="airchgis_session") -> dict:
         folder = Path(folder)
         folder.mkdir(parents=True, exist_ok=True)
         py = folder / f"{stem}_replay.py"

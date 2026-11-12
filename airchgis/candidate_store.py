@@ -7,7 +7,7 @@ from uuid import uuid4
 from .paths import RVT_DIR
 
 
-CANDIDATE_DIR = RVT_DIR / "output_rvt_gui" / "airch_candidates"
+CANDIDATE_DIR = RVT_DIR / "output_rvt_gui" / "airchgis_candidates"
 CANDIDATE_PATH = CANDIDATE_DIR / "candidates.json"
 CANDIDATE_STATUSES = ("To verify", "Promising", "False positive", "Verified")
 

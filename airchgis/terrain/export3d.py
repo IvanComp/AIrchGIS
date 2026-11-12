@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-SIDE_CAR_SCHEMA = "airch-3d-export/1"
+SIDE_CAR_SCHEMA = "airchgis-3d-export/1"
 
 
 def _cell_centers(transform, rows, cols):
@@ -56,7 +56,7 @@ def write_ply(path, xs, ys, zs):
     n = xs.size
     header = (
         "ply\nformat binary_little_endian 1.0\n"
-        "comment AIrch 3D export; coordinates in the CRS given in the sidecar JSON\n"
+        "comment AIrchGIS 3D export; coordinates in the CRS given in the sidecar JSON\n"
         f"element vertex {n}\nproperty double x\nproperty double y\nproperty double z\nend_header\n"
     )
     data = np.empty(n, dtype=[("x", "<f8"), ("y", "<f8"), ("z", "<f8")])
@@ -121,7 +121,7 @@ def write_glb(path, dtm, transform, mask, origin, vertical_exaggeration=1.0, ext
     binary = pos_bytes + b"\0" * pad + idx_bytes
     binary += b"\0" * ((4 - len(binary) % 4) % 4)
     gltf = {
-        "asset": {"version": "2.0", "generator": "AIrch export3d"},
+        "asset": {"version": "2.0", "generator": "AIrchGIS export3d"},
         "scene": 0,
         "scenes": [{"nodes": [0]}],
         "nodes": [{"mesh": 0, "name": "terrain", "extras": extras or {}}],
@@ -226,7 +226,7 @@ def export_terrain_3d(
     meta = {
         "schema": SIDE_CAR_SCHEMA,
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "software": "AIrch",
+        "software": "AIrchGIS",
         "source": source,
         "acquisition_date": acquisition_date,
         "crs": crs_text,

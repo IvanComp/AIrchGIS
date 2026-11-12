@@ -1,4 +1,4 @@
-"""Unified AIrch application package."""
+"""Unified AIrchGIS application package."""
 
 __all__ = ["__version__"]
 

@@ -83,7 +83,7 @@ def enrich_database(database, pvs_database=None, pvs_2017=None):
         record["provenance_status"] = provenance_status(record)
 
     metadata = enriched.setdefault("metadata", {})
-    metadata["source_manifest"] = "airch/data/source_manifest.json"
+    metadata["source_manifest"] = "airchgis/data/source_manifest.json"
     metadata["enrichment"] = {
         "citation_links_accepted": len(accepted),
         "citation_links_for_review": len(review),

@@ -1,6 +1,6 @@
 import unittest
 
-from airch import scene_ranking as ranking
+from airchgis import scene_ranking as ranking
 
 
 def scene(**overrides):

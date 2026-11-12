@@ -12,11 +12,11 @@ import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
 
-from airch import data_input as di
-from airch import sources
-from airch.gis.guardrails import check_resolvability
-from airch.input_ui import render_file_input
-from airch.spectral import local_engine as le
+from airchgis import data_input as di
+from airchgis import sources
+from airchgis.gis.guardrails import check_resolvability
+from airchgis.input_ui import render_file_input
+from airchgis.spectral import local_engine as le
 
 OUT_DIR = di.WORKSPACE_DIR / "outputs" / "field_marks"
 TARGETS = ["Automatic", "Crop marks", "Soil marks"]

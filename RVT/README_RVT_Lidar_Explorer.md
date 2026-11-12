@@ -1,10 +1,10 @@
-# AIrch · LiDAR Explorer (RVT) — README
+# AIrchGIS · LiDAR Explorer (RVT) — README
 
-> Note: RVT is now part of the single `AIrch` app.
+> Note: RVT is now part of the single `AIrchGIS` app.
 > Recommended start from the repository root:
 >
 > ```bash
-> ./start_airch.command
+> ./start_airchgis.command
 > ```
 >
 > The desktop GUI described here still works and can be started directly with `python core.py`.

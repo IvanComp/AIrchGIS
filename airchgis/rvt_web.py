@@ -57,7 +57,7 @@ def load_rvt_core():
     rvt_path = str(RVT_DIR)
     if rvt_path not in sys.path:
         sys.path.insert(0, rvt_path)
-    spec = importlib.util.spec_from_file_location("airch_rvt_core", RVT_DIR / "core.py")
+    spec = importlib.util.spec_from_file_location("airchgis_rvt_core", RVT_DIR / "core.py")
     if spec is None or spec.loader is None:
         raise RuntimeError("RVT/core.py not found.")
     module = importlib.util.module_from_spec(spec)
@@ -210,8 +210,8 @@ def render_rvt_controls(core):
 
 
 def render_upload_controls(core):
-    from airch import data_input as di
-    from airch.input_ui import render_file_input
+    from airchgis import data_input as di
+    from airchgis.input_ui import render_file_input
 
     st.caption("Your own terrain data, from any country and in any coordinate system. DSM First/Last are optional.")
     uploads = {}
@@ -259,9 +259,9 @@ def extract_zip_rasters(core, path, dataset_key):
 
 
 def render_public_terrain_sources():
-    from airch import data_input as di
-    from airch import sources
-    from airch.spectral.screen import render_provider_table
+    from airchgis import data_input as di
+    from airchgis import sources
+    from airchgis.spectral.screen import render_provider_table
 
     st.markdown("**Public terrain sources**")
     with st.expander("What each source covers and how to get it"):
@@ -279,7 +279,7 @@ def render_public_terrain_sources():
         dem = st.selectbox("Dataset", list(sources.OPENTOPO_DEMS), format_func=sources.OPENTOPO_DEMS.get, key="as_rvt_dl_dem")
         if not sources.has_secret("opentopography_api_key"):
             key = st.text_input("OpenTopography API key", type="password", key="as_rvt_dl_key",
-                                help="Stored only in your user folder (~/.airch/config.json), never in the project.")
+                                help="Stored only in your user folder (~/.airchgis/config.json), never in the project.")
             if key and st.button("Save key", key="as_rvt_dl_save"):
                 sources.save_config_value("opentopography_api_key", key.strip())
                 st.rerun()
@@ -1023,7 +1023,7 @@ def render_research_export(data, params):
         acquisition = col2.text_input("Acquisition date (optional)", key="as_rvt_export3d_date")
         source = st.text_input("Data source and licence (optional)", key="as_rvt_export3d_source")
         if st.button("Build research package", key="as_rvt_export3d_go"):
-            from airch.terrain.export3d import export_terrain_3d, zip_package
+            from airchgis.terrain.export3d import export_terrain_3d, zip_package
 
             dtm, profile, crs = current_loaded_dtm_surface(data)
             stem = f"{current_place_label(params)}__3D__{datetime.now().strftime('%Y%m%d_%H%M%S')}"

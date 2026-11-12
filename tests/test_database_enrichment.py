@@ -2,8 +2,8 @@ import json
 import unittest
 from pathlib import Path
 
-from airch import source_registry
-from airch.database_enrichment import enrich_database, pvs_2006_reference_ids
+from airchgis import source_registry
+from airchgis.database_enrichment import enrich_database, pvs_2006_reference_ids
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +13,7 @@ class DatabaseEnrichmentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.database = json.loads(
-            (PROJECT_ROOT / "airch/data/cam_m_sites.json").read_text(encoding="utf-8")
+            (PROJECT_ROOT / "airchgis/data/cam_m_sites.json").read_text(encoding="utf-8")
         )
         cls.enriched = enrich_database(cls.database)
 

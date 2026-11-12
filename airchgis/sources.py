@@ -4,7 +4,7 @@ Each provider says what it covers, at what resolution, under which licence
 and how to get the data. Automatic download is implemented only where an
 open API works without credentials (Copernicus DEM GLO-30 on AWS), with the
 user's own key (OpenTopography) or with the existing Earth Engine setup
-(Sentinel-2, Landsat). For the others AIrch shows the link and the format to
+(Sentinel-2, Landsat). For the others AIrchGIS shows the link and the format to
 expect, and the user uploads what they download.
 """
 
@@ -16,9 +16,9 @@ import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from airch.paths import PROJECT_ROOT
+from airchgis.paths import PROJECT_ROOT
 
-CONFIG_PATH = Path(os.environ.get("AIRCH_CONFIG", Path.home() / ".airch" / "config.json"))
+CONFIG_PATH = Path(os.environ.get("AIRCHGIS_CONFIG", Path.home() / ".airchgis" / "config.json"))
 
 
 @dataclass

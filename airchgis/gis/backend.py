@@ -14,7 +14,7 @@ import subprocess
 from functools import lru_cache
 from pathlib import Path
 
-ENV_VAR = "AIRCH_QGIS_PROCESS"
+ENV_VAR = "AIRCHGIS_QGIS_PROCESS"
 
 _CANDIDATES = (
     "/Applications/QGIS*.app/Contents/MacOS/bin/qgis_process",
