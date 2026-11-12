@@ -14,6 +14,8 @@ from streamlit_folium import st_folium
 
 from airchgis import data_input as di
 from airchgis import sources
+from airchgis.enhance.multispectral import mask_scene
+from airchgis.enhance.screen import render_field_marks_enhance, render_scene_quality
 from airchgis.gis.guardrails import check_resolvability
 from airchgis.input_ui import render_file_input
 from airchgis.spectral import local_engine as le
@@ -132,10 +134,16 @@ def render_field_marks_upload(show_example_sites=None):
         except Exception as exc:
             st.error(f"Site list not readable: {exc}")
 
+    mask_clouds = render_scene_quality(lambda: _load_scenes([Path(i["path"]) for i in infos], preset_name, positions,
+                                                            scale, offset, dates))
+
     if st.button("Run analysis on my images", type="primary", disabled=verdict.verdict == "refuse", key="as_fm_run"):
         with st.spinner("Computing indices and anomalies..."):
             try:
                 scenes = _load_scenes([Path(i["path"]) for i in infos], preset_name, positions, scale, offset, dates)
+                if mask_clouds:
+                    for sc in scenes:
+                        mask_scene(sc)
                 st.session_state.as_fm_result = le.run_local_analysis(scenes, radius_m=radius, threshold=threshold, target=target)
                 st.session_state.as_fm_sites_loaded = sites
             except Exception as exc:
@@ -184,6 +192,8 @@ def render_local_result(result, sites, show_example_sites=None):
         st.markdown("**Check against your known sites** (AUC 0.5 = chance)")
         st.dataframe(pd.DataFrame(rows), hide_index=True)
         st.caption("A sanity check on a small, non-random sample, not a statistical validation.")
+
+    render_field_marks_enhance(result, sites)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / f"field_marks_{date.today():%Y%m%d}.tif"

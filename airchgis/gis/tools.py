@@ -496,6 +496,205 @@ register(Tool("check_raster_resolvability", "Check a feature width against the r
               _native_check_raster, input_keys=("input",), output_keys=()))
 
 
+# ---------------------------------------------------------------- cleaning, enhancement, best view
+def _site_pixels(sites, profile):
+    """(row, col) of the user's known sites on a raster grid."""
+    if not sites:
+        return None
+    from pyproj import Transformer
+
+    from airchgis.data_input import read_sites
+
+    pts = read_sites(sites)
+    crs = profile.get("crs")
+    tr = Transformer.from_crs("EPSG:4326", crs, always_xy=True) if crs else None
+    inv = ~profile["transform"]
+    out = []
+    for s in pts:
+        x, y = tr.transform(s.lon, s.lat) if tr else (s.lon, s.lat)
+        c, r = inv * (x, y)
+        out.append((r, c))
+    return out
+
+
+def _json_safe(obj):
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items() if not isinstance(v, np.ndarray)}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, (np.floating, np.integer)):
+        return obj.item()
+    return obj
+
+
+def _native_clean_terrain(input, output, steps, target_feature_width_m=None):
+    from airchgis.enhance import clean
+
+    arr, prof = _read(input)
+    out, reports, summary = clean.clean_dtm(arr, _res(prof), steps=steps)
+    return {"output": _write(output, out, prof), "steps": _json_safe(reports), "quality": _json_safe(summary),
+            "summary": clean.plain_summary(reports)}
+
+
+def _native_point_outliers(input, output, k_neighbors, std_ratio):
+    from airchgis.enhance import points
+
+    return points.remove_outliers(input, output, k=k_neighbors, std_ratio=std_ratio)
+
+
+def _read_bands(input, bands=None):
+    import rasterio
+
+    from airchgis.data_input import roles_from_descriptions
+
+    with rasterio.open(input) as src:
+        positions = bands or roles_from_descriptions(list(src.descriptions or [])) or (
+            {"blue": 1, "green": 2, "red": 3, "nir": 4} if src.count >= 4 else {"red": 1, "green": 2, "blue": 3} if src.count == 3 else {})
+        out = {}
+        for role, idx in positions.items():
+            if idx and 1 <= int(idx) <= src.count:
+                a = src.read(int(idx)).astype(np.float32)
+                if src.nodata is not None:
+                    a[a == src.nodata] = np.nan
+                out[role] = a
+        return out, src.profile.copy(), positions
+
+
+def _native_image_quality(input, bands=None, scl_band=None, output_mask=None):
+    import rasterio
+
+    from airchgis.enhance import multispectral
+
+    b, prof, positions = _read_bands(input, bands)
+    if not b:
+        raise ToolError("No bands could be assigned; pass 'bands', e.g. {\"red\": 3, \"nir\": 4}.")
+    scl = None
+    if scl_band:
+        with rasterio.open(input) as src:
+            scl = src.read(int(scl_band))
+    q = multispectral.date_quality(b, scl=scl)
+    result = {k: v for k, v in q.items() if k != "mask"}
+    result["band_positions"] = positions
+    if output_mask:
+        result["output_mask"] = _write(output_mask, q["mask"].astype(np.float32), prof)
+    return result
+
+
+def _native_enhance_contrast(input, output, method, tiles, clip_limit):
+    from airchgis.enhance import contrast
+
+    arr, prof = _read(input)
+    kw = {"tiles": tiles, "clip_limit": clip_limit} if method == "clahe" else {}
+    out, rep = contrast.enhance(arr, method, **kw)
+    return {"output": _write(output, out, prof), **rep}
+
+
+def _native_pansharpen(input, pan, output, method):
+    import rasterio
+
+    from airchgis.enhance import contrast
+
+    with rasterio.open(input) as src:
+        ms = src.read().astype(np.float32)
+    with rasterio.open(pan) as src:
+        p = src.read(1).astype(np.float32)
+        prof = src.profile.copy()
+    out, rep = contrast.pansharpen(ms, p, method)
+    prof.update(driver="GTiff", count=out.shape[0], dtype="float32", compress="deflate", nodata=None)
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    with rasterio.open(output, "w", **prof) as dst:
+        dst.write(out.astype(np.float32))
+    return {"output": str(output), **rep}
+
+
+def _native_best_view(input, output_dir, target_feature_width_m, sites=None, quick=False):
+    from airchgis.enhance import bestview
+
+    arr, prof = _read(input)
+    res = _res(prof)
+    r = bestview.rank(arr, res, target_feature_width_m, site_pixels=_site_pixels(sites, prof), quick=quick, keep_arrays=False)
+    if not r["ranking"]:
+        raise ToolError("No visualization could be computed.")
+    top = r["ranking"][0]["name"]
+    best = bestview.compute_named(arr, res, target_feature_width_m, top)
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    safe = "".join(ch if ch.isalnum() else "_" for ch in top).strip("_")
+    path = _write(out_dir / f"best_view__{safe}.tif", best, prof)
+    ranking = _json_safe(r["ranking"])
+    (out_dir / "best_view_ranking.json").write_text(json.dumps({"ranking": ranking, "explanation": r["explanation"],
+                                                                 "scored_on": r["scored_on"]}, indent=2), encoding="utf-8")
+    return {"output": path, "best": top, "ranking": ranking, "explanation": r["explanation"], "scored_on": r["scored_on"],
+            "ranking_json": str(out_dir / "best_view_ranking.json")}
+
+
+def _native_fused_view(input, output, target_feature_width_m, method, n_layers, sites=None):
+    from airchgis.enhance import bestview, fuse
+    from airchgis.enhance import metrics as em
+
+    arr, prof = _read(input)
+    res = _res(prof)
+    r = bestview.rank(arr, res, target_feature_width_m)
+    names = [x["name"] for x in r["ranking"][:n_layers]]
+    win = r["window"]
+    # weights are optimized on the scoring window, then applied to the whole raster
+    _, rep = fuse.fuse({n: r["arrays"][n] for n in names}, res, target_feature_width_m, method=method,
+                       flat=em.flat_mask(arr[win], res))
+    layers = {n: bestview.compute_named(arr, res, target_feature_width_m, n) for n in names}
+    fused = fuse.apply(layers, rep)
+    rep["scored_on"] = r["scored_on"]
+    px = _site_pixels(sites, prof)
+    if px:
+        rep["auc"] = em.site_auc(fused, px)
+    return {"output": _write(output, fused, prof), **_json_safe(rep)}
+
+
+_STEPS = {"type": "array", "items": {"type": "string", "enum": ["destripe", "despike", "fill_voids", "denoise"]},
+          "default": ["destripe", "despike", "fill_voids", "denoise"],
+          "description": "Cleaning steps, applied in this order: destripe, despike, fill_voids, denoise."}
+_SITES = {"type": "string", "description": "Optional list of known sites (CSV, GeoJSON, GPKG, SHP, KML) to report the AUC of each view."}
+_WIDTH_REQ = {"type": "number", "minimum": 0.01, "description": "Width in metres of the features sought; sets the scale of the visibility score and is checked against the pixel size first."}
+
+register(Tool("clean_terrain", "Clean a DTM/DSM before visualization: remove periodic banding, isolated spikes and pits, fill small voids, reduce noise while keeping edges. Reports a measured before/after value for each step.",
+              _schema(["input", "output"], input=_IN, output=_OUT, steps=_STEPS, target_feature_width_m=_TARGET),
+              _native_clean_terrain, None, ("input",), tags=("lidar", "enhance")))
+register(Tool("remove_point_outliers", "Remove isolated points (birds, multipath, noise) from a LAS/LAZ point cloud before making a DTM.",
+              _schema(["input", "output"], input={"type": "string", "description": "Path of the .las or .laz file."},
+                      output={"type": "string", "description": "Path of the cleaned .las or .laz file."},
+                      k_neighbors={"type": "integer", "minimum": 2, "maximum": 64, "default": 8, "description": "Neighbours used for each point."},
+                      std_ratio={"type": "number", "minimum": 0.5, "maximum": 10, "default": 2.5, "description": "Points farther than mean + std_ratio x std are removed."}),
+              _native_point_outliers, None, ("input",), tags=("lidar", "enhance")))
+register(Tool("image_quality", "Quality of one multispectral image: clouds, shadows, haze, band problems (saturation, striping, no-data edges) and a 0-1 score to compare dates.",
+              _schema(["input"], input={"type": "string", "description": "Path of a multiband image."},
+                      bands={"type": "object", "description": "Band positions by role, e.g. {\"blue\": 2, \"green\": 3, \"red\": 4, \"nir\": 8}; read from band names when omitted."},
+                      scl_band={"type": "integer", "minimum": 1, "description": "Band holding the Sentinel-2 scene classification (SCL), if present."},
+                      output_mask={"type": "string", "description": "Optional GeoTIFF for the mask of unusable pixels."}),
+              _native_image_quality, None, ("input",), output_keys=("output_mask",), tags=("multispectral", "enhance")))
+register(Tool("enhance_contrast", "Display enhancement of a visualization or image: adaptive local contrast (CLAHE) or multi-scale detail. For viewing only: values are no longer physical units.",
+              _schema(["input", "output"], input=_IN, output=_OUT,
+                      method={"type": "string", "enum": ["clahe", "multiscale"], "default": "clahe", "description": "Enhancement method."},
+                      tiles={"type": "integer", "minimum": 1, "maximum": 64, "default": 8, "description": "CLAHE tiles along the longer side."},
+                      clip_limit={"type": "number", "minimum": 0.001, "maximum": 1, "default": 0.01, "description": "CLAHE clip limit (share of a tile's pixels per histogram bin)."}),
+              _native_enhance_contrast, None, ("input",), tags=("enhance",)))
+register(Tool("pansharpen", "Sharpen multispectral bands with a real panchromatic band of finer resolution (Brovey or high-pass fusion). No invented detail: only what the pan band recorded.",
+              _schema(["input", "pan", "output"], input={"type": "string", "description": "Multiband image."},
+                      pan={"type": "string", "description": "Co-registered panchromatic band at finer resolution."}, output=_OUT,
+                      method={"type": "string", "enum": ["brovey", "hpf"], "default": "brovey", "description": "Fusion method."}),
+              _native_pansharpen, None, ("input", "pan"), tags=("multispectral", "enhance")))
+register(Tool("best_view", "Compute many relief visualizations (hillshades, slope, sky-view factor, openness, local relief model, multi-scale relief model at radii matched to the target) and rank them by how clearly they show features of the given width; explains the choice in plain language.",
+              _schema(["input", "output_dir", "target_feature_width_m"], input=_IN,
+                      output_dir={"type": "string", "description": "Folder for the best view GeoTIFF and the ranking JSON."},
+                      target_feature_width_m=_WIDTH_REQ, sites=_SITES,
+                      quick={"type": "boolean", "default": False, "description": "Fewer candidates, for a fast first look."}),
+              _native_best_view, None, ("input",), tags=("lidar", "enhance")))
+register(Tool("fused_view", "Blend the best visualizations into one image whose weights maximize the visibility of features of the given width; exported as GeoTIFF.",
+              _schema(["input", "output", "target_feature_width_m"], input=_IN, output=_OUT, target_feature_width_m=_WIDTH_REQ,
+                      method={"type": "string", "enum": ["optimized", "pca"], "default": "optimized", "description": "Optimized weights or first principal component."},
+                      n_layers={"type": "integer", "minimum": 2, "maximum": 8, "default": 4, "description": "Number of best layers to blend."},
+                      sites=_SITES),
+              _native_fused_view, None, ("input",), tags=("lidar", "enhance")))
+
+
 # ---------------------------------------------------------------- execution
 def _guard(tool, params):
     width = params.get("target_feature_width_m")

@@ -544,15 +544,35 @@ def render_rvt_viewer(core, data, params):
 
     render_view_toolbar(core, data, rgb, params)
 
-    action_tabs = st.tabs(["Export", "Method grid", "3D Cloud", "Report"])
+    action_tabs = st.tabs(["Enhance & best view", "Export", "Method grid", "3D Cloud", "Report"])
     with action_tabs[0]:
-        render_exports(core, data, params, rgb, raw_out)
+        render_enhance(data, params)
     with action_tabs[1]:
-        render_method_grid(core, data, params)
+        render_exports(core, data, params, rgb, raw_out)
     with action_tabs[2]:
-        render_3d_cloud(core, data, params)
+        render_method_grid(core, data, params)
     with action_tabs[3]:
+        render_3d_cloud(core, data, params)
+    with action_tabs[4]:
         render_report(core, data, params, rgb)
+
+
+_DATASET_ATTR = {"DTM": "dtm", "DSM_First": "dsmf", "DSM_Last": "dsml", "nDSM": "ndsm", "First-Last": "diff"}
+
+
+def render_enhance(data, params):
+    from airchgis.enhance.screen import render_terrain_enhance
+
+    dataset = params["dataset"] if params["dataset"] in _DATASET_ATTR else "DTM"
+    dem = get_dataset_array(data, dataset)
+
+    def apply(cleaned):
+        setattr(data, _DATASET_ATTR[dataset], cleaned.astype(np.float32))
+        st.session_state.as_rvt_last_rgb = None
+        st.session_state.as_rvt_last_rvt_rgb = None
+        st.session_state.as_rvt_last_out = None
+
+    render_terrain_enhance(dem, float(data.res), data.profile, data.crs, label=dataset, on_apply=apply)
 
 
 def render_view_toolbar(core, data, rgb, params):
