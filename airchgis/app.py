@@ -17,12 +17,7 @@ from .rvt_web import render_rvt_web
 LOGGER = logging.getLogger(__name__)
 
 
-MASE_URL = "https://sim.mase.gov.it/portalediaccesso/mappe/#/viewer/new/"
-GOOGLE_EARTH_URL = (
-    "https://earth.google.com/web/@42.06329556,13.45871116,984.71472258a,"
-    "13332.72240541d,35y,0h,0t,0r/data=CgRCAggBMikKJwolCiExdXloZDBqRERpNUh"
-    "zdWs2c3V0SkxHY2VWQ1VFbkwtNFggAToDCgEwQgIIAEoNCP___________wEQAA"
-)
+GOOGLE_EARTH_URL = "https://earth.google.com/web/"
 PRIMARY_TOOLS = ("RVT", "Crop Marks", "Candidates")
 
 
@@ -70,7 +65,6 @@ def render_navbar():
             f"""
             <div class="as-utility">
                 <span class="as-utility-label">Resources</span>
-                <a class="as-utility-link" href="{MASE_URL}" target="_blank" rel="noopener"><span class="as-utility-icon">🛰️</span>MASE</a>
                 <a class="as-utility-link" href="{GOOGLE_EARTH_URL}" target="_blank" rel="noopener"><span class="as-utility-icon">🌍</span>Google Earth</a>
             </div>
             """,

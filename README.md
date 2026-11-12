@@ -67,7 +67,7 @@ python scripts/sync_archaeological_sources.py --maps
 
 The manifest `airchgis/data/source_manifest.json` stores institutional URLs, licences, coverage, sizes and checksums.
 
-MASE and Google Earth are available as external resources in the top bar.
+Google Earth is available as an external resource in the top bar.
 
 ## Bring your own data (upload first)
 

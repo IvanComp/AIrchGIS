@@ -73,7 +73,6 @@ REGIONAL_DTM_RELATIVE_PATH = Path("data") / "regional_dtm" / "HRDTM5m_Umbria_Mar
 GENERATED_DTM_OUTPUT_RELATIVE = Path("generated_dtm") / "DTM"
 REGIONAL_DTM_PREVIEW_ZOOMS = (10, 9, 8, 7, 6)
 REGIONAL_DTM_MAX_RECOMMENDED_CELLS = 80_000_000
-MASE_URL = "https://sim.mase.gov.it/portalediaccesso/mappe/#/viewer/new/"
 GE_URL = "https://earth.google.com/web/@42.06329556,13.44458279,859.60342866a,1982377.06794083d,35y,0h,0t,0r/data=CgRCAggBOgMKATBCAggASg0I____________ARAA"
 ARCGIS_CURRENT_TILE_TEMPLATE = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
 WAYBACK_CAPABILITIES_URL = "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/WMTS/1.0.0/WMTSCapabilities.xml"
@@ -1673,18 +1672,6 @@ class App(BaseTk):
             self.status.set(f"Initial loading error: {e}")
             self._show_blank()
 
-    def open_mase(self):
-        url = MASE_URL
-        try:
-            subprocess.Popen(["open", "-a", "Google Chrome", url])
-            return
-        except Exception:
-            pass
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
-
     def open_ge(self):
         url = GE_URL
         try:
@@ -1836,12 +1823,11 @@ class App(BaseTk):
         top.columnconfigure(0, weight=1)
         tools_row = ttk.Frame(top)
         tools_row.grid(row=0, column=0, sticky="ew")
-        for i in range(4):
+        for i in range(3):
             tools_row.columnconfigure(i, weight=1)
-        ttk.Button(tools_row, text="🛰️ MASE", command=self.open_mase).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(tools_row, text="🌍 GE", command=self.open_ge).grid(row=0, column=1, sticky="ew", padx=(4, 4))
-        ttk.Button(tools_row, text="🏛️ Preset Arch", command=self.apply_archaeology_preset).grid(row=0, column=2, sticky="ew", padx=(4, 4))
-        ttk.Button(tools_row, text="⬛ Preset Rect/Ditches", command=self.apply_rectangles_preset).grid(row=0, column=3, sticky="ew", padx=(4, 0))
+        ttk.Button(tools_row, text="🌍 GE", command=self.open_ge).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(tools_row, text="🏛️ Preset Arch", command=self.apply_archaeology_preset).grid(row=0, column=1, sticky="ew", padx=(4, 4))
+        ttk.Button(tools_row, text="⬛ Preset Rect/Ditches", command=self.apply_rectangles_preset).grid(row=0, column=2, sticky="ew", padx=(4, 0))
         quick_box = ttk.LabelFrame(top, text="Quick session", padding=6)
         quick_box.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         quick_box.columnconfigure(0, weight=1)
