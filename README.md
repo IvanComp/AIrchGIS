@@ -8,7 +8,7 @@ AIrch (AI + archaeology) is a single web app for preliminary landscape and archa
 - **GIS tool layer** (`airch/gis/`): QGIS Processing algorithms and ready-made archaeological workflows exposed as tools an AI assistant can call, with a resolvability guardrail and a provenance log that replays as a script;
 - **3D export for research** (`airch/terrain/export3d.py`): georeferenced point cloud (LAZ/LAS, PLY), terrain mesh (glTF) and metadata sidecar, from the "Export 3D for research" panel of 3D Cloud.
 
-The catalogue of known sites (CAM-M / Potenza Valley Survey) is no longer a separate screen. It stays in `airch/data/` as the ground truth used to draw known sites on the Crop Marks map and to run the built-in check against known sites. Scores are investigation priorities, not archaeological probabilities.
+The catalogue of known sites (CAM-M / Potenza Valley Survey) is kept in `airch/data/` only as an example dataset: users load their own site lists. Scores are investigation priorities, not archaeological probabilities.
 
 ## Quick start
 
@@ -68,6 +68,16 @@ python scripts/sync_archaeological_sources.py --maps
 The manifest `airch/data/source_manifest.json` stores institutional URLs, licences, coverage, sizes and checksums.
 
 MASE and Google Earth are available as external resources in the top bar.
+
+## Bring your own data (upload first)
+
+Every screen starts from the user's own files, from any country, sensor and coordinate system; public archives come second.
+
+- **RVT (LiDAR)**: DTM/DSM as GeoTIFF, ASCII grid or zip, or a LAS/LAZ point cloud (gridded to a DTM from its ground points). Files can be uploaded (up to 4 GB, `.streamlit/config.toml`) or read in place from a local path, with no copy. "Download from a public source" lists national LiDAR portals and downloads Copernicus DEM GLO-30 automatically (no account) or OpenTopography DEMs with the user's API key (stored only in `~/.airch/config.json`). "Example data" is the Abruzzo sample.
+- **Crop Marks**: multiband GeoTIFFs (one per date) or one file per band (Sentinel-2 `..._B04.jp2`, Landsat `..._SR_B4.TIF`), with presets for Sentinel-2, Landsat, PlanetScope, drone multispectral and RGB orthophotos, and a band editor. Dates come from file names and can be edited. `airch/spectral/local_engine.py` runs locally (no Earth Engine): indices, local contrast, crop phase and date ranking, per-date anomalies, linear marks, persistence and, with three or more dates, a field-boundary mask. The Earth Engine engine (Sentinel-2, Landsat, rainfall and land-cover weighting) stays under "Download from a public source".
+- **Known sites**: the user's own list (CSV with lon/lat or x/y, GeoJSON, GeoPackage, zipped Shapefile, KML) is checked against every layer (AUC vs random controls). The CAM-M/PVS catalogue is only an example dataset.
+- The resolvability check uses the pixel size read from the user's file.
+- `airch/sources.py` lists the public sources (coverage, resolution, licence, access); `airch/data_input.py` holds the loaders, also registered as tools (`load_raster`, `load_point_cloud`, `load_sites`, `check_raster_resolvability`).
 
 ## GIS tool layer
 
