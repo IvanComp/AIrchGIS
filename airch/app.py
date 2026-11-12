@@ -132,11 +132,33 @@ def render_cropmarks(standalone=False):
         "Multispectral screening",
         eyebrow="Crop marks e soil marks",
         hint=(
-            "Draw the area, choose the sensor and the type of mark. The engine ranks every acquisition by "
-            "local contrast, crop state and the dryness of the preceding days, then combines only the dates "
-            "that can actually show something."
+            "Load your own images, or use a public archive. The engine ranks every acquisition by "
+            "local contrast and crop state, then combines only the dates that can actually show something."
         ),
     )
+
+    image_source = st.radio(
+        "Images",
+        ["upload", "archive"],
+        format_func={"upload": "Upload your files", "archive": "Download from a public source"}.get,
+        horizontal=True,
+        key="as_crop_image_source",
+    )
+    if image_source == "upload":
+        from .spectral.screen import render_field_marks_upload
+
+        render_field_marks_upload()
+        render_crop_candidate_archive()
+        return
+
+    from .spectral.screen import render_provider_table
+
+    with st.expander("Public image sources: what they cover and how to get them"):
+        st.caption(
+            "Sentinel-2 and Landsat run below through Google Earth Engine, with rainfall and land-cover weighting that "
+            "exists only there. For the other sources, download the images and load them in the upload tab."
+        )
+        render_provider_table("multispectral")
 
     source_record = st.session_state.get("as_crop_source_record")
     if source_record:
