@@ -30,8 +30,6 @@ AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-dat
 - [Quick start](#quick-start)
 - [How the field-marks engine works](#how-the-field-marks-engine-works)
 - [Project structure](#project-structure)
-- [Tests](#tests)
-- [Citation](#citation)
 
 # What it does
 
@@ -40,7 +38,6 @@ AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-dat
 | **Terrain (LiDAR)** | Earthworks, mounds, ditches, terraces under vegetation | RVT relief visualizations (hillshade, sky-view factor, openness, local relief model, MSRM, e3MSTP…), side-by-side comparison, method grid, reports, interactive 3D point cloud |
 | **Field marks** | Crop and soil marks of buried features | Date ranking by local contrast and crop phase, per-date anomaly maps, linear marks, persistence across dates, field-boundary mask, check against your known sites |
 | **Candidates** | Keeping track of what you found | Verification dossiers that link each anomaly to its evidence, area and status; GeoJSON export |
-| **AI assistant** *(in progress)* | Asking in plain language | Tool calling over the GIS layer below: the assistant runs tools, never invents results or coordinates |
 
 - **Resolution check**: warns when a target is smaller than the data can resolve.
 
@@ -146,15 +143,3 @@ Anomalies are computed date by date and aggregated afterwards (a median composit
 ```
 
 Method notes: [`docs/PHASE0_RESOLVABILITY.md`](docs/PHASE0_RESOLVABILITY.md), [`docs/PHASE_A.md`](docs/PHASE_A.md), [`docs/AIRCHGIS_STRUCTURE.md`](docs/AIRCHGIS_STRUCTURE.md).
-
-# Tests
-
-```bash
-python -m unittest discover -s tests
-```
-
-95 tests, no network needed: loaders, band mapping, local engine (synthetic buried wall), guardrails, tool schemas, provenance replay, 3D export round trip, scene ranking, geocoding and benchmark metrics.
-
-# Citation
-
-A paper describing AIrchGIS is in preparation for *Digital Applications in Archaeology and Cultural Heritage*. Citation details will be added here after publication.
