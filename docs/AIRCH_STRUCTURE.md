@@ -63,6 +63,10 @@ Neural-Detecting/
 - Configurable backend: the Claude API, or a local model through Ollama for users who do not want data to leave their machine.
 - Anonymous logging, so the user study has data on what archaeologists ask.
 
+**Done: the tool layer under the assistant** (`airch/gis/`). The assistant calls tools instead of computing results: a registry with JSON schemas for Claude API / Ollama tool calling, a QGIS Processing backend (`qgis_process`) with rvt-py/rasterio fallback, ready-made workflows (`lidar_micro_relief`, `crop_mark_screening`), a resolvability guardrail based on Phase 0, and a provenance log exported as Python and `qgis_process` replay scripts. Still to do: the chat panel itself and the model loop that hands `tool_specs()` to the LLM.
+
+**Done: 3D export for research** (`airch/terrain/export3d.py`, panel "Export 3D for research" in 3D Cloud): LAZ/LAS, PLY, glTF and a JSON sidecar, zipped for Zenodo. The existing 3D viewer is unchanged.
+
 ## Remaining step
 
 Physically moving `RVT/` and `Crop marks Tool/` into `airch/terrain` and `airch/spectral`. This is the most delicate step, because `RVT/core.py` (4,400 lines) uses paths relative to the data in `RVT/image`, `RVT/data` and `RVT/generated_dtm`. It should be done together with moving the data into `workspace/`, and tested by hand on the app.

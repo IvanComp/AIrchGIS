@@ -4,7 +4,9 @@ AIrch (AI + archaeology) is a single web app for preliminary landscape and archa
 
 - **RVT (LiDAR)**: DTM/DSM exploration with RVT relief visualisations, filters, exports, method grid, reports and the interactive **3D Cloud** viewer;
 - **Crop Marks**: multispectral screening for crop marks and soil marks on Sentinel-2 (from 2016) and Landsat (from 1984);
-- **Candidates**: a local archive of verification dossiers that link each anomaly to its area, its date ranking and its verification status.
+- **Candidates**: a local archive of verification dossiers that link each anomaly to its area, its date ranking and its verification status;
+- **GIS tool layer** (`airch/gis/`): QGIS Processing algorithms and ready-made archaeological workflows exposed as tools an AI assistant can call, with a resolvability guardrail and a provenance log that replays as a script;
+- **3D export for research** (`airch/terrain/export3d.py`): georeferenced point cloud (LAZ/LAS, PLY), terrain mesh (glTF) and metadata sidecar, from the "Export 3D for research" panel of 3D Cloud.
 
 The catalogue of known sites (CAM-M / Potenza Valley Survey) is no longer a separate screen. It stays in `airch/data/` as the ground truth used to draw known sites on the Crop Marks map and to run the built-in check against known sites. Scores are investigation priorities, not archaeological probabilities.
 
@@ -67,6 +69,27 @@ The manifest `airch/data/source_manifest.json` stores institutional URLs, licenc
 
 MASE and Google Earth are available as external resources in the top bar.
 
+## GIS tool layer
+
+The assistant does not compute results itself: it calls tools.
+
+- `airch/gis/tools.py` is the registry. Each tool has a plain-language description and a JSON schema, so `tool_specs()` can be passed as tool definitions to the Claude API (`tool_specs("openai")` gives the function format of Ollama and OpenAI-compatible servers). Tools: `raster_info`, `hillshade`, `slope`, `sky_view_factor`, `openness`, `local_relief_model`, `clip_raster_to_aoi`, `reproject`, `zonal_stats`, `check_resolvability`, `export_3d`, plus `qgis_list_algorithms` and `qgis_run_algorithm` for any QGIS Processing algorithm.
+- `airch/gis/backend.py` finds `qgis_process` (PATH, `/Applications/QGIS*.app`, or `AIRCH_QGIS_PROCESS`). With QGIS installed, hillshade, slope, clip, reproject and zonal statistics run in QGIS Processing; without it every tool falls back to rvt-py/rasterio, and each result says which backend ran.
+- `airch/gis/guardrails.py` checks, before any detection, whether a feature of a given width can be resolved by the sensor (Phase 0 model: PSF blur, pixel averaging, measured NDVI noise). On Sentinel-2 a 5 m street is refused (SNR ~1.3), 10 m gets a warning, 20 m passes.
+- `airch/gis/provenance.py` records every run (parameters, input SHA-256, outputs, backend, versions, exact `qgis_process` command) and saves it as JSON, a Python replay script and a shell script of QGIS commands.
+- `airch/gis/workflows.py`: `lidar_micro_relief` (clip, local relief model, sky-view factor, positive and negative openness, hillshade) and `crop_mark_screening` (resolvability check, then the settings for the Crop Marks engine).
+
+```python
+from airch.gis import ProvenanceLog, run_tool
+log = ProvenanceLog("My survey")
+run_tool("local_relief_model", log=log, input="dtm.tif", output="lrm.tif", radius_m=20, target_feature_width_m=2)
+log.save_scripts("outputs/")
+```
+
+ArcGIS (`arcpy`) is not supported: it needs a proprietary licence. A backend for it could be added next to `backend.py`.
+
+LAZ compression needs `lazrs` (`pip install lazrs`); without it the point cloud is written as LAS.
+
 ## Structure
 
 ```text
@@ -76,7 +99,9 @@ Neural-Detecting/   (AIrch)
   airch/
     app.py                    shell and navigation
     ui.py                     theme, animations and logo
-    rvt_web.py                RVT (LiDAR) screen, including 3D Cloud
+    rvt_web.py                RVT (LiDAR) screen, including 3D Cloud and 3D research export
+    gis/                      tool registry, QGIS backend, guardrails, provenance, workflows
+    terrain/export3d.py       LAZ/LAS, PLY, glTF export with metadata sidecar
     cropmarks_engine.py       collections, masks and anomaly maps
     scene_ranking.py          date ranking, no Earth Engine dependency
     candidate_store.py        verification dossiers
