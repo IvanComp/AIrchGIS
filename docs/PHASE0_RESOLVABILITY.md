@@ -57,7 +57,7 @@ Bringing the grid to SNR 3 on a single date would need **ΔNDVI 0.28** on the st
 
 Panel C of `fase0_potentia.png` shows the true grid, with true geometry and true noise, and it is indistinguishable from noise by eye.
 
-*Honest nuance:* stacking N independent dates raises SNR with √N, so 10 good dates would bring it to ~5. It is therefore not an absolute sampling impossibility, but it requires the crop mark to be present and strong on all those dates, and point 4 explains why at Potentia it cannot be.
+*Nuance:* stacking N independent dates raises SNR with √N, so 10 good dates would bring it to ~5. It is therefore not an absolute sampling impossibility, but it requires the crop mark to be present and strong on all those dates, and point 4 explains why at Potentia it cannot be.
 
 ## 4. The limit that settles it: nothing is cultivated inside the walls
 

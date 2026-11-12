@@ -25,7 +25,6 @@ AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-dat
 
 - [What it does](#what-it-does)
 - [Bring your own data](#bring-your-own-data)
-- [Honest limits](#honest-limits)
 - [AI and GIS tools](#ai-and-gis-tools)
 - [3D export for research](#3d-export-for-research)
 - [Quick start](#quick-start)
@@ -42,6 +41,8 @@ AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-dat
 | **Field marks** | Crop and soil marks of buried features | Date ranking by local contrast and crop phase, per-date anomaly maps, linear marks, persistence across dates, field-boundary mask, check against your known sites |
 | **Candidates** | Keeping track of what you found | Verification dossiers that link each anomaly to its evidence, area and status; GeoJSON export |
 | **AI assistant** *(in progress)* | Asking in plain language | Tool calling over the GIS layer below: the assistant runs tools, never invents results or coordinates |
+
+- **Resolution check**: warns when a target is smaller than the data can resolve.
 
 Scores are investigation priorities, not archaeological probabilities.
 
@@ -62,10 +63,6 @@ Every screen opens on **Upload your files**; you can also point to files already
 | Sentinel-2, Landsat (Google Earth Engine) | Global, from 2016 / 1984 | Processed in Earth Engine, with rainfall and land-cover weighting |
 | Copernicus Data Space, Planetary Computer, USGS EarthExplorer | Global | Link and expected format; download, then upload |
 | National LiDAR: England, Netherlands, Denmark, France, Spain, Slovenia, Italy, USA… | National, 0.25–2 m | Link and expected format |
-
-# Honest limits
-
-Before any detection, a **resolvability check** compares the width of the feature you are looking for with the pixel size read from your file (sensor blur, pixel averaging and measured field noise). A 5 m Roman street is refused on 10 m Sentinel-2 (SNR ≈ 1.3) and accepted on 3 m imagery; at 10 m, features of about 20 m and more are reliable. When the data cannot answer, AIrchGIS says so and points to LiDAR or very-high-resolution imagery.
 
 # AI and GIS tools
 
