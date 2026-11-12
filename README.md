@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/status-paper%20in%20preparation%20(DAACH)-orange" alt="Paper in preparation">
 </p>
 
-AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-date screening for crop and soil marks into one browser app, built for archaeologists with little IT background. You start from your own files (any country, sensor or coordinate system); public archives are an optional download. AI assists rather than decides: it calls GIS tools, records every step as a re-runnable script, and says plainly when the data cannot show what you are looking for.
+AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-date screening for crop and soil marks into one browser app, built for archaeologists with little IT background. You start from your own files (any country, sensor or coordinate system); public archives are an optional download. AI helps you see your data better: it cleans terrain and images, ranks relief views by how clearly they show features of your size, and blends the best ones. Every step shows what it changed, keeps your original and is saved as a re-runnable script. A resolution check tells you when the data cannot show what you are looking for.
 
 <p align="center">
   <img src="docs/assets/screenshot-terrain.jpg" alt="AIrchGIS terrain screen: LiDAR hillshade over satellite imagery" width="900">
@@ -24,7 +24,8 @@ AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-dat
 
 - [What it does](#what-it-does)
 - [Bring your own data](#bring-your-own-data)
-- [AI and GIS tools](#ai-and-gis-tools)
+- [Enhance & best view](#enhance--best-view)
+- [Scripts and provenance](#scripts-and-provenance)
 - [3D export for research](#3d-export-for-research)
 - [Quick start](#quick-start)
 - [How the field-marks engine works](#how-the-field-marks-engine-works)
@@ -34,8 +35,8 @@ AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-dat
 
 | Screen | For | What you get |
 |---|---|---|
-| **Terrain (LiDAR)** | Earthworks, mounds, ditches, terraces under vegetation | RVT relief visualizations (hillshade, sky-view factor, openness, local relief model, MSRM, e3MSTP…), side-by-side comparison, method grid, reports, interactive 3D point cloud |
-| **Field marks** | Crop and soil marks of buried features | Date ranking by local contrast and crop phase, per-date anomaly maps, linear marks, persistence across dates, field-boundary mask, check against your known sites |
+| **Terrain (LiDAR)** | Earthworks, mounds, ditches, terraces under vegetation | Relief visualizations (hillshade, sky-view factor, openness, local relief model, MSRM…), **Enhance & best view** (cleaning, automatic best view, fused view), interactive 3D view, GeoTIFF/PNG and 3D export |
+| **Field marks** | Crop and soil marks of buried features | Image quality per date (clouds, shadows, haze, band problems) with masking, date ranking by local contrast and crop phase, per-date anomaly maps, persistence across dates, field-boundary mask, layers ranked by visibility, check against your known sites |
 | **Candidates** | Keeping track of what you found | Verification dossiers that link each anomaly to its evidence, area and status; GeoJSON export |
 
 - **Resolution check**: warns when a target is smaller than the data can resolve.
@@ -60,27 +61,34 @@ Every screen opens on **Upload your files**; you can also point to files already
 | Copernicus Data Space, Planetary Computer, USGS EarthExplorer | Global | Link and expected format; download, then upload |
 | National LiDAR: England, Netherlands, Denmark, France, Spain, Slovenia, Italy, USA… | National, 0.25–2 m | Link and expected format |
 
-# AI and GIS tools
+# Enhance & best view
 
-`airchgis/gis/` exposes GIS operations as tools with plain-language descriptions and JSON schemas, ready for LLM tool calling (Claude API, or a local model through Ollama).
+On the Terrain screen, type the width of the features you are looking for and press **Improve and find the best view**. AIrchGIS then:
 
-- **Backends**: QGIS Processing through `qgis_process` when QGIS is installed (found automatically, or via `AIRCHGIS_QGIS_PROCESS`); otherwise rvt-py/rasterio. Each result says which backend ran. Any QGIS algorithm can be listed and run.
-- **Workflows**: *LiDAR micro-relief* (clip, local relief model, sky-view factor, positive and negative openness, hillshade) and *crop-mark screening* (resolvability check first).
-- **Provenance**: every run is logged with parameters, input SHA-256, software versions and the exact QGIS command, and saved as JSON, a Python replay script and a shell script.
+1. **Cleans the terrain**: removes periodic banding (flight lines), isolated spikes and pits, fills small holes inside the survey, and reduces noise while keeping edges. A table shows each measure before and after; the original is not changed.
+2. **Ranks the relief views**: computes up to 19 views (hillshades, slope, sky-view factor, openness, local relief model and multi-scale relief model, with radii matched to your width) and ranks them by a visibility score: how much features of that width stand out from the noise and from the broad landscape. With a list of known sites it also shows the AUC of each view.
+3. **Shows the best one** with a one-line explanation, ready to download as GeoTIFF.
+
+Under **Advanced** you can run single steps, see all views, build a **fused view** (a blend of the four best views; if it is not clearer than the best single view, AIrchGIS says so and keeps the best view), and remove isolated points from a LAS/LAZ point cloud. Display contrast (adaptive histogram equalization) is labelled as display only; there is no super-resolution.
+
+On the Field marks screen, **Image quality** scores each date and can mask clouds, shadows and no data before the analysis, and **Enhance & best view** ranks the anomaly layers by the same visibility score.
+
+# Scripts and provenance
+
+Every step runs through `airchgis/gis/tools.py` and is logged with its parameters, input SHA-256, software versions and backend. The log downloads as a Python script that repeats the analysis. QGIS Processing is used through `qgis_process` when installed; otherwise rvt-py and rasterio.
 
 ```python
 from airchgis.gis import ProvenanceLog, run_tool
 
 log = ProvenanceLog("My survey")
-run_tool("local_relief_model", log=log, input="dtm.tif", output="lrm.tif", radius_m=20, target_feature_width_m=2)
+run_tool("clean_terrain", log=log, input="dtm.tif", output="dtm_clean.tif")
+run_tool("best_view", log=log, input="dtm_clean.tif", output_dir="views/", target_feature_width_m=5)
 log.save_scripts("outputs/")
 ```
 
-ArcGIS (`arcpy`) is not supported because it needs a proprietary licence; a backend could be added next to `backend.py`.
-
 # 3D export for research
 
-From the 3D Cloud tab, **Export 3D for research** writes a georeferenced point cloud (LAZ/LAS and PLY), a terrain mesh (glTF `.glb`) and a JSON sidecar (source, CRS, bounds, resolution, date, relief visualization, vertical exaggeration), zipped for archiving on Zenodo. The files open in QGIS 3D, CloudCompare and Blender. LAZ needs `pip install lazrs`; without it the cloud is written as LAS.
+From the 3D view tab, **Export 3D for research** writes a georeferenced point cloud (LAZ/LAS and PLY), a terrain mesh (glTF `.glb`) and a JSON sidecar (source, CRS, bounds, resolution, date, relief visualization, vertical exaggeration), zipped for archiving on Zenodo. The files open in QGIS 3D, CloudCompare and Blender. LAZ needs `pip install lazrs`; without it the cloud is written as LAS.
 
 # Quick start
 
@@ -129,6 +137,7 @@ Anomalies are computed date by date and aggregated afterwards (a median composit
 │   ├── sources.py             # public data sources and downloads
 │   ├── spectral/              # local field-marks engine and screen
 │   ├── cropmarks_engine.py    # Earth Engine engine (Sentinel-2, Landsat)
+│   ├── enhance/               # cleaning, display enhancement, best view, fused view
 │   ├── gis/                   # tool registry, QGIS backend, guardrails, provenance, workflows
 │   ├── terrain/export3d.py    # LAZ/LAS, PLY, glTF export with metadata
 │   ├── candidate_store.py     # verification dossiers

@@ -17,7 +17,6 @@ from .rvt_web import render_rvt_web
 LOGGER = logging.getLogger(__name__)
 
 
-GOOGLE_EARTH_URL = "https://earth.google.com/web/"
 PRIMARY_TOOLS = ("RVT", "Crop Marks", "Candidates")
 
 
@@ -51,7 +50,7 @@ def init_state():
 
 def render_navbar():
     ui.inject_styles()
-    brand_col, tool_col, utility_col = st.columns(
+    brand_col, tool_col, _ = st.columns(
         [0.22, 0.5, 0.28],
         gap="small",
         vertical_alignment="center",
@@ -60,16 +59,6 @@ def render_navbar():
         st.markdown(ui.brand_markup(), unsafe_allow_html=True)
     with tool_col:
         tool = render_tool_switch()
-    with utility_col:
-        st.markdown(
-            f"""
-            <div class="as-utility">
-                <span class="as-utility-label">Resources</span>
-                <a class="as-utility-link" href="{GOOGLE_EARTH_URL}" target="_blank" rel="noopener"><span class="as-utility-icon">🌍</span>Google Earth</a>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
     st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
     return tool
 
@@ -80,19 +69,20 @@ def render_tool_switch():
         active = "RVT"
         st.session_state.as_active_tool = active
 
-    for column, label, key in zip(
+    labels = {"RVT": "Terrain", "Crop Marks": "Field marks", "Candidates": "Candidates"}
+    for column, tool, key in zip(
         st.columns(len(PRIMARY_TOOLS), gap="small"),
         PRIMARY_TOOLS,
         ("as_nav_rvt", "as_nav_crop", "as_nav_candidates"),
     ):
         with column:
             if st.button(
-                label,
+                labels[tool],
                 key=key,
-                type="primary" if active == label else "secondary",
+                type="primary" if active == tool else "secondary",
                 width="stretch",
             ):
-                st.session_state.as_active_tool = label
+                st.session_state.as_active_tool = tool
                 st.rerun()
     return st.session_state.as_active_tool
 

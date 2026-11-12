@@ -544,17 +544,13 @@ def render_rvt_viewer(core, data, params):
 
     render_view_toolbar(core, data, rgb, params)
 
-    action_tabs = st.tabs(["Enhance & best view", "Export", "Method grid", "3D Cloud", "Report"])
+    action_tabs = st.tabs(["Enhance & best view", "3D view", "Export"])
     with action_tabs[0]:
         render_enhance(data, params)
     with action_tabs[1]:
-        render_exports(core, data, params, rgb, raw_out)
-    with action_tabs[2]:
-        render_method_grid(core, data, params)
-    with action_tabs[3]:
         render_3d_cloud(core, data, params)
-    with action_tabs[4]:
-        render_report(core, data, params, rgb)
+    with action_tabs[2]:
+        render_exports(core, data, params, rgb, raw_out)
 
 
 _DATASET_ATTR = {"DTM": "dtm", "DSM_First": "dsmf", "DSM_Last": "dsml", "nDSM": "ndsm", "First-Last": "diff"}
@@ -858,19 +854,16 @@ def rgb_to_image(rgb):
 
 
 def render_exports(core, data, params, rgb, raw_out):
-    cols = st.columns(3)
+    st.caption("Save the current view. For the cleaned terrain, the best view and the fused view, use the Enhance & best view tab.")
+    cols = st.columns(2)
     with cols[0]:
-        if st.button("Export .TIFF", width="stretch", disabled=params["dataset"] == "Original"):
+        if st.button("Save as GeoTIFF", width="stretch", disabled=params["dataset"] == "Original"):
             path = export_tiff(core, data, params, raw_out)
             st.session_state.as_rvt_export_tiff = str(path)
     with cols[1]:
-        if st.button("Export .PNG", width="stretch", disabled=rgb is None):
+        if st.button("Save as PNG image", width="stretch", disabled=rgb is None):
             path = export_png(core, params, rgb)
             st.session_state.as_rvt_export_png = str(path)
-    with cols[2]:
-        if st.button("Batch", width="stretch", disabled=not (data.dtm is not None and data.dsmf is not None and data.dsml is not None)):
-            path = run_batch(core, data)
-            st.session_state.as_rvt_batch_log = str(path)
 
     for state_key, label, mime in [
         ("as_rvt_export_tiff", "Download TIFF", "image/tiff"),
