@@ -73,7 +73,6 @@ REGIONAL_DTM_RELATIVE_PATH = Path("data") / "regional_dtm" / "HRDTM5m_Umbria_Mar
 GENERATED_DTM_OUTPUT_RELATIVE = Path("generated_dtm") / "DTM"
 REGIONAL_DTM_PREVIEW_ZOOMS = (10, 9, 8, 7, 6)
 REGIONAL_DTM_MAX_RECOMMENDED_CELLS = 80_000_000
-MASE_URL = "https://sim.mase.gov.it/portalediaccesso/mappe/#/viewer/new/"
 GE_URL = "https://earth.google.com/web/@42.06329556,13.44458279,859.60342866a,1982377.06794083d,35y,0h,0t,0r/data=CgRCAggBOgMKATBCAggASg0I____________ARAA"
 ARCGIS_CURRENT_TILE_TEMPLATE = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
 WAYBACK_CAPABILITIES_URL = "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/WMTS/1.0.0/WMTSCapabilities.xml"
@@ -84,10 +83,10 @@ PREPRO_PROFILES = {
     "prep2": {"label": "PrePro 2", "suffix": "_prep2", "fill_dist": 100, "fill_smooth_iter": 1, "sigma": 0.8},
     "prep3": {"label": "PrePro 3", "suffix": "_prep3", "fill_dist": 140, "fill_smooth_iter": 2, "sigma": 1.2},
 }
-BASE_IMAGE_OPTIONS = ["Originale", "PrePro 1", "PrePro 2", "PrePro 3"]
+BASE_IMAGE_OPTIONS = ["Original", "PrePro 1", "PrePro 2", "PrePro 3"]
 BASE_IMAGE_TO_PROFILE = {"PrePro 1": "prep1", "PrePro 2": "prep2", "PrePro 3": "prep3"}
 CLOUD_SURFACE_OPTIONS = [
-    {"key": "original", "label": "Originale"},
+    {"key": "original", "label": "Original"},
     {"key": "prep1", "label": "PrePro 1"},
     {"key": "prep2", "label": "PrePro 2"},
     {"key": "prep3", "label": "PrePro 3"},
@@ -372,7 +371,7 @@ def clip_tile_to_geojson(tile, geojson_path: Path):
     obj = json.loads(geojson_path.read_text(encoding="utf-8"))
     geoms = _collect_polygon_geometries(obj)
     if not geoms:
-        raise RuntimeError("GeoJSON senza poligoni validi.")
+        raise RuntimeError("GeoJSON without valid polygons.")
 
     src_crs = _infer_geojson_crs(obj)
     dst_crs = tile.get("crs")
@@ -389,7 +388,7 @@ def clip_tile_to_geojson(tile, geojson_path: Path):
 
     inside = rasterio.features.geometry_mask(geoms_dst, out_shape=(h, w), transform=transform, invert=True)
     if not np.any(inside):
-        raise RuntimeError("L'area GeoJSON non interseca il raster corrente.")
+        raise RuntimeError("The GeoJSON area does not intersect the current raster.")
 
     rows, cols = np.where(inside)
     r0, r1 = int(rows.min()), int(rows.max())
@@ -517,10 +516,10 @@ def load_raster_source(paths):
     if isinstance(paths, Path):
         return load_raster(paths)
     if not isinstance(paths, (list, tuple)):
-        raise RuntimeError("Sorgente raster non valida.")
+        raise RuntimeError("Invalid raster source.")
     items = [Path(p) for p in paths if p]
     if not items:
-        raise RuntimeError("Nessun raster disponibile.")
+        raise RuntimeError("No raster available.")
     if len(items) == 1:
         return load_raster(items[0])
 
@@ -569,9 +568,9 @@ def save_geotiff(path: Path, data: np.ndarray, profile, nodata_val=-9999.0):
         elif out.shape[2] <= 16 and out.shape[0] > 16 and out.shape[1] > 16:
             bands = np.moveaxis(out, 2, 0)
         else:
-            raise RuntimeError(f"Shape export non supportata: {out.shape}")
+            raise RuntimeError(f"Unsupported export shape: {out.shape}")
     else:
-        raise RuntimeError(f"Dimensioni export non supportate: {out.ndim}")
+        raise RuntimeError(f"Unsupported export dimensions: {out.ndim}")
     p = profile_for_float(profile, nodata_val=nodata_val, count=int(bands.shape[0]))
     bands[~np.isfinite(bands)] = np.float32(nodata_val)
     with rasterio.open(path, "w", **p) as dst:
@@ -667,7 +666,7 @@ def to_single_band(out, dem_shape):
         if arr.shape[0] in (3, 4):
             return as_float32(np.nanmean(arr, axis=0))
         return as_float32(np.nanmean(arr, axis=0))
-    raise RuntimeError(f"Output RVT con shape non supportata: {arr.shape}")
+    raise RuntimeError(f"RVT output with unsupported shape: {arr.shape}")
 
 
 def fit_to_shape(arr, target_shape):
@@ -695,13 +694,13 @@ def fit_to_shape(arr, target_shape):
 def normalize_rgb01(arr):
     rgb = as_float32(arr)
     if rgb.ndim != 3:
-        raise RuntimeError(f"Output RGB non valido: {rgb.shape}")
+        raise RuntimeError(f"Invalid RGB output: {rgb.shape}")
     if rgb.shape[0] in (3, 4):
         rgb = np.moveaxis(rgb[:3, :, :], 0, 2)
     elif rgb.shape[2] in (3, 4):
         rgb = rgb[:, :, :3]
     else:
-        raise RuntimeError(f"Output RGB non valido: {rgb.shape}")
+        raise RuntimeError(f"Invalid RGB output: {rgb.shape}")
     finite = np.isfinite(rgb)
     if not finite.any():
         return np.zeros_like(rgb, dtype=np.float32)
@@ -896,7 +895,7 @@ def compute_method(method, dem, res, az, alt, z, rad, n_dir):
         rgb[mask, :] = 0.0
         return rgb
 
-    raise RuntimeError(f"Metodo non disponibile o non supportato: {method}")
+    raise RuntimeError(f"Method not available or not supported: {method}")
 
 
 def latlon_to_global_px(lat, lon, zoom):
@@ -1131,7 +1130,7 @@ def raster_bounds_lonlat(path: Path):
         bounds = src.bounds
         crs = src.crs
         if crs is None:
-            raise RuntimeError("CRS del raster regionale non disponibile.")
+            raise RuntimeError("Regional raster CRS not available.")
         if crs.to_string() == "EPSG:4326":
             return (float(bounds.left), float(bounds.bottom), float(bounds.right), float(bounds.top))
         b = rasterio.warp.transform_bounds(crs, "EPSG:4326", bounds.left, bounds.bottom, bounds.right, bounds.top, densify_pts=21)
@@ -1148,15 +1147,15 @@ def normalize_lonlat_bounds(bounds_lonlat):
 def create_regional_dtm_crop(root: Path, bounds_lonlat, max_recommended_cells=REGIONAL_DTM_MAX_RECOMMENDED_CELLS):
     src_path = regional_dtm_source_path(root)
     if not src_path.exists():
-        raise RuntimeError(f"Raster regionale non trovato: {src_path}")
+        raise RuntimeError(f"Regional raster not found: {src_path}")
 
     left, bottom, right, top = normalize_lonlat_bounds(bounds_lonlat)
     if right <= left or top <= bottom:
-        raise RuntimeError("Area selezionata non valida.")
+        raise RuntimeError("Invalid selected area.")
 
     with rasterio.open(src_path) as src:
         if src.crs is None:
-            raise RuntimeError("CRS del raster regionale non disponibile.")
+            raise RuntimeError("Regional raster CRS not available.")
         src_bounds = src.bounds
         sel_bounds = rasterio.warp.transform_bounds("EPSG:4326", src.crs, left, bottom, right, top, densify_pts=21)
         sel_left = max(float(src_bounds.left), float(sel_bounds[0]))
@@ -1164,7 +1163,7 @@ def create_regional_dtm_crop(root: Path, bounds_lonlat, max_recommended_cells=RE
         sel_right = min(float(src_bounds.right), float(sel_bounds[2]))
         sel_top = min(float(src_bounds.top), float(sel_bounds[3]))
         if sel_right <= sel_left or sel_top <= sel_bottom:
-            raise RuntimeError("L'area selezionata non interseca il DTM delle tre regioni.")
+            raise RuntimeError("The selected area does not intersect the DTM of the three regions.")
 
         raw_window = rasterio.windows.from_bounds(sel_left, sel_bottom, sel_right, sel_top, src.transform)
         col_off = max(0, int(math.floor(raw_window.col_off)))
@@ -1174,13 +1173,13 @@ def create_regional_dtm_crop(root: Path, bounds_lonlat, max_recommended_cells=RE
         width = col_max - col_off
         height = row_max - row_off
         if width < 2 or height < 2:
-            raise RuntimeError("Area selezionata troppo piccola per generare un DTM.")
+            raise RuntimeError("Selected area too small to generate a DTM.")
 
         cells = int(width) * int(height)
         if max_recommended_cells and cells > int(max_recommended_cells):
             raise RuntimeError(
-                f"Area troppo grande: {cells:,} celle. Seleziona un'area piu piccola "
-                f"(consigliato massimo {int(max_recommended_cells):,} celle)."
+                f"Area too large: {cells:,} cells. Select a smaller area "
+                f"(recommended maximum {int(max_recommended_cells):,} celle)."
             )
 
         window = rasterio.windows.Window(col_off, row_off, width, height)
@@ -1233,11 +1232,11 @@ def regional_dtm_map_html(bounds_lonlat, max_cells=REGIONAL_DTM_MAX_RECOMMENDED_
     }
     cfg = json.dumps(payload)
     return f"""<!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RVT - DTM da mappa</title>
+  <title>AIrchGIS · DTM da mappa</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
@@ -1277,15 +1276,15 @@ def regional_dtm_map_html(bounds_lonlat, max_cells=REGIONAL_DTM_MAX_RECOMMENDED_
 <body>
   <div id="map"></div>
   <div id="panel">
-    <h1>Genera DTM da mappa</h1>
-    <p>Usa gli strumenti a sinistra per disegnare un rettangolo. Il DTM viene ritagliato dai dati locali di Marche, Abruzzo e Umbria.</p>
-    <p class="hint">Output: GeoTIFF DTM alla risoluzione nativa di 5 m x 5 m, poi caricato automaticamente in RVT.</p>
+    <h1>Generate DTM from map</h1>
+    <p>Use the tools on the left to draw a rectangle. The DTM is clipped from the local data for Marche, Abruzzo and Umbria.</p>
+    <p class="hint">Output: DTM GeoTIFF at the native 5 m x 5 m resolution, then loaded automatically into RVT.</p>
     <div class="actions">
-      <button id="generate" class="primary" disabled>Genera DTM e carica</button>
-      <button id="clear" disabled>Cancella rettangolo</button>
-      <button id="fit">Torna alle 3 regioni</button>
+      <button id="generate" class="primary" disabled>Generate DTM and load</button>
+      <button id="clear" disabled>Clear rectangle</button>
+      <button id="fit">Back to the 3 regions</button>
     </div>
-    <div id="status">Disegna un rettangolo sulla mappa.</div>
+    <div id="status">Draw a rectangle on the map.</div>
   </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
@@ -1313,7 +1312,7 @@ def regional_dtm_map_html(bounds_lonlat, max_cells=REGIONAL_DTM_MAX_RECOMMENDED_
       weight: 2,
       fillOpacity: 0.02,
       interactive: false
-    }}).addTo(map).bindTooltip('Copertura DTM Marche, Abruzzo, Umbria');
+    }}).addTo(map).bindTooltip('DTM coverage Marche, Abruzzo, Umbria');
 
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
@@ -1361,13 +1360,13 @@ def regional_dtm_map_html(bounds_lonlat, max_cells=REGIONAL_DTM_MAX_RECOMMENDED_
       if (!b) {{
         generateBtn.disabled = true;
         clearBtn.disabled = true;
-        setStatus('Disegna un rettangolo sulla mappa.');
+        setStatus('Draw a rectangle on the map.');
         return;
       }}
       generateBtn.disabled = false;
       clearBtn.disabled = false;
       setStatus(
-        'Area selezionata:\\n' +
+        'Selected area:\\n' +
         `lon ${{b[0].toFixed(6)}} - ${{b[2].toFixed(6)}}\\n` +
         `lat ${{b[1].toFixed(6)}} - ${{b[3].toFixed(6)}}`
       );
@@ -1400,7 +1399,7 @@ def regional_dtm_map_html(bounds_lonlat, max_cells=REGIONAL_DTM_MAX_RECOMMENDED_
       const b = selectedBounds();
       if (!b) return;
       generateBtn.disabled = true;
-      setStatus('Generazione DTM in corso... puoi lasciare aperta questa pagina.');
+      setStatus('Generating DTM... you can leave this page open.');
       try {{
         const response = await fetch('/generate', {{
           method: 'POST',
@@ -1409,14 +1408,14 @@ def regional_dtm_map_html(bounds_lonlat, max_cells=REGIONAL_DTM_MAX_RECOMMENDED_
         }});
         const data = await response.json();
         if (!response.ok || !data.ok) {{
-          throw new Error(data.error || 'Generazione non riuscita.');
+          throw new Error(data.error || 'Generation failed.');
         }}
         setStatus(
-          `DTM creato e caricato in RVT.\\n${{data.file}}\\n` +
-          `${{data.width}} x ${{data.height}} px, risoluzione 5 m.`
+          `DTM created and loaded into RVT.\\n${{data.file}}\\n` +
+          `${{data.width}} x ${{data.height}} px, resolution 5 m.`
         );
       }} catch (err) {{
-        setStatus('Errore: ' + err.message);
+        setStatus('Error: ' + err.message);
         generateBtn.disabled = false;
       }}
     }});
@@ -1496,7 +1495,7 @@ class InputData:
             db_root = get_database_root(self.root)
             if db_root is None:
                 self.loaded = False
-                self.error = "Cartella Database non trovata (attese: ./Database oppure ./image/Database)."
+                self.error = "Database folder not found (expected: ./Database or ./image/Database)."
                 return
             base = db_root / place_name
             prepare_inputs_place(base)
@@ -1521,9 +1520,9 @@ class InputData:
         if not p_dtm:
             self.loaded = False
             if place_name:
-                self.error = f"Input mancanti in Database/{place_name}: serve almeno un raster nella cartella DTM."
+                self.error = f"Missing inputs in Database/{place_name}: at least one raster is needed in the DTM folder."
             else:
-                self.error = "Input mancanti: metti almeno un raster o uno zip in image/DTM."
+                self.error = "Missing inputs: put at least one raster or zip in image/DTM."
             return
 
         dtm, res, prof, _, bounds, crs = load_raster_source(p_dtm)
@@ -1556,7 +1555,7 @@ class InputData:
 
         if not p_dtm:
             self.loaded = False
-            self.error = "Input drag and drop incompleti: serve almeno un DTM."
+            self.error = "Incomplete drag-and-drop inputs: at least one DTM is needed."
             return
 
         dtm, res, prof, _, bounds, crs = load_raster_source(p_dtm)
@@ -1583,7 +1582,7 @@ class InputData:
 class App(BaseTk):
     def __init__(self):
         super().__init__()
-        self.title("RVT LiDAR Explorer")
+        self.title("AIrchGIS · LiDAR Explorer")
         self.geometry("1600x920")
         self.minsize(1320, 820)
 
@@ -1649,7 +1648,7 @@ class App(BaseTk):
         self.report_window = None
         self.lads_info_var = tk.StringVar(value="")
         self.report_name_var = tk.StringVar(value="")
-        self.report_status_var = tk.StringVar(value="Nessun punto nel report.")
+        self.report_status_var = tk.StringVar(value="No points in the report.")
         self.report_list_var = tk.StringVar(value=[])
         self.report_notes_text = None
         self.report_listbox = None
@@ -1670,20 +1669,8 @@ class App(BaseTk):
         try:
             self.reload_inputs()
         except Exception as e:
-            self.status.set(f"Errore caricamento iniziale: {e}")
+            self.status.set(f"Initial loading error: {e}")
             self._show_blank()
-
-    def open_mase(self):
-        url = MASE_URL
-        try:
-            subprocess.Popen(["open", "-a", "Google Chrome", url])
-            return
-        except Exception:
-            pass
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
 
     def open_ge(self):
         url = GE_URL
@@ -1700,13 +1687,13 @@ class App(BaseTk):
     def open_regional_dtm_selector(self):
         src_path = regional_dtm_source_path(self.root_path)
         if not src_path.exists():
-            messagebox.showerror("DTM da mappa", f"Raster regionale non trovato:\n{src_path}")
+            messagebox.showerror("DTM from map", f"Regional raster not found:\n{src_path}")
             return
 
         try:
             bounds_ll = raster_bounds_lonlat(src_path)
         except Exception as e:
-            messagebox.showerror("DTM da mappa", str(e))
+            messagebox.showerror("DTM from map", str(e))
             return
 
         app = self
@@ -1742,16 +1729,16 @@ class App(BaseTk):
                     payload = json.loads(self.rfile.read(length).decode("utf-8"))
                     bounds = payload.get("bounds")
                     if not isinstance(bounds, list) or len(bounds) != 4:
-                        raise RuntimeError("Bounds non validi.")
+                        raise RuntimeError("Invalid bounds.")
                     out_path, meta = create_regional_dtm_crop(app.root_path, bounds)
 
                     def load_generated():
                         app.drop_sources = {"DTM": [str(out_path)], "DSM_First": [], "DSM_Last": []}
                         app.active_source_mode = "drop"
-                        app.base_image_mode.set("Originale")
+                        app.base_image_mode.set("Original")
                         app.load_dropped_inputs()
                         app.status.set(
-                            f"DTM generato e caricato: {out_path.name} "
+                            f"DTM generated and loaded: {out_path.name} "
                             f"({meta['width']} x {meta['height']} px, 5 m)"
                         )
 
@@ -1782,7 +1769,7 @@ class App(BaseTk):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.regional_dtm_map_server = server
         url = f"http://127.0.0.1:{int(server.server_address[1])}/"
-        self.status.set(f"DTM da mappa aperto nel browser: {url}")
+        self.status.set(f"DTM from map opened in the browser: {url}")
         try:
             subprocess.Popen(["open", "-a", "Google Chrome", url])
         except Exception:
@@ -1810,8 +1797,8 @@ class App(BaseTk):
 
         right_top = ttk.Frame(right, padding=(8, 8, 8, 0))
         right_top.grid(row=0, column=0, sticky="ew")
-        ttk.Checkbutton(right_top, text="Pennello", variable=self.brush_on, command=self._on_brush_toggle).grid(row=0, column=0, sticky="w")
-        ttk.Label(right_top, text="Colore").grid(row=0, column=1, sticky="w", padx=(8, 2))
+        ttk.Checkbutton(right_top, text="Brush", variable=self.brush_on, command=self._on_brush_toggle).grid(row=0, column=0, sticky="w")
+        ttk.Label(right_top, text="Colour").grid(row=0, column=1, sticky="w", padx=(8, 2))
         self.brush_color_combo = ttk.Combobox(
             right_top,
             textvariable=self.brush_color,
@@ -1828,7 +1815,7 @@ class App(BaseTk):
         ttk.Button(right_top, text="📍", width=2, command=self.arm_coordinate_pick).grid(row=0, column=6, sticky="e", padx=(0, 4))
         ttk.Button(right_top, text="📏", width=2, command=self.arm_measure_tool).grid(row=0, column=7, sticky="e", padx=(0, 4))
         ttk.Button(right_top, text="🗑", width=2, command=self.clear_annotations).grid(row=0, column=8, sticky="e", padx=(0, 8))
-        ttk.Button(right_top, text="🧩 Griglia metodi", command=self.show_methods_grid).grid(row=0, column=9, sticky="e")
+        ttk.Button(right_top, text="🧩 Method grid", command=self.show_methods_grid).grid(row=0, column=9, sticky="e")
         ttk.Button(right_top, textvariable=self.lads_button_text, command=self.show_3d_cloud_viewer).grid(row=0, column=10, sticky="e", padx=(8, 0))
 
         top = ttk.Frame(left)
@@ -1836,13 +1823,12 @@ class App(BaseTk):
         top.columnconfigure(0, weight=1)
         tools_row = ttk.Frame(top)
         tools_row.grid(row=0, column=0, sticky="ew")
-        for i in range(4):
+        for i in range(3):
             tools_row.columnconfigure(i, weight=1)
-        ttk.Button(tools_row, text="🛰️ MASE", command=self.open_mase).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(tools_row, text="🌍 GE", command=self.open_ge).grid(row=0, column=1, sticky="ew", padx=(4, 4))
-        ttk.Button(tools_row, text="🏛️ Preset Arch", command=self.apply_archaeology_preset).grid(row=0, column=2, sticky="ew", padx=(4, 4))
-        ttk.Button(tools_row, text="⬛ Preset Rett/Fossati", command=self.apply_rectangles_preset).grid(row=0, column=3, sticky="ew", padx=(4, 0))
-        quick_box = ttk.LabelFrame(top, text="Sessione rapida", padding=6)
+        ttk.Button(tools_row, text="🌍 GE", command=self.open_ge).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(tools_row, text="🏛️ Preset Arch", command=self.apply_archaeology_preset).grid(row=0, column=1, sticky="ew", padx=(4, 4))
+        ttk.Button(tools_row, text="⬛ Preset Rect/Ditches", command=self.apply_rectangles_preset).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        quick_box = ttk.LabelFrame(top, text="Quick session", padding=6)
         quick_box.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         quick_box.columnconfigure(0, weight=1)
         self.drop_target_label = ttk.Label(
@@ -1860,16 +1846,16 @@ class App(BaseTk):
         quick_actions.columnconfigure(0, weight=1)
         quick_actions.columnconfigure(1, weight=1)
         quick_actions.columnconfigure(2, weight=1)
-        ttk.Button(quick_actions, text="Usa posto selezionato", command=self.use_database_selection).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(quick_actions, text="DTM da mappa", command=self.open_regional_dtm_selector).grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(quick_actions, text="Svuota sessione", command=self.clear_drop_inputs).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        ttk.Button(quick_actions, text="Use selected place", command=self.use_database_selection).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(quick_actions, text="DTM from map", command=self.open_regional_dtm_selector).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(quick_actions, text="Clear session", command=self.clear_drop_inputs).grid(row=0, column=2, sticky="ew", padx=(4, 0))
         self._register_drop_widget(quick_box)
         self._register_drop_widget(self.drop_target_label)
 
         place_box = ttk.Frame(left)
         place_box.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         place_box.columnconfigure(1, weight=1)
-        ttk.Label(place_box, text="Posto").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(place_box, text="Place").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self.place_combo = ttk.Combobox(place_box, textvariable=self.place_name, values=[], state="readonly")
         self.place_combo.grid(row=0, column=1, sticky="ew")
         self.place_combo.bind("<<ComboboxSelected>>", self.on_place_selected)
@@ -1932,14 +1918,14 @@ class App(BaseTk):
         sync_mix()
         self.basemap_scale.set(float(self.basemap_mix.get()))
 
-        meth_box = ttk.LabelFrame(left, text="Metodo RVT", padding=8)
+        meth_box = ttk.LabelFrame(left, text="RVT method", padding=8)
         meth_box.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         meth_box.columnconfigure(0, weight=1)
         self.method_combo = ttk.Combobox(meth_box, textvariable=self.method, values=self.available_methods(), state="readonly")
         self.method_combo.grid(row=0, column=0, sticky="ew")
         self.method_combo.bind("<<ComboboxSelected>>", lambda e: (self.update_param_states(), self.schedule_update()))
 
-        par_box = ttk.LabelFrame(left, text="Parametri", padding=8)
+        par_box = ttk.LabelFrame(left, text="Parameters", padding=8)
         par_box.grid(row=4, column=0, sticky="ew", pady=(0, 10))
         par_box.columnconfigure(0, weight=1)
 
@@ -1966,7 +1952,7 @@ class App(BaseTk):
         self.base_mode_combo = ttk.Combobox(btn_box, textvariable=self.base_image_mode, values=BASE_IMAGE_OPTIONS, state="readonly")
         self.base_mode_combo.grid(row=0, column=3, sticky="ew", pady=(0, 6))
         self.base_mode_combo.bind("<<ComboboxSelected>>", self.on_base_image_mode_change)
-        ttk.Button(left, text="Crea report di esplorazione", command=self.open_report_window).grid(row=6, column=0, sticky="ew", pady=(0, 6))
+        ttk.Button(left, text="Create exploration report", command=self.open_report_window).grid(row=6, column=0, sticky="ew", pady=(0, 6))
         self.status = tk.StringVar(value="")
         ttk.Label(left, textvariable=self.status, wraplength=390).grid(row=7, column=0, sticky="ew", pady=(8, 0))
 
@@ -2145,7 +2131,7 @@ class App(BaseTk):
 
         self.update_param_states()
         self.schedule_update()
-        self.status.set("Preset archeologia applicato (DTM + contrasto alto).")
+        self.status.set("Archaeology preset applied (DTM + high contrast).")
 
     def apply_rectangles_preset(self):
         methods = self.available_methods()
@@ -2180,7 +2166,7 @@ class App(BaseTk):
 
         self.update_param_states()
         self.schedule_update()
-        self.status.set("Preset rettangoli/fossati applicato (DTM + microrelief boost).")
+        self.status.set("Rectangles/ditches preset applied (DTM + microrelief boost).")
 
     def _is_preprocessed_path(self, path):
         return Path(path).stem.lower().endswith(PREPROCESSED_SUFFIXES)
@@ -2229,15 +2215,15 @@ class App(BaseTk):
         ]
         if not TKDND_AVAILABLE:
             self.drop_status_var.set(
-                "DnD non disponibile. Installa `tkinterdnd2`. "
+                "Drag and drop not available. Install `tkinterdnd2`. "
                 + " | ".join(counts)
             )
             return
-        header = "Trascina qui raster, cartelle o zip."
+        header = "Drop rasters, folders or zip files here."
         if self._drop_session_ready():
-            mode_txt = "Sessione rapida pronta."
+            mode_txt = "Quick session ready."
             if self.active_source_mode == "drop" and self.data.loaded:
-                mode_txt = "Sessione rapida attiva."
+                mode_txt = "Quick session active."
             self.drop_status_var.set(f"{mode_txt} {header} {' | '.join(counts)}")
             return
         missing = []
@@ -2374,7 +2360,7 @@ class App(BaseTk):
                 incoming[name].extend(items)
 
         if not any(incoming.values()):
-            self.status.set("Drag and drop: nessun DTM / DSM First / DSM Last riconosciuto.")
+            self.status.set("Drag and drop: no DTM / DSM First / DSM Last recognised.")
             return
 
         for name, items in incoming.items():
@@ -2394,7 +2380,7 @@ class App(BaseTk):
                 missing.append("DSM First")
             if not self.drop_sources["DSM_Last"]:
                 missing.append("DSM Last")
-            self.status.set(f"Sessione rapida aggiornata. Mancano: {', '.join(missing)}.")
+            self.status.set(f"Quick session updated. Missing: {', '.join(missing)}.")
 
     def clear_drop_inputs(self):
         self.drop_sources = {"DTM": [], "DSM_First": [], "DSM_Last": []}
@@ -2405,7 +2391,7 @@ class App(BaseTk):
             self.active_source_mode = "database"
             self.reload_inputs()
         else:
-            self.status.set("Sessione rapida svuotata.")
+            self.status.set("Quick session cleared.")
 
     def use_database_selection(self):
         self.active_source_mode = "database"
@@ -2461,7 +2447,7 @@ class App(BaseTk):
         if not selected:
             if self.lads_enabled.get():
                 self._close_lads_window()
-            self.status.set("Nessun posto trovato in Database.")
+            self.status.set("No place found in Database.")
             self._show_blank()
             return
         place = selected
@@ -2482,11 +2468,11 @@ class App(BaseTk):
                     p_l_orig = select_rasters_from_candidates(base, LAST_DIR_CANDIDATES, prefer_preprocessed=False)
                     src_groups = [p_dtm_orig, p_f_orig, p_l_orig]
                     if p_dtm_orig and p_f_orig and p_l_orig and self._preprocessed_groups_missing(src_groups, profile):
-                        self.status.set(f"{profile['label']} in preparazione...")
+                        self.status.set(f"{profile['label']} being prepared...")
                         self.update_idletasks()
                         self._ensure_preprocessed_groups(src_groups, profile)
             except Exception as e:
-                self.status.set(f"Errore {profile['label']}: {e}")
+                self.status.set(f"Error {profile['label']}: {e}")
                 messagebox.showerror("Preprocess", str(e))
                 self.update_param_states()
                 self.refresh_basemap_years()
@@ -2500,7 +2486,7 @@ class App(BaseTk):
         if not self.data.loaded:
             if self.lads_enabled.get():
                 self._close_lads_window()
-            self.status.set(self.data.error or "Errore input.")
+            self.status.set(self.data.error or "Input error.")
             self.update_param_states()
             self.refresh_basemap_years()
             self._show_blank()
@@ -2509,9 +2495,9 @@ class App(BaseTk):
         src_mode = mode
         self.refresh_basemap_years()
         if self.data.area_geojson_path:
-            self.status.set(f"OK | sorgente: {place_txt} ({src_mode}) | area: {Path(self.data.area_geojson_path).name}")
+            self.status.set(f"OK | source: {place_txt} ({src_mode}) | area: {Path(self.data.area_geojson_path).name}")
         else:
-            self.status.set(f"OK | sorgente: {place_txt} ({src_mode})")
+            self.status.set(f"OK | source: {place_txt} ({src_mode})")
         self.update_param_states()
         self.schedule_update()
         self._refresh_lads_if_open()
@@ -2521,7 +2507,7 @@ class App(BaseTk):
         if not self._drop_session_ready():
             if self.lads_enabled.get():
                 self._close_lads_window()
-            self.status.set("Sessione rapida incompleta: serve almeno un DTM.")
+            self.status.set("Quick session incomplete: at least one DTM is needed.")
             self.update_param_states()
             self.refresh_basemap_years()
             self._show_blank()
@@ -2540,11 +2526,11 @@ class App(BaseTk):
                     self.drop_sources["DSM_Last"],
                 ]
                 if self._preprocessed_groups_missing(src_groups, profile):
-                    self.status.set(f"{profile['label']} in preparazione...")
+                    self.status.set(f"{profile['label']} being prepared...")
                     self.update_idletasks()
                     self._ensure_preprocessed_groups(src_groups, profile)
             except Exception as e:
-                self.status.set(f"Errore {profile['label']}: {e}")
+                self.status.set(f"Error {profile['label']}: {e}")
                 messagebox.showerror("Preprocess", str(e))
                 self.update_param_states()
                 self.refresh_basemap_years()
@@ -2560,7 +2546,7 @@ class App(BaseTk):
         if not self.data.loaded:
             if self.lads_enabled.get():
                 self._close_lads_window()
-            self.status.set(self.data.error or "Errore input drag and drop.")
+            self.status.set(self.data.error or "Drag-and-drop input error.")
             self.update_param_states()
             self.refresh_basemap_years()
             self._show_blank()
@@ -2568,7 +2554,7 @@ class App(BaseTk):
         self.refresh_basemap_years()
         src_mode = mode
         counts_txt = f"DTM {len(self.drop_sources['DTM'])} | DSM First {len(self.drop_sources['DSM_First'])} | DSM Last {len(self.drop_sources['DSM_Last'])}"
-        self.status.set(f"OK | sorgente: Sessione rapida/{self._drop_session_label()} ({src_mode}) | {counts_txt}")
+        self.status.set(f"OK | source: Quick session/{self._drop_session_label()} ({src_mode}) | {counts_txt}")
         self.update_param_states()
         self.schedule_update()
         self._refresh_drop_status()
@@ -2740,22 +2726,22 @@ class App(BaseTk):
 
     def show_methods_grid(self):
         if not self.data.loaded:
-            messagebox.showerror("Griglia metodi", "Input non caricati.")
+            messagebox.showerror("Method grid", "Inputs not loaded.")
             return
 
         ds = self.dataset.get()
         if ds == "Original":
-            messagebox.showerror("Griglia metodi", "Seleziona un dataset diverso da Original.")
+            messagebox.showerror("Method grid", "Select a dataset other than Original.")
             return
 
         dem = self._get_dataset_array(ds)
         if dem is None:
-            messagebox.showerror("Griglia metodi", "Dataset non disponibile.")
+            messagebox.showerror("Method grid", "Dataset not available.")
             return
 
         methods = self.available_methods()
         if not methods:
-            messagebox.showerror("Griglia metodi", "Nessun metodo RVT disponibile.")
+            messagebox.showerror("Method grid", "No RVT method available.")
             return
 
         res = float(self.data.res)
@@ -2784,10 +2770,10 @@ class App(BaseTk):
                 errors.append(f"{method}: {e}")
 
         if not images:
-            msg = "Impossibile calcolare i metodi."
+            msg = "Unable to compute the methods."
             if errors:
                 msg = f"{msg}\n{errors[0]}"
-            messagebox.showerror("Griglia metodi", msg)
+            messagebox.showerror("Method grid", msg)
             return
 
         n = len(images)
@@ -2795,7 +2781,7 @@ class App(BaseTk):
         rows = int(math.ceil(n / cols))
 
         win = tk.Toplevel(self)
-        win.title(f"Griglia metodi | {ds}")
+        win.title(f"Method grid | {ds}")
         win.geometry("1280x860")
         win.minsize(900, 600)
         win.columnconfigure(0, weight=1)
@@ -2823,11 +2809,11 @@ class App(BaseTk):
         canvas.draw_idle()
 
         if errors:
-            self.status.set(f"Griglia metodi: {len(images)} OK, {len(errors)} errori")
+            self.status.set(f"Method grid: {len(images)} OK, {len(errors)} errori")
 
     def _build_lads_cloud(self):
         if not self.data.loaded or self.data.dtm is None:
-            raise RuntimeError("DTM non caricato.")
+            raise RuntimeError("DTM not loaded.")
         original_dtm, original_profile, original_crs = self._load_original_dtm_surface()
         return build_lads_point_cloud(
             original_dtm,
@@ -2914,14 +2900,14 @@ class App(BaseTk):
     def _load_dtm_surface_variant(self, variant_key="original"):
         src_paths = self.data.src_original_dtm_paths or self.data.src_dtm_paths
         if not src_paths:
-            raise RuntimeError("Sorgente DTM originale non disponibile.")
+            raise RuntimeError("Original DTM source not available.")
 
         src_paths = [Path(p).expanduser().resolve() for p in src_paths if p]
         load_paths = src_paths
         if variant_key != "original":
             profile_cfg = PREPRO_PROFILES.get(variant_key)
             if profile_cfg is None:
-                raise RuntimeError(f"Profilo 3D Cloud non valido: {variant_key}")
+                raise RuntimeError(f"Invalid 3D Cloud profile: {variant_key}")
             self._ensure_preprocessed_groups([src_paths], profile_cfg)
             load_paths = []
             for src in src_paths:
@@ -2989,7 +2975,7 @@ class App(BaseTk):
 
     def show_3d_cloud_viewer(self):
         if not self.data.loaded or self.data.dtm is None:
-            messagebox.showerror("3D Cloud", "Carica prima un DTM.")
+            messagebox.showerror("3D Cloud", "Load a DTM first.")
             return
         try:
             out_dir, stem = self._3d_cloud_output_bundle()
@@ -3001,7 +2987,7 @@ class App(BaseTk):
             for item in CLOUD_SURFACE_OPTIONS:
                 data_key = item["key"]
                 data_label = item["label"]
-                self.status.set(f"3D Cloud in preparazione: dato {data_label}...")
+                self.status.set(f"3D Cloud being prepared: data {data_label}...")
                 self.update_idletasks()
                 dtm, profile, crs = self._load_dtm_surface_variant(data_key)
                 surface_cache[data_key] = (dtm, profile, crs)
@@ -3061,7 +3047,7 @@ class App(BaseTk):
                 ]
 
             chosen_dtm, chosen_profile, chosen_crs = surface_cache[chosen["data_key"]]
-            self.status.set(f"3D Cloud in preparazione: dato {chosen['data_label']} | {chosen['cloud_label']}...")
+            self.status.set(f"3D Cloud being prepared: data {chosen['data_label']} | {chosen['cloud_label']}...")
             self.update_idletasks()
             export_lads_las(
                 chosen_dtm,
@@ -3096,7 +3082,7 @@ class App(BaseTk):
             except Exception:
                 webbrowser.open(url)
             self.status.set(
-                f"3D Cloud aperto nel browser | dato {chosen['data_label']} | cloud {chosen['cloud_label']} | altre varianti in preparazione"
+                f"3D Cloud opened in the browser | data {chosen['data_label']} | cloud {chosen['cloud_label']} | other variants being prepared"
             )
 
             def background_generate_remaining():
@@ -3149,7 +3135,7 @@ class App(BaseTk):
                     self.after(
                         0,
                         lambda: self.status.set(
-                            f"3D Cloud pronto | dato {chosen['data_label']} | cloud {chosen['cloud_label']}"
+                            f"3D Cloud ready | data {chosen['data_label']} | cloud {chosen['cloud_label']}"
                         ),
                     )
                 except Exception:
@@ -3160,7 +3146,7 @@ class App(BaseTk):
             messagebox.showerror("3D Cloud", str(e))
 
     def _sync_lads_button_state(self):
-        self.lads_button_text.set("❌ Chiudi 3D Cloud" if self.lads_enabled.get() else "☁️ 3D Cloud")
+        self.lads_button_text.set("❌ Close 3D Cloud" if self.lads_enabled.get() else "☁️ 3D Cloud")
 
     def _lads_output_path(self):
         out_dir = self.root_path / "output_rvt_gui" / "lads"
@@ -3171,7 +3157,7 @@ class App(BaseTk):
 
     def export_lads_file(self):
         if not self.data.loaded or self.data.dtm is None:
-            messagebox.showerror("3D Cloud", "DTM non caricato.")
+            messagebox.showerror("3D Cloud", "DTM not loaded.")
             return
         try:
             original_dtm, original_profile, original_crs = self._load_original_dtm_surface()
@@ -3183,7 +3169,7 @@ class App(BaseTk):
                 out_path,
                 target_crs=LADS_TARGET_CRS,
             )
-            self.status.set(f"3D Cloud esportato: {out_path} | punti {cloud['total_points']:,}")
+            self.status.set(f"3D Cloud exported: {out_path} | points {cloud['total_points']:,}")
         except Exception as e:
             messagebox.showerror("3D Cloud", str(e))
 
@@ -3256,7 +3242,7 @@ class App(BaseTk):
         toolbar.grid(row=0, column=0, sticky="ew")
         tk.Button(
             toolbar,
-            text="Esporta .LAS",
+            text="Export .LAS",
             command=self.export_lads_file,
             bg="#111111",
             fg="white",
@@ -3287,7 +3273,7 @@ class App(BaseTk):
         self.lads_canvas.mpl_connect("button_press_event", self._on_lads_click)
         self.lads_canvas.draw_idle()
         self.status.set(
-            f"3D Cloud aperto: colorazione altimetrica | zoom rotella | export .LAS | {cloud['preview_points']:,} punti"
+            f"3D Cloud open: elevation colouring | scroll to zoom | .LAS export | {cloud['preview_points']:,} points"
         )
 
     def _close_lads_window(self):
@@ -3359,14 +3345,14 @@ class App(BaseTk):
     def on_lads_toggle(self):
         if self.lads_enabled.get():
             self._close_lads_window()
-            self.status.set("3D Cloud disattivato.")
+            self.status.set("3D Cloud turned off.")
             return
         self.lads_enabled.set(True)
         self._sync_lads_button_state()
         if not self.data.loaded:
             self.lads_enabled.set(False)
             self._sync_lads_button_state()
-            messagebox.showerror("3D Cloud", "Carica prima un DTM.")
+            messagebox.showerror("3D Cloud", "Load a DTM first.")
             return
         try:
             self._render_lads_window()
@@ -3387,11 +3373,11 @@ class App(BaseTk):
             if ds == "Original":
                 ref = self.data.dtm
                 if ref is None:
-                    raise RuntimeError("DTM mancante.")
+                    raise RuntimeError("DTM missing.")
                 h, w = ref.shape
                 sat = self._satellite(w, h)
                 if sat is None:
-                    self.status.set(f"Original: caricamento satellite {self.basemap_year.get()}...")
+                    self.status.set(f"Original: loading satellite {self.basemap_year.get()}...")
                     return
                 self._draw(sat, None, alpha_over=0.0, reset=False)
                 self.status.set(f"Original: Satellite ({self.basemap_year.get()})")
@@ -3399,7 +3385,7 @@ class App(BaseTk):
 
             dem = self._get_dataset_array(ds)
             if dem is None:
-                raise RuntimeError("Dataset non disponibile.")
+                raise RuntimeError("Dataset not available.")
 
             method = self.method.get()
             res = float(self.data.res)
@@ -3439,12 +3425,12 @@ class App(BaseTk):
             mn = float(np.nanmin(out)) if np.isfinite(out).any() else np.nan
             mx = float(np.nanmax(out)) if np.isfinite(out).any() else np.nan
             if loading_basemap:
-                self.status.set(f"{ds} | {method} | caricamento basemap {self.basemap_year.get()}... | min {mn:.4f} | max {mx:.4f}")
+                self.status.set(f"{ds} | {method} | loading basemap {self.basemap_year.get()}... | min {mn:.4f} | max {mx:.4f}")
             else:
                 self.status.set(f"{ds} | {method} | min {mn:.4f} | max {mx:.4f}")
 
         except Exception as e:
-            self.status.set(f"Errore: {e}")
+            self.status.set(f"Error: {e}")
             self._show_blank()
 
     def _show_blank(self):
@@ -3512,22 +3498,22 @@ class App(BaseTk):
 
     def _compose_current_view_rgb01(self):
         if not self.data.loaded:
-            raise RuntimeError("Input non caricati.")
+            raise RuntimeError("Inputs not loaded.")
 
         ds = self.dataset.get()
         if ds == "Original":
             ref = self.data.dtm
             if ref is None:
-                raise RuntimeError("DTM mancante.")
+                raise RuntimeError("DTM missing.")
             h, w = ref.shape
             sat = self._satellite_sync(w, h)
             if sat is None:
-                raise RuntimeError("Satellite non disponibile (rete o area troppo grande).")
+                raise RuntimeError("Satellite not available (network or area too large).")
             return self._apply_annotations_rgb(np.asarray(sat, dtype=np.float32))
 
         dem = self._get_dataset_array(ds)
         if dem is None:
-            raise RuntimeError("Dataset non disponibile.")
+            raise RuntimeError("Dataset not available.")
 
         method = self.method.get()
         res = float(self.data.res)
@@ -3651,29 +3637,29 @@ class App(BaseTk):
 
     def arm_coordinate_pick(self):
         if not self.data.loaded:
-            messagebox.showerror("Deriva Coordinate", "Input non caricati.")
+            messagebox.showerror("Get Coordinates", "Inputs not loaded.")
             return
         self.pick_coords_armed = True
         self.brush_on.set(False)
         self._on_brush_toggle()
-        self.status.set("Deriva Coordinate attivo: clicca un punto sulla mappa.")
+        self.status.set("Get Coordinates active: click a point on the map.")
 
     def _copy_point_coordinates(self, x_data, y_data):
         profile = self.data.profile
         transform = profile.get("transform") if profile else None
         if transform is None:
-            raise RuntimeError("Transform georiferito non disponibile.")
+            raise RuntimeError("Georeferenced transform not available.")
 
         row = int(round(float(y_data)))
         col = int(round(float(x_data)))
         h, w = self.data.dtm.shape
         if row < 0 or col < 0 or row >= h or col >= w:
-            raise RuntimeError("Punto fuori area raster.")
+            raise RuntimeError("Point outside the raster area.")
 
         x_map, y_map = rasterio.transform.xy(transform, row, col, offset="center")
         crs = self.data.crs
         if crs is None:
-            raise RuntimeError("CRS del raster non disponibile.")
+            raise RuntimeError("Raster CRS not available.")
         if crs.to_string() != "EPSG:4326":
             lon, lat = rasterio.warp.transform(crs, "EPSG:4326", [float(x_map)], [float(y_map)])
             lon = float(lon[0])
@@ -3687,12 +3673,12 @@ class App(BaseTk):
         self.clipboard_clear()
         self.clipboard_append(text)
         self.update_idletasks()
-        self.status.set(f"Coordinate copiate: {text}")
+        self.status.set(f"Coordinates copied: {text}")
         return {"row": row, "col": col, "x_map": float(x_map), "y_map": float(y_map), "lon": lon, "lat": lat, "dms": text}
 
     def arm_measure_tool(self):
         if not self.data.loaded:
-            messagebox.showerror("Misura", "Input non caricati.")
+            messagebox.showerror("Measure", "Inputs not loaded.")
             return
         self.measure_points = []
         self.measure_armed = True
@@ -3701,7 +3687,7 @@ class App(BaseTk):
         self.brush_on.set(False)
         self._update_measure_artist_live()
         self._on_brush_toggle()
-        self.status.set("Misura attiva: clicca due punti sulla mappa.")
+        self.status.set("Measure active: click two points on the map.")
 
     def _measure_distance_m(self, p1, p2):
         crs = self.data.crs
@@ -3736,7 +3722,7 @@ class App(BaseTk):
             return
 
         win = tk.Toplevel(self)
-        win.title("Report di esplorazione")
+        win.title("Exploration report")
         win.geometry("760x560")
         win.minsize(680, 500)
         win.columnconfigure(0, weight=1)
@@ -3746,7 +3732,7 @@ class App(BaseTk):
         header = ttk.Frame(win, padding=10)
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(1, weight=1)
-        ttk.Label(header, text="Nome posto").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Label(header, text="Place name").grid(row=0, column=0, sticky="w", padx=(0, 8))
         ttk.Entry(header, textvariable=self.report_name_var).grid(row=0, column=1, sticky="ew")
 
         notes_box = ttk.LabelFrame(win, text="Note", padding=10)
@@ -3767,11 +3753,11 @@ class App(BaseTk):
         actions.grid(row=3, column=0, sticky="ew")
         for idx in range(5):
             actions.columnconfigure(idx, weight=1)
-        ttk.Button(actions, text="Aggiungi da mappa", command=self.start_report_point_pick).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(actions, text="Rimuovi selezionato", command=self.remove_selected_report_item).grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(actions, text="Svuota tutto", command=self.clear_report_items).grid(row=0, column=2, sticky="ew", padx=4)
-        ttk.Button(actions, text="Genera PDF", command=self.generate_exploration_report_pdf).grid(row=0, column=3, sticky="ew", padx=4)
-        ttk.Button(actions, text="Esporta KML", command=self.export_report_kml).grid(row=0, column=4, sticky="ew", padx=(4, 0))
+        ttk.Button(actions, text="Add from map", command=self.start_report_point_pick).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(actions, text="Remove selected", command=self.remove_selected_report_item).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(actions, text="Clear all", command=self.clear_report_items).grid(row=0, column=2, sticky="ew", padx=4)
+        ttk.Button(actions, text="Generate PDF", command=self.generate_exploration_report_pdf).grid(row=0, column=3, sticky="ew", padx=4)
+        ttk.Button(actions, text="Export KML", command=self.export_report_kml).grid(row=0, column=4, sticky="ew", padx=(4, 0))
 
         ttk.Label(win, textvariable=self.report_status_var, wraplength=720, padding=(10, 0, 10, 10)).grid(row=4, column=0, sticky="ew")
         win.protocol("WM_DELETE_WINDOW", self._close_report_window)
@@ -3798,11 +3784,11 @@ class App(BaseTk):
             values.append(f"{idx}. {item['name']} | {item['coords_dms']}{note_flag}")
         self.report_list_var.set(values)
         n = len(self.report_items)
-        self.report_status_var.set(f"Punti nel report: {n}" if n else "Nessun punto nel report.")
+        self.report_status_var.set(f"Points in the report: {n}" if n else "No points in the report.")
 
     def start_report_point_pick(self):
         if not self.data.loaded:
-            messagebox.showerror("Report", "Input non caricati.")
+            messagebox.showerror("Report", "Inputs not loaded.")
             return
         if self.report_window is None or not self.report_window.winfo_exists():
             self.open_report_window()
@@ -3811,13 +3797,13 @@ class App(BaseTk):
         if hasattr(self, "report_notes_text") and self.report_notes_text is not None:
             notes = self.report_notes_text.get("1.0", "end").strip()
         if not name:
-            messagebox.showerror("Report", "Inserisci il nome del posto prima di cliccare sulla mappa.")
+            messagebox.showerror("Report", "Enter the place name before clicking on the map.")
             return
         self.report_pick_pending = {"name": name, "notes": notes}
         self.pick_coords_armed = False
         self.brush_on.set(False)
         self._on_brush_toggle()
-        self.status.set(f"Report: clicca il punto per '{name}'.")
+        self.status.set(f"Report: click the point for '{name}'.")
         try:
             self.canvas.get_tk_widget().configure(cursor="crosshair")
         except Exception:
@@ -3848,14 +3834,14 @@ class App(BaseTk):
 
     def _compose_original_view_rgb01(self):
         if not self.data.loaded:
-            raise RuntimeError("Input non caricati.")
+            raise RuntimeError("Inputs not loaded.")
         ref = self.data.dtm
         if ref is None:
-            raise RuntimeError("DTM mancante.")
+            raise RuntimeError("DTM missing.")
         h, w = ref.shape
         sat = self._satellite_sync(w, h)
         if sat is None:
-            raise RuntimeError("Satellite non disponibile (rete o area troppo grande).")
+            raise RuntimeError("Satellite not available (network or area too large).")
         return np.asarray(sat, dtype=np.float32)
 
     def _handle_report_point_pick(self, x_data, y_data):
@@ -3886,7 +3872,7 @@ class App(BaseTk):
         if hasattr(self, "report_notes_text") and self.report_notes_text is not None:
             self.report_notes_text.delete("1.0", "end")
         self.refresh_report_list()
-        self.status.set(f"Punto aggiunto al report: {item['name']}")
+        self.status.set(f"Point added to the report: {item['name']}")
 
     def remove_selected_report_item(self):
         if not hasattr(self, "report_listbox") or self.report_listbox is None:
@@ -3911,9 +3897,9 @@ class App(BaseTk):
         text_font = load_pdf_font(26)
 
         draw.rectangle((70, 70, 1584, 2269), outline=(30, 30, 30), width=3)
-        draw.text((110, 110), f"Report di esplorazione  {index}/{total}", fill=(20, 20, 20), font=title_font)
-        draw.text((110, 190), f"Posto: {item['name']}", fill=(20, 20, 20), font=section_font)
-        draw.text((110, 250), f"Coordinate: {item['coords_dms']}", fill=(20, 20, 20), font=text_font)
+        draw.text((110, 110), f"Exploration report  {index}/{total}", fill=(20, 20, 20), font=title_font)
+        draw.text((110, 190), f"Place: {item['name']}", fill=(20, 20, 20), font=section_font)
+        draw.text((110, 250), f"Coordinates: {item['coords_dms']}", fill=(20, 20, 20), font=text_font)
         draw.text((110, 295), f"Scenario: {item['place']} | {item['dataset']} | {item['method']} | Original {item.get('original_year', 'Current')}", fill=(20, 20, 20), font=text_font)
 
         orig_img = item["original_crop_img"].copy()
@@ -3923,8 +3909,8 @@ class App(BaseTk):
         img_y = 420
         label_y = 370
 
-        draw.text((left_x, label_y), "Originale", fill=(20, 20, 20), font=section_font)
-        draw.text((right_x, label_y), "Filtro corrente", fill=(20, 20, 20), font=section_font)
+        draw.text((left_x, label_y), "Original", fill=(20, 20, 20), font=section_font)
+        draw.text((right_x, label_y), "Current filter", fill=(20, 20, 20), font=section_font)
 
         page.paste(orig_img, (left_x, img_y))
         page.paste(curr_img, (right_x, img_y))
@@ -3946,7 +3932,7 @@ class App(BaseTk):
 
     def generate_exploration_report_pdf(self):
         if not self.report_items:
-            messagebox.showerror("Report", "Aggiungi almeno un punto al report.")
+            messagebox.showerror("Report", "Add at least one point to the report.")
             return
         try:
             pages = [self._build_report_page(item, idx + 1, len(self.report_items)).convert("RGB") for idx, item in enumerate(self.report_items)]
@@ -3956,14 +3942,14 @@ class App(BaseTk):
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             out_path = out_dir / f"exploration_report__{place}__{ts}.pdf"
             pages[0].save(out_path, save_all=True, append_images=pages[1:], resolution=150.0)
-            self.report_status_var.set(f"PDF creato: {out_path}")
-            self.status.set(f"Report PDF creato: {out_path}")
+            self.report_status_var.set(f"PDF created: {out_path}")
+            self.status.set(f"PDF report created: {out_path}")
         except Exception as e:
             messagebox.showerror("Report", str(e))
 
     def export_report_kml(self):
         if not self.report_items:
-            messagebox.showerror("KML", "Aggiungi almeno un punto al report prima di esportare.")
+            messagebox.showerror("KML", "Add at least one point to the report before exporting.")
             return
         try:
             out_dir = self.root_path / "output_rvt_gui" / "maps"
@@ -3971,11 +3957,11 @@ class App(BaseTk):
             place = (self._current_place_label() or "report").replace(" ", "_")
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             out_path = out_dir / f"poi_mymaps__{place}__{ts}.kml"
-            doc_name = xml_escape(f"Punti di interesse - {self._current_place_label()}")
+            doc_name = xml_escape(f"Points of interest - {self._current_place_label()}")
 
             placemarks = []
             for idx, item in enumerate(self.report_items, start=1):
-                name = xml_escape(item.get("name") or f"Punto {idx}")
+                name = xml_escape(item.get("name") or f"Point {idx}")
                 notes = item.get("notes") or "-"
                 coords_dms = item.get("coords_dms") or "-"
                 lat = float(item.get("lat"))
@@ -3985,7 +3971,7 @@ class App(BaseTk):
                 place_label = item.get("place") or self._current_place_label()
                 maps_url = google_maps_point_url(lat, lon)
                 description_lines = [
-                    f"Coordinate: {coords_dms}",
+                    f"Coordinates: {coords_dms}",
                     f"Lat/Lon: {lat:.8f}, {lon:.8f}",
                     f"Scenario: {place_label} | {dataset} | {method}",
                     f"Google Maps: {maps_url}",
@@ -4025,7 +4011,7 @@ class App(BaseTk):
 </kml>
 """
             out_path.write_text(kml, encoding="utf-8")
-            msg = f"KML creato: {out_path} | importalo in Google My Maps per condividerlo."
+            msg = f"KML created: {out_path} | import it into Google My Maps to share it."
             self.report_status_var.set(msg)
             self.status.set(msg)
         except Exception as e:
@@ -4075,7 +4061,7 @@ class App(BaseTk):
         self.measure_points = []
         self.measure_armed = False
         self._update_annotation_artist_live()
-        self.status.set("Segni cancellati.")
+        self.status.set("Marks cleared.")
 
     def export_current_view_hq(self):
         try:
@@ -4111,11 +4097,11 @@ class App(BaseTk):
             return
         ds = self.dataset.get()
         if ds == "Original":
-            messagebox.showerror("Export", "Export disabilitato su Original (satellite).")
+            messagebox.showerror("Export", "Export disabled on Original (satellite).")
             return
         arr = self._get_dataset_array(ds)
         if arr is None:
-            messagebox.showerror("Export", "Dataset non disponibile.")
+            messagebox.showerror("Export", "Dataset not available.")
             return
         try:
             method_name = self.method.get()
@@ -4142,7 +4128,7 @@ class App(BaseTk):
 
     def preprocess_current_example(self, profile_key=None):
         if not self.data.loaded:
-            messagebox.showerror("Preprocess", "Input non caricati.")
+            messagebox.showerror("Preprocess", "Inputs not loaded.")
             return
         if profile_key:
             self.prepro_profile.set(profile_key)
@@ -4154,7 +4140,7 @@ class App(BaseTk):
         ]
         src_groups = [[Path(p) for p in group if p] for group in src_groups]
         if not any(group for group in src_groups):
-            messagebox.showerror("Preprocess", "File sorgenti non disponibili per l'esempio corrente.")
+            messagebox.showerror("Preprocess", "Source files not available for the current example.")
             return
         try:
             outs = self._ensure_preprocessed_groups(src_groups, profile)
@@ -4178,7 +4164,7 @@ class App(BaseTk):
         if outs:
             self.status.set(f"{profile['label']} creato: {', '.join([p.name for p in outs])}")
         else:
-            self.status.set(f"{profile['label']} gia disponibile.")
+            self.status.set(f"{profile['label']} already available.")
         self.reload_inputs()
 
     def batch_pipeline(self):
@@ -4200,7 +4186,7 @@ class App(BaseTk):
             prof = self.data.profile
 
             if dtm is None or dsmf is None or dsml is None:
-                raise RuntimeError("Input incompleti per batch.")
+                raise RuntimeError("Incomplete inputs for batch.")
 
             if hasattr(rvt.vis, "hillshade"):
                 hs = compute_method("Hillshade", dtm, res, 315.0, 45.0, 1.0, 10.0, 16)
@@ -4276,13 +4262,13 @@ class App(BaseTk):
                 self._update_measure_artist_live()
                 if len(self.measure_points) == 2:
                     dist_m = self._measure_distance_m(self.measure_points[0], self.measure_points[1])
-                    self.status.set(f"Distanza stimata: {dist_m:.2f} m")
+                    self.status.set(f"Estimated distance: {dist_m:.2f} m")
                     self.measure_armed = False
                     self._on_brush_toggle()
                 else:
-                    self.status.set("Misura: clicca il secondo punto.")
+                    self.status.set("Measure: click the second point.")
             except Exception as e:
-                self.status.set(f"Errore misura: {e}")
+                self.status.set(f"Measuring error: {e}")
                 self.measure_armed = False
                 self._on_brush_toggle()
             return
@@ -4292,7 +4278,7 @@ class App(BaseTk):
             try:
                 self._handle_report_point_pick(event.xdata, event.ydata)
             except Exception as e:
-                self.status.set(f"Errore report: {e}")
+                self.status.set(f"Report error: {e}")
             finally:
                 self.report_pick_pending = None
                 self._on_brush_toggle()
@@ -4303,7 +4289,7 @@ class App(BaseTk):
             try:
                 self._copy_point_coordinates(event.xdata, event.ydata)
             except Exception as e:
-                self.status.set(f"Errore coordinate: {e}")
+                self.status.set(f"Coordinates error: {e}")
             finally:
                 self.pick_coords_armed = False
                 self._on_brush_toggle()

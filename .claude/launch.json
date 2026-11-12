@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "archaeoscope",
-      "runtimeExecutable": ".venv_archaeoscope/bin/streamlit",
-      "runtimeArgs": ["run", "archaeoscope_app.py", "--server.port", "8511", "--server.headless", "true"],
+      "name": "airchgis",
+      "runtimeExecutable": ".venv_airchgis/bin/python",
+      "runtimeArgs": ["-m", "streamlit", "run", "airchgis_app.py", "--server.port", "8511", "--server.headless", "true"],
       "port": 8511
     }
   ]

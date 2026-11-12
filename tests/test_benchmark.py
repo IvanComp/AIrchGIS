@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from archaeoscope import benchmark
+from airchgis import benchmark
 
 
 class LocalMaximaTests(unittest.TestCase):
@@ -109,8 +109,8 @@ class SamplingTests(unittest.TestCase):
 class SummaryTests(unittest.TestCase):
     def test_missing_values_render_as_not_available(self):
         text = benchmark.summarise({"auc": None, "precision": 0.1, "k": 20, "peaks": 3})
-        self.assertIn("n.d.", text)
-        self.assertIn("candidati 3", text)
+        self.assertIn("n/a", text)
+        self.assertIn("candidates 3", text)
 
 
 if __name__ == "__main__":

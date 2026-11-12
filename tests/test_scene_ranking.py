@@ -1,6 +1,6 @@
 import unittest
 
-from archaeoscope import scene_ranking as ranking
+from airchgis import scene_ranking as ranking
 
 
 def scene(**overrides):
@@ -60,7 +60,7 @@ class RankingTests(unittest.TestCase):
             scene(scene_id="bare", ndvi_mean=0.1, bare_fraction=0.9),
             scene(scene_id="green", ndvi_mean=0.65, bare_fraction=0.02),
         ]
-        ranked = ranking.rank_scenes(scenes, target="Crop marks (vegetazione)")
+        ranked = ranking.rank_scenes(scenes, target="Crop marks (vegetation)")
         self.assertEqual(ranked[0]["scene_id"], "green")
 
     def test_soil_mark_target_promotes_bare_soil_scenes(self):
@@ -68,7 +68,7 @@ class RankingTests(unittest.TestCase):
             scene(scene_id="bare", ndvi_mean=0.1, bare_fraction=0.9),
             scene(scene_id="green", ndvi_mean=0.65, bare_fraction=0.02),
         ]
-        ranked = ranking.rank_scenes(scenes, target="Soil marks (suolo nudo)")
+        ranked = ranking.rank_scenes(scenes, target="Soil marks (bare soil)")
         self.assertEqual(ranked[0]["scene_id"], "bare")
 
     def test_a_dry_month_outranks_an_equal_but_wet_scene(self):

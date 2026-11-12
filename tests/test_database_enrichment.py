@@ -2,8 +2,8 @@ import json
 import unittest
 from pathlib import Path
 
-from archaeoscope import source_registry
-from archaeoscope.database_enrichment import enrich_database, pvs_2006_reference_ids
+from airchgis import source_registry
+from airchgis.database_enrichment import enrich_database, pvs_2006_reference_ids
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +13,7 @@ class DatabaseEnrichmentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.database = json.loads(
-            (PROJECT_ROOT / "archaeoscope/data/cam_m_sites.json").read_text(encoding="utf-8")
+            (PROJECT_ROOT / "airchgis/data/cam_m_sites.json").read_text(encoding="utf-8")
         )
         cls.enriched = enrich_database(cls.database)
 
@@ -27,7 +27,7 @@ class DatabaseEnrichmentTests(unittest.TestCase):
     def test_confident_join_moves_coordinate_to_cam_and_deduplicates_pvs(self):
         cam = next(record for record in self.enriched["records"] if record["number"] == "039.024")
         self.assertAlmostEqual(cam["lat"], 43.1795075)
-        self.assertIn("PVS 2006, scheda 059", cam["coordinate_source"])
+        self.assertIn("PVS 2006, record 059", cam["coordinate_source"])
         self.assertIn("UTM EPSG:32633", cam["coordinate_source"])
         self.assertFalse(any(record["number"] == "PVS.059" for record in self.enriched["records"]))
 

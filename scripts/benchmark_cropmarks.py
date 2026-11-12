@@ -2,11 +2,11 @@
 """Run the crop-mark engine over a calibration region and measure it.
 
     python scripts/benchmark_cropmarks.py --label baseline
-    python scripts/benchmark_cropmarks.py --label fase-a --mode "Migliore singola data"
+    python scripts/benchmark_cropmarks.py --label fase-a --mode "Best single date"
 
 Writes one JSON per run under ``docs/benchmarks/`` so that phases can be
 compared on identical numbers. The metrics themselves live in
-``archaeoscope/benchmark.py`` and carry their own tests.
+``airchgis/benchmark.py`` and carry their own tests.
 """
 
 import argparse
@@ -23,11 +23,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import ee  # noqa: E402
 
-from archaeoscope import benchmark, cropmarks_engine as c, site_index  # noqa: E402
-from archaeoscope.scene_ranking import roc_auc  # noqa: E402
+from airchgis import benchmark, cropmarks_engine as c, site_index  # noqa: E402
+from airchgis.scene_ranking import roc_auc  # noqa: E402
 
 
-REGION_PATH = Path(__file__).resolve().parents[1] / "archaeoscope" / "data" / "calibration_region.json"
+REGION_PATH = Path(__file__).resolve().parents[1] / "airchgis" / "data" / "calibration_region.json"
 OUT_DIR = Path(__file__).resolve().parents[1] / "docs" / "benchmarks"
 CACHE = Path(__file__).resolve().parents[1] / ".benchmark_cache"
 
@@ -59,7 +59,7 @@ def download(image, region, scale, path, crs="EPSG:32633", attempts=4):
             detail = exc.read().decode("utf-8", "replace")[:200] if hasattr(exc, "read") else str(exc)[:200]
             print(f"    [{path.name}] tentativo {attempt + 1}/{attempts}: {detail}")
             time.sleep(5 * (attempt + 1))
-    raise RuntimeError(f"download non riuscito dopo {attempts} tentativi: {last}")
+    raise RuntimeError(f"download failed after {attempts} tentativi: {last}")
 
 
 def ndvi_stack(aoi, start, end, region_key, dates=10):
@@ -106,7 +106,7 @@ def legacy_detection(result, aoi, mode):
     only the construction differs.
     """
     top = result["selected_collection"]
-    base = top.median().clip(aoi) if str(mode).startswith("Mediana") else result["best_image"]
+    base = top.median().clip(aoi) if str(mode).startswith("Median") else result["best_image"]
     deficit = c.vegetation_deficit(base)
     excess = c.vegetation_excess(base)
     strength = deficit.max(excess).rename("Mark_strength")
@@ -236,12 +236,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--label", required=True)
     parser.add_argument("--band", default="Persistent_any")
-    parser.add_argument("--mode", default="Migliore singola data")
+    parser.add_argument("--mode", default="Best single date")
     parser.add_argument("--start", default="2016-01-01")
     parser.add_argument("--end", default=str(datetime.date.today()))
     parser.add_argument("--topn", type=int, default=12)
     parser.add_argument("--target", default="Automatico")
-    parser.add_argument("--legacy", action="store_true", help="misura il percorso pre-Fase A sulle stesse scene")
+    parser.add_argument("--legacy", action="store_true", help="measure the pre-Phase A path on the same scenes")
     args = parser.parse_args()
 
     setup = json.loads(REGION_PATH.read_text(encoding="utf-8"))
@@ -293,9 +293,9 @@ def main():
     print(
         f"[{args.label}/{args.band}] AUC {report['auc']:.2f} | "
         f"precision@20 {report['precision@20']:.3f} @50 {report['precision@50']:.3f} "
-        f"(caso {report['precision_random']:.3f}) | "
-        f"bordi@20 {report['edge@20']:.2f} | bersagli {report['targets_reachable']}/{report['targets']} "
-        f"| area cercabile {report['searchable_share']:.0%}"
+        f"(chance {report['precision_random']:.3f}) | "
+        f"edges@20 {report['edge@20']:.2f} | bersagli {report['targets_reachable']}/{report['targets']} "
+        f"| searchable area {report['searchable_share']:.0%}"
     )
 
 

@@ -2,7 +2,7 @@
 """Build the local toponym gazetteer used to georeference catalogue records.
 
 Downloads the GeoNames dump for Italy, keeps the entries inside the bounding
-box of the study area and writes ``archaeoscope/data/gazetteer.json``.
+box of the study area and writes ``airchgis/data/gazetteer.json``.
 
     python scripts/build_gazetteer.py
 
@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from archaeoscope.geocoding import GAZETTEER_PATH, normalise  # noqa: E402
+from airchgis.geocoding import GAZETTEER_PATH, normalise  # noqa: E402
 
 
 DUMP_URL = "https://download.geonames.org/export/dump/IT.zip"
@@ -38,7 +38,7 @@ MUNICIPALITY_CODES = ("ADM3", "PPLA3")
 
 
 def download_dump(url=DUMP_URL):
-    request = urllib.request.Request(url, headers={"User-Agent": "ArchaeoScope gazetteer builder"})
+    request = urllib.request.Request(url, headers={"User-Agent": "AIrchGIS gazetteer builder"})
     with urllib.request.urlopen(request, timeout=300) as response:
         payload = response.read()
     archive = zipfile.ZipFile(io.BytesIO(payload))
@@ -112,7 +112,7 @@ def main():
     payload = build(tuple(args.bbox), args.out, args.url)
     print(
         f"{payload['metadata']['place_count']} toponimi e "
-        f"{payload['metadata']['municipality_count']} comuni scritti in {args.out}"
+        f"{payload['metadata']['municipality_count']} municipalities written to {args.out}"
     )
 
 

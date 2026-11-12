@@ -6,7 +6,7 @@ __pycache__/
 
 # Local virtual environments and credentials
 .venv/
-.venv_archaeoscope/
+.venv_airchgis/
 venv/
 env/
 .ee_project
@@ -30,3 +30,10 @@ env/
 
 # Benchmark rasters (rigenerabili)
 /.benchmark_cache/
+
+# Local material (not for the public repo)
+/USEFUL PAPERS/
+/tmp/
+/.venv_airchgis/
+
+/paper/
