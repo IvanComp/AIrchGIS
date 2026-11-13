@@ -27,7 +27,11 @@ def main():
         st.set_page_config(page_title="AIrchGIS", layout="wide")
     init_state()
     tool = render_navbar()
-    if tool == "Crop Marks":
+    if tool == "Help":
+        from .help_page import render_help
+
+        render_help()
+    elif tool == "Crop Marks":
         render_cropmarks()
     else:
         render_rvt_web()
@@ -48,8 +52,8 @@ def init_state():
 
 def render_navbar():
     ui.inject_styles()
-    brand_col, tool_col, _ = st.columns(
-        [0.22, 0.5, 0.28],
+    brand_col, tool_col, _, help_col = st.columns(
+        [0.22, 0.5, 0.22, 0.06],
         gap="small",
         vertical_alignment="center",
     )
@@ -57,13 +61,20 @@ def render_navbar():
         st.markdown(ui.brand_markup(), unsafe_allow_html=True)
     with tool_col:
         tool = render_tool_switch()
+    with help_col:
+        if st.button("?", key="as_nav_help", help="What AIrchGIS is and how it works",
+                     type="primary" if tool == "Help" else "secondary", width="stretch"):
+            if tool != "Help":
+                st.session_state.as_help_from = tool
+            st.session_state.as_active_tool = "Help"
+            st.rerun()
     st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
     return tool
 
 
 def render_tool_switch():
     active = st.session_state.get("as_active_tool", "RVT")
-    if active not in PRIMARY_TOOLS:
+    if active not in PRIMARY_TOOLS + ("Help",):
         active = "RVT"
         st.session_state.as_active_tool = active
 

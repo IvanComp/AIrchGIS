@@ -39,6 +39,7 @@ AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-dat
 | **Field marks** | Crop and soil marks of buried features | Image quality per date (clouds, shadows, haze, band problems) with masking, date ranking by local contrast and crop phase, per-date anomaly maps, persistence across dates, field-boundary mask, layers ranked by visibility, check against your known sites |
 
 - **Resolution check**: warns when a target is smaller than the data can resolve.
+- **Help**: the **?** button at the top right explains the tool, each screen and each feature.
 
 Scores are investigation priorities, not archaeological probabilities.
 
