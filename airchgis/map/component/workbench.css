@@ -1,0 +1,49 @@
+/* AIrchGIS additions to the DetectorLab map styles */
+html,body{margin:0;padding:0;background:transparent;font-family:Inter,system-ui,sans-serif}
+.detector-map{max-width:none}
+.map-stage{height:calc(100vh - 4px);min-height:560px}
+.exact-layer-panel{width:345px}
+.panel-handle{right:330px}
+.exact-layer-card.expanded .card-expand-content{display:block}
+button,select,summary,label,input[type=checkbox],input[type=range],input[type=file],.exact-switch,.card-expand{cursor:pointer}
+select,select option{cursor:pointer}
+.wb-file{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;color:#bba78c;font-size:11px}
+.wb-file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wb-link{border:1px solid #765936;background:transparent;color:#f3d68f;border-radius:7px;padding:4px 8px;font-size:11px;white-space:nowrap}
+.wb-link:hover{background:#4a301d}
+.wb-message{margin:4px 0 12px;padding:10px 12px;border:1px solid #6f8a3c;border-radius:9px;background:rgba(56,74,28,.55);color:#eaf3d2;font-size:12px;line-height:1.45}
+.wb-message.error{border-color:#a5512f;background:rgba(110,40,20,.55);color:#ffe2d2}
+.wb-card{margin-top:11px;padding:13px 13px 12px;border:1px solid #5e482f;border-radius:10px;background:rgba(48,32,21,.9)}
+.wb-card.primary{border-color:#d7aa56;box-shadow:0 0 0 1px rgba(215,170,86,.25)}
+.wb-card h4{margin:0 0 4px;color:#f3d68f;font:600 13px Inter,sans-serif}
+.wb-card p{margin:0 0 9px;color:#a99479;font-size:10.5px;line-height:1.4}
+.wb-row{display:flex;gap:8px;align-items:center;margin:6px 0}
+.wb-row label{flex:1;color:#d9c7a8;font-size:11px}
+.wb-row input[type=number],.wb-row select{width:110px;padding:5px 6px;border:1px solid #6a4c2f;border-radius:7px;background:#21150e;color:#fffaf0;font-size:12px}
+.wb-row select.wide{width:100%}
+.wb-run{width:100%;margin-top:6px;padding:8px 10px;border:1px solid #d7aa56;border-radius:8px;background:linear-gradient(180deg,#e0b860,#b98a37);color:#2b1b10;font-weight:700;font-size:12px}
+.wb-run.secondary{background:#3a2618;color:#f3d68f;border-color:#765936}
+.wb-run:hover{filter:brightness(1.07)}
+.wb-run:disabled{opacity:.5;cursor:wait}
+.wb-card details{margin-top:8px;color:#d9c7a8;font-size:11px}
+.wb-card summary{color:#e4bf6b;font-size:11px;margin-bottom:6px}
+.wb-table{width:100%;border-collapse:collapse;margin:6px 0;font-size:10.5px;color:#eadcc4}
+.wb-table th,.wb-table td{padding:3px 4px;border-bottom:1px solid rgba(228,191,107,.15);text-align:left}
+.wb-table td.num{text-align:right;font-variant-numeric:tabular-nums}
+.wb-notes{margin:4px 0;padding-left:16px;color:#bba78c;font-size:10.5px}
+.layer-tools{display:flex;gap:6px;margin-top:8px}
+.layer-tools button{flex:1;border:1px solid #765936;background:transparent;color:#f3d68f;border-radius:7px;padding:4px 6px;font-size:11px}
+.layer-tools button:hover{background:#4a301d}
+.wb-busy{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(29,18,12,.78);color:#f3d68f;font-size:13px;z-index:20}
+.wb-busy[hidden]{display:none}
+.wb-busy i{width:34px;height:34px;border:3px solid rgba(243,214,143,.25);border-top-color:#f3d68f;border-radius:50%;animation:wbspin .9s linear infinite}
+@keyframes wbspin{to{transform:rotate(360deg)}}
+.wb-modal{position:fixed;inset:0;z-index:50;background:rgba(10,6,3,.82);display:flex;align-items:center;justify-content:center}
+.wb-modal[hidden]{display:none}
+.wb-modal-box{position:relative;width:94%;height:92%;border:1px solid #765936;border-radius:12px;overflow:hidden;background:#120b07}
+.wb-modal-box iframe{width:100%;height:100%;border:0}
+.wb-modal-close{position:absolute;top:8px;right:10px;z-index:2;width:34px;height:34px;border:1px solid #d7aa56;border-radius:8px;background:#4a301d;color:#f9dda0;font-size:20px}
+.layer-meta{margin:6px 0 0;color:#bba78c;font-size:10px}
+.coordinate-utm-popup code{font-size:11px}
+@media(max-width:760px){.exact-layer-panel{width:250px;padding:16px 12px}.panel-handle{right:235px}}
+.wb-row[hidden]{display:none}

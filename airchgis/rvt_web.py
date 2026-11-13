@@ -52,29 +52,116 @@ def render_rvt_web():
     core = load_rvt_core()
     keep_settings(PERSISTENT_KEYS)
     init_rvt_state(core)
+    wb = st.session_state.get("as_wb")
+    if wb is None:
+        render_start_page(core)
+    else:
+        render_workbench(core, wb)
 
-    controls, viewer = st.columns([0.28, 0.72], gap="large")
-    with controls:
-        params = render_rvt_controls(core)
-    save_settings(PERSISTENT_KEYS)
 
-    with viewer:
-        if params["source_mode"] == "DTM from map" and not params["source_payload"].get("generated_dtm"):
+def render_start_page(core):
+    """Before any data: only the upload (and a collapsed public download), centred."""
+    _, mid, _ = st.columns([0.18, 0.64, 0.18])
+    with mid:
+        st.markdown("### Load your terrain")
+        st.caption("A terrain model or a LiDAR point cloud, from any country and coordinate system. "
+                   "All the tools open on the map once the file is loaded.")
+        current = st.session_state.get("as_rvt_source_mode", "Upload")
+        if current not in ("Upload", "DTM from map"):
+            st.session_state.as_rvt_source_mode = current = "Upload"
+        uploads = render_upload_controls(core) if current == "Upload" else {}
+        with st.expander("Other source: public download", expanded=current != "Upload"):
+            source_mode = st.radio("Data from", ["Upload", "DTM from map"], format_func=SOURCE_LABELS.get,
+                                   key="as_rvt_source_mode")
+        payload = {"uploads": uploads} if source_mode == "Upload" else {"generated_dtm": st.session_state.as_rvt_generated_dtm}
+        if source_mode == "DTM from map" and not payload.get("generated_dtm"):
             render_public_terrain_sources()
             st.markdown("**Italy: regional DTM, cut from the map**")
             render_regional_dtm_selector(core)
             return
-
-        data = current_rvt_data(core, params)
-        if params["source_mode"] == "Upload" and not (params["source_payload"].get("uploads") or {}).get("DTM"):
-            st.info("Load a terrain model in step 1, or download one under Other source.")
+        if source_mode == "Upload" and not uploads.get("DTM"):
             return
-        if data is None or not data.loaded:
+        params = {"source_mode": source_mode, "source_payload": payload, "base_mode": "Original"}
+        data = current_rvt_data(core, params)
+        if data is None or not data.loaded or data.dtm is None:
             msg = getattr(data, "error", None) if data is not None else None
             st.warning(msg or "The terrain data could not be loaded.")
             return
+        if data.profile is None or data.profile.get("transform") is None or data.crs is None:
+            st.warning("This file has no coordinate system or georeference, so it cannot be placed on the map.")
+            return
+        name = Path((uploads.get("DTM") or [payload.get("generated_dtm") or "terrain"])[0]).stem
+        from airchgis.workbench import Workbench
 
-        render_rvt_viewer(core, data, params)
+        st.session_state.as_wb = Workbench(data.dtm, data.profile["transform"], data.crs, data.profile, name=clean_name(name))
+        st.session_state.as_wb_data = data
+        st.rerun()
+
+
+def workbench_tools(core):
+    views = []
+    methods = available_methods(core)
+    methods = [m for m in methods if m != "Raw"] + (["Raw"] if "Raw" in methods else [])
+    for m in methods:
+        param = None
+        if m in ("Hillshade", "Anisotropic Sky-View Factor"):
+            param = {"key": "azimuth", "label": "Light direction (°)", "min": 0, "max": 360, "step": 5, "value": 315}
+        elif m in RADIUS_TOOLS:
+            param = {"key": "radius", "label": "Search radius (pixels)", "min": 1, "max": 200, "step": 1, "value": 10}
+        views.append({"id": m, "name": m, "help": TOOL_HELP.get(m, ""), "param": param})
+    return {"views": views}
+
+
+def relief_params(method, value):
+    params = {"method": method, "dataset": "DTM", "azimuth": 315.0, "altitude": 35.0, "z_factor": 1.0, "radius": 10.0,
+              "n_dir": 16, "p_low": 2.0, "p_high": 98.0, "invert": False}
+    if value is not None:
+        if method in ("Hillshade", "Anisotropic Sky-View Factor"):
+            params["azimuth"] = float(value)
+        elif method in RADIUS_TOOLS:
+            params["radius"] = float(value)
+    return params
+
+
+def render_workbench(core, wb):
+    """The map with every tool inside it."""
+    from airchgis.map.workbench_component import map_workbench
+    from airchgis.workbench import handle_event
+
+    data = st.session_state.get("as_wb_data")
+    args = wb.map_args(workbench_tools(core))
+    args["basemap"] = satellite_template(core, "Current")
+    event = map_workbench(args, key="as_map_workbench", height=780)
+    if not event or event.get("nonce") == st.session_state.get("as_wb_last_nonce"):
+        return
+    st.session_state.as_wb_last_nonce = event.get("nonce")
+
+    def compute(method, value):
+        params = relief_params(method, value)
+        raw = core.as_float32(core.compute_method(method, wb.dem, float(wb.res), params["azimuth"], params["altitude"],
+                                                  params["z_factor"], params["radius"], int(params["n_dir"])))
+        if np.ndim(raw) == 3 or core.is_rgb_method(method):
+            return raw, core.normalize_rgb01(raw)
+        return raw, None
+
+    def view3d():
+        html_path, _las, _meta = build_3d_cloud(core, data, {"source_mode": "Upload", "source_payload": {}}, 
+                                                list(core.CLOUD_PREPROCESS_PROFILES.keys())[0])
+        html = Path(html_path).read_text(encoding="utf-8")
+        # the LAS link (relative file) and the old OpenCV analysis do not belong to this view: hide them;
+        # open 3D data are downloaded from the map panel instead
+        hide = "<style>a.toolbar-btn[download],.analysis-mode-btn{display:none!important}</style>"
+        return html.replace("</head>", hide + "</head>", 1) if "</head>" in html else hide + html
+
+    with st.spinner("Working..."):
+        result = handle_event(wb, event, compute=compute, core=core, view3d=view3d)
+    if result == "reload":
+        for k in ("as_wb", "as_wb_data", "as_rvt_data", "as_rvt_data_sig", "as_rvt_generated_dtm"):
+            st.session_state[k] = None
+        for k in list(st.session_state.keys()):
+            if str(k).startswith("_as_uploaded_"):
+                st.session_state[k] = []
+    st.rerun()
 
 
 @st.cache_resource(show_spinner=False)

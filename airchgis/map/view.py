@@ -111,7 +111,7 @@ def elevation_grid(dem, transform, crs, side=DEM_SIDE):
 
 def map_html(layers, basemap_tiles=None, elevation=None, height=640, labels=True, terrain=True):
     """Full HTML document of the map (MapLibre from unpkg, DetectorLab styles inlined)."""
-    css = (HERE / "detectorlab_map.css").read_text(encoding="utf-8")
+    css = (HERE / "component" / "detectorlab_map.css").read_text(encoding="utf-8")
     js = (HERE / "detectorlab_map.js").read_text(encoding="utf-8")
     template = (HERE / "detectorlab_map.html").read_text(encoding="utf-8")
     config = {

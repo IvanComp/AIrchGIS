@@ -37,7 +37,7 @@ AIrchGIS brings LiDAR relief visualization, terrain cleaning and 3D terrain expl
 | **Terrain (LiDAR)** | Earthworks, mounds, ditches, terraces under vegetation | Relief visualizations (hillshade, sky-view factor, openness, local relief model, MSRM…), **Enhance & best view** (cleaning, automatic best view, fused view), interactive 3D view, GeoTIFF/PNG and 3D export |
 
 - **Resolution check**: warns when a target is smaller than the data can resolve.
-- **Map**: results are shown on a MapLibre map in the style of DetectorLab (satellite base, 3D relief, layer panel with on/off and opacity, distance measure, UTM coordinates with the elevation of your terrain, Google Earth link).
+- **Map**: after upload everything happens on a MapLibre map in the style of DetectorLab: tools and layers in the right panel, satellite base, 3D relief, distance measure, UTM coordinates with the elevation of your terrain, Google Earth link.
 - **Help**: the **?** button at the top right explains the tool and each feature.
 
 Scores are investigation priorities, not archaeological probabilities.
@@ -59,14 +59,14 @@ The app starts with **Upload your files** (up to 4 GB per file). Public elevatio
 
 # Enhance & best view
 
-On the Terrain screen, load your terrain model (step 1), keep the recommended tool **Improve and find the best view** (step 2), type the width of the features you are looking for and press the button. The other relief views (hillshade, slope, sky-view factor, openness, local relief model…) are in the same tool list, each with its main setting; everything else is under **Advanced**. AIrchGIS then:
+The start page only asks for your terrain model or point cloud. Once it is loaded, the map opens with every tool in the **Tools** panel on the right, in the style of the DetectorLab map:
 
-1. **Cleans the terrain**: removes periodic banding (flight lines), isolated spikes and pits, fills small holes inside the survey, and reduces noise while keeping edges. A table shows each measure before and after; the original is not changed.
-2. **Ranks the relief views**: computes up to 19 views (hillshades, slope, sky-view factor, openness, local relief model and multi-scale relief model, with radii matched to your width) and ranks them by a visibility score: how much features of that width stand out from the noise and from the broad landscape. With a list of known sites it also shows the AUC of each view.
-3. **Shows the best one** with a one-line explanation and a before/after switch, ready to download as GeoTIFF. Measures and the re-runnable script are under **Details**.
+1. **Improve and find the best view** *(recommended)*: type the width of the features you are looking for. AIrchGIS cleans the terrain (periodic banding, isolated spikes and pits, small holes, noise while keeping edges), computes up to 19 relief views with radii matched to your width, ranks them by a visibility score (how much features of that width stand out from the noise and from the broad landscape) and adds the clearest one to the map as *After*, with the original hillshade as *Before*. A one-line explanation appears in the panel; measures, all views and the script are under **Details**. With a list of known sites it also reports the AUC of each view.
+2. **Relief views**: choose a view (hillshade, slope, sky-view factor, openness, local relief model, MSRM…) and its main setting, then **Add to the map**.
+3. **Fused view**: blends the four best views; if the blend is not clearer than the best single view, AIrchGIS says so and adds nothing.
+4. **3D**: the 3D view of your terrain, a high-quality image (PDF or PNG, 300 dpi by default) with the top layer draped on the terrain, and open 3D data (LAZ/LAS, PLY, glTF) for QGIS, CloudCompare or Blender.
 
-Under **Advanced** you can run single steps, see all views, build a **fused view** (a blend of the four best views; if it is not clearer than the best single view, AIrchGIS says so and keeps the best view), and remove isolated points from a LAS/LAZ point cloud. Display contrast (adaptive histogram equalization) is labelled as display only; there is no super-resolution.
-
+Each layer can be switched on and off, faded, downloaded as GeoTIFF or removed. **Load another file** (top of the panel) goes back to the start page. Terrain models in longitude/latitude are reprojected to their UTM zone, so that all sizes are in metres. There is no super-resolution.
 
 # Scripts and provenance
 
@@ -83,7 +83,7 @@ log.save_scripts("outputs/")
 
 # 3D export for research
 
-On the Terrain screen, under **3D view and 3D export**, **Download high-quality image** saves the terrain in 3D as a PDF (default, 300 dpi, 190 mm wide, for a paper figure) or PNG, with the current relief view draped on it, a scale bar, a north arrow and a caption; camera, size and resolution are under Advanced. **Export 3D for research** writes a georeferenced point cloud (LAZ/LAS and PLY), a terrain mesh (glTF `.glb`) and a JSON sidecar (source, CRS, bounds, resolution, date, relief visualization, vertical exaggeration), zipped for archiving on Zenodo. The files open in QGIS 3D, CloudCompare and Blender. LAZ needs `pip install lazrs`; without it the cloud is written as LAS.
+In the **3D** card of the map's tools panel, **Download high-quality image** saves the terrain in 3D as a PDF (default, 300 dpi, 190 mm wide, for a paper figure) or PNG, with the top layer draped on it, a scale bar and a north arrow; camera, size and resolution are under *Image options*. **Download open 3D data** writes a georeferenced point cloud (LAZ/LAS and PLY), a terrain mesh (glTF `.glb`) and a JSON sidecar (source, CRS, bounds, resolution, date, relief visualization, vertical exaggeration), zipped for archiving on Zenodo. The files open in QGIS 3D, CloudCompare and Blender. LAZ needs `pip install lazrs`; without it the cloud is written as LAS.
 
 # Quick start
 

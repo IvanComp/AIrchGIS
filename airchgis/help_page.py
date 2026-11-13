@@ -40,17 +40,21 @@ def render_help():
 
     st.markdown("## How it works")
     c1, c2, c3 = st.columns(3)
-    c1.markdown("**1 · Load data**\n\nUpload your file. Public elevation models are under *Other source*.")
-    c2.markdown("**2 · Choose a tool**\n\nPick a tool from the list. Each has a one-line description and at most one setting; "
-                "the rest is under *Advanced*.")
-    c3.markdown("**3 · See and download**\n\nThe result on a map, one sentence that explains it, one download. "
-                "Measures and scripts are under *Details*.")
+    c1.markdown("**1 · Load your file**\n\nThe start page only asks for your terrain model or point cloud. Public "
+                "elevation models are under *Other source: public download*.")
+    c2.markdown("**2 · Use the tools on the map**\n\nThe map opens with the **Tools** panel on the right. Start with "
+                "*Improve and find the best view*, or add any relief view.")
+    c3.markdown("**3 · Compare and download**\n\nEach result becomes a layer you can switch on and off and fade. A "
+                "short sentence explains it; each layer has its own download.")
     st.markdown("## The map")
     st.markdown(
-        "- **Layers panel (right):** switch each layer on or off and set its opacity: the relief view, the best view "
-        "(*After*), the original hillshade (*Before*), place names and the satellite base map.\n"
-        "- **Tools (left):** full screen, zoom, **measure** a distance between two points, and **coordinates**: click a "
-        "point to read its UTM coordinates, latitude/longitude and the elevation of your terrain model (copied to the "
+        "- **Tools panel (right):** *Improve and find the best view*, *Relief views* (choose a view and its main setting, "
+        "then *Add to the map*), *Fused view*, *3D* (3D view of your terrain, high-quality PDF/PNG image, open 3D data) "
+        "and *Details* (cleaning measures, all views ranked, the steps as a Python script). *Load another file* is at the top.\n"
+        "- **Layers (right, below the tools):** switch each layer on or off; open it (›) to set its opacity, download it "
+        "as GeoTIFF or remove it. *After* is the best view, *Before* the original hillshade.\n"
+        "- **Map controls (left):** full screen, zoom, **measure** a distance between two points, and **coordinates**: "
+        "click a point to read its UTM coordinates, latitude/longitude and the elevation of your terrain (copied to the "
         "clipboard), then open it in Google Earth.\n"
         "- **3D button (bottom left):** tilts the map over a global terrain model; press it again for a flat view.\n"
         "- The map needs an internet connection for the satellite images; your own layers never leave your computer."
@@ -61,7 +65,7 @@ def render_help():
         "- **Input:** terrain model (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ). Public elevation models are "
         "under *Other source*.\n"
         "- **Improve and find the best view** *(recommended)*: cleans the terrain, compares up to 19 relief views "
-        "with sizes matched to your features, and shows the clearest one with a before/after switch.\n"
+        "with sizes matched to your features, and adds the clearest one to the map, with the original as *Before*.\n"
         "- **Relief views:** hillshade, multi-direction hillshade, slope, sky-view factor, openness, local relief "
         "model, multi-scale relief model, local dominance and others (see the table below).\n"
         "- **3D view:** look at the terrain in 3D, save a **high-quality image (PDF or PNG)** for a paper, or export "
@@ -105,8 +109,8 @@ def render_help():
         )
     with st.expander("Repeatable work"):
         st.markdown(
-            "Every step is recorded with its settings, the files used and the software versions. Under *Details* you can "
-            "download it as a Python script that repeats the same analysis on the same files."
+            "Every step is recorded with its settings, the files used and the software versions. In the *Details* card of "
+            "the tools panel you can download it as a Python script that repeats the same analysis on the same files."
         )
     with st.expander("Privacy and site protection"):
         st.markdown(
@@ -120,7 +124,8 @@ def render_help():
         "- Start with **Improve and find the best view** and the width of the features you expect.\n"
         "- If features may run in any direction, prefer views without a light direction (sky-view factor, openness, local relief model).\n"
         "- Compare the result with the *Before* view and with the measures under *Details*.\n"
-        "- For a paper figure, use *3D view and 3D export → Download high-quality image* (PDF, 300 dpi)."
+        "- For a paper figure, use the *3D* card in the tools panel → *Download high-quality image* (PDF, 300 dpi). The "
+        "layer on top of the map is draped on the terrain."
     )
     st.markdown("## Limits")
     st.markdown(

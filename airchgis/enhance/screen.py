@@ -268,7 +268,7 @@ def render_terrain_enhance(dem, res, profile, crs, label="DTM", on_apply=None, k
             else:
                 out = fz["outputs"]
                 best = out["best_single"]["name"]
-                if out["gain_over_best_single"] <= 1.0 + 1e-6:
+                if out["gain_over_best_single"] < 1.005:
                     st.info(f"The blend does not show features more clearly than {best}, so the best single view is kept.")
                     if bv and bv["status"] != "refused":
                         st.image(_png(_read(bv["outputs"]["output"])), caption=bv["outputs"]["best"], width="stretch")
