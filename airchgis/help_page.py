@@ -5,11 +5,6 @@ from __future__ import annotations
 import streamlit as st
 
 
-def _go(label, tool, key):
-    if st.button(label, key=key):
-        st.session_state.as_active_tool = tool
-        st.rerun()
-
 
 VIEWS = [
     ("Hillshade", "Shaded relief lit by a low sun.", "A first look; change the light direction, because features parallel to the light disappear."),
@@ -33,9 +28,9 @@ def render_help():
         st.rerun()
     st.markdown("## What is AIrchGIS?")
     st.markdown(
-        "AIrchGIS helps archaeologists look for traces of the past in **LiDAR terrain models** and in "
-        "**satellite, drone or aerial images**, without writing code. It runs on your computer, in the web browser, "
-        "and works with your own files from any country, sensor and coordinate system. Your data stay on your computer."
+        "AIrchGIS helps archaeologists look for traces of the past in **LiDAR terrain models** (DTM, DSM and point "
+        "clouds), without writing code. It runs on your computer, in the web browser, and works with your own files "
+        "from any country, sensor and coordinate system. Your data stay on your computer."
     )
     st.markdown(
         "Its AI support makes your data **easier to read**: it cleans them, picks the view that shows features of the size "
@@ -51,48 +46,21 @@ def render_help():
     c3.markdown("**3 · See and download**\n\nOne image, one sentence that explains it, one download. Measures and "
                 "scripts are under *Details*.")
 
-    st.markdown("## The two screens")
-    t, f = st.columns(2)
-    with t:
-        st.markdown("### Terrain (LiDAR)")
-        st.markdown(
-            "For earthworks, mounds, ditches and terraces, also under trees.\n\n"
-            "- **Input:** terrain model (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ); optional surface models.\n"
-            "- **Improve and find the best view** *(recommended)*: cleans the terrain, compares up to 19 relief views "
-            "with sizes matched to your features, and shows the clearest one with a before/after switch.\n"
-            "- **Relief views:** hillshade, multi-direction hillshade, slope, sky-view factor, openness, local relief "
-            "model, multi-scale relief model, local dominance and others.\n"
-            "- **3D view:** look at the terrain in 3D, save a **high-quality image (PDF or PNG)** for a paper, or export "
-            "the terrain and point cloud as open 3D data (LAZ, PLY, glTF) for QGIS, CloudCompare or Blender."
-        )
-        _go("Open Terrain", "RVT", "as_help_go_t")
-    with f:
-        st.markdown("### Field marks (images)")
-        st.markdown(
-            "For crop marks and soil marks of buried walls, ditches and roads.\n\n"
-            "- **Input:** images of the same area on one or more dates (satellite, drone, aerial); several dates work "
-            "better than one.\n"
-            "- **Image quality per date:** clouds, shadows, haze and band problems; cloudy pixels can be masked.\n"
-            "- **Find the marks:** ranks the dates, computes anomaly maps for each date and combines them "
-            "(persistence, linear marks, vegetation deficit or excess, soil marks), then opens the clearest layer.\n"
-            "- **Public archives:** Sentinel-2 and Landsat through Google Earth Engine (optional)."
-        )
-        _go("Open Field marks", "Crop Marks", "as_help_go_f")
+    st.markdown("## What you can do")
+    st.markdown(
+        "- **Input:** terrain model (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ); optional surface models "
+        "(first and last return). Example data and public sources are under *Other sources*.\n"
+        "- **Improve and find the best view** *(recommended)*: cleans the terrain, compares up to 19 relief views "
+        "with sizes matched to your features, and shows the clearest one with a before/after switch.\n"
+        "- **Relief views:** hillshade, multi-direction hillshade, slope, sky-view factor, openness, local relief "
+        "model, multi-scale relief model, local dominance and others (see the table below).\n"
+        "- **3D view:** look at the terrain in 3D, save a **high-quality image (PDF or PNG)** for a paper, or export "
+        "the terrain and point cloud as open 3D data (LAZ, PLY, glTF) for QGIS, CloudCompare or Blender."
+    )
 
     st.markdown("## Features in detail")
     with st.expander("Relief views: what they show and when to use them"):
         st.table([{"View": n, "What it shows": w, "Use it for": u} for n, w, u in VIEWS])
-    with st.expander("Images and sensors (Field marks)"):
-        st.markdown(
-            "- **Sensors with presets:** Sentinel-2, Landsat 4-9, PlanetScope (4 and 8 bands), drone multispectral and RGB "
-            "orthophotos; other sensors can be set band by band under *Advanced*.\n"
-            "- **Files:** one multiband file per date, or one file per band (e.g. `..._B04.jp2`). Dates are read from file "
-            "names and can be corrected under *Advanced*.\n"
-            "- **Marks:** *crop marks* (plants weaker or stronger above buried features; need a growing crop), "
-            "*soil marks* (colour of bare, ploughed soil), or *automatic* (chosen date by date).\n"
-            "- **Layers:** vegetation deficit (walls, road beds), vegetation excess (ditches, wetter fills), linear marks "
-            "(oriented anomalies), persistence (how many dates show the anomaly), soil marks and field boundaries."
-        )
     with st.expander("Cleaning the terrain"):
         st.markdown(
             "- **Remove banding:** removes regular stripes from flight lines, while keeping roads and other long features.\n"
@@ -115,13 +83,13 @@ def render_help():
     with st.expander("Resolution check"):
         st.markdown(
             "Before an analysis, AIrchGIS checks whether features of the width you typed can be seen at the pixel size "
-            "of your data. If not, it tells you, and blocks the analysis when it is impossible: for example, 5 m streets "
-            "cannot be seen in 10 m Sentinel-2 images."
+            "of your data. If not, it tells you, and blocks the analysis when it is impossible: for example, a 0.5 m "
+            "feature cannot be seen in a 1 m terrain model."
         )
     with st.expander("Known sites"):
         st.markdown(
-            "You can upload a list of known sites (CSV with longitude/latitude, GeoJSON, GeoPackage, zipped Shapefile, "
-            "KML). AIrchGIS shows them on the map and reports, for each view or layer, how well it separates the sites "
+            "In *Improve and find the best view* you can upload a list of known sites (CSV with longitude/latitude, "
+            "GeoJSON, GeoPackage, zipped Shapefile, KML). AIrchGIS reports, for each view, how well it separates the sites "
             "from random places (AUC; 0.5 = chance). Known sites are a small, non-random sample: use this as a check, "
             "not as proof."
         )
@@ -133,14 +101,14 @@ def render_help():
     with st.expander("Privacy and site protection"):
         st.markdown(
             "AIrchGIS runs on your computer and keeps your data there. Nothing is published or sent anywhere, unless you "
-            "choose a public archive. Precise coordinates of new finds can help looters: share them only with the "
+            "choose a public download. Precise coordinates of new finds can help looters: share them only with the "
             "competent heritage authorities."
         )
 
     st.markdown("## Tips")
     st.markdown(
         "- Start with **Improve and find the best view** and the width of the features you expect.\n"
-        "- For images, load several dates of the same area: marks appear only in some seasons and years.\n"
+        "- If features may run in any direction, prefer views without a light direction (sky-view factor, openness, local relief model).\n"
         "- Compare the result with the *Before* view and with the measures under *Details*.\n"
         "- For a paper figure, use *3D view and 3D export → Download high-quality image* (PDF, 300 dpi)."
     )

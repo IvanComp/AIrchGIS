@@ -17,7 +17,7 @@ from .rvt_web import render_rvt_web
 LOGGER = logging.getLogger(__name__)
 
 
-PRIMARY_TOOLS = ("RVT", "Crop Marks")
+PRIMARY_TOOLS = ("RVT",)  # the Field marks screen (render_cropmarks) is no longer in the interface
 
 
 def main():
@@ -31,8 +31,6 @@ def main():
         from .help_page import render_help
 
         render_help()
-    elif tool == "Crop Marks":
-        render_cropmarks()
     else:
         render_rvt_web()
 
@@ -78,21 +76,6 @@ def render_tool_switch():
         active = "RVT"
         st.session_state.as_active_tool = active
 
-    labels = {"RVT": "Terrain", "Crop Marks": "Field marks"}
-    for column, tool, key in zip(
-        st.columns(len(PRIMARY_TOOLS), gap="small"),
-        PRIMARY_TOOLS,
-        ("as_nav_rvt", "as_nav_crop"),
-    ):
-        with column:
-            if st.button(
-                labels[tool],
-                key=key,
-                type="primary" if active == tool else "secondary",
-                width="stretch",
-            ):
-                st.session_state.as_active_tool = tool
-                st.rerun()
     return st.session_state.as_active_tool
 
 
