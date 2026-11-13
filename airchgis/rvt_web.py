@@ -85,6 +85,8 @@ def render_start_page(core):
         data = current_rvt_data(core, params)
         if data is None or not data.loaded or data.dtm is None:
             msg = getattr(data, "error", None) if data is not None else None
+            if msg and ("too big" in msg or "Unable to allocate" in msg or "MemoryError" in msg):
+                msg = "The terrain is too large to open at once on this computer. Load fewer tiles, or a smaller area."
             st.warning(msg or "The terrain data could not be loaded.")
             return
         if data.profile is None or data.profile.get("transform") is None or data.crs is None:
@@ -357,9 +359,59 @@ def render_upload_controls(core):
         uploads[key] = out
 
     load_group("DTM", "Terrain model (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ), any country and coordinate system")
+    if uploads.get("DTM"):
+        keep, notes, error = usable_rasters(uploads["DTM"])
+        for n in notes:
+            st.caption(n)
+        if error:
+            st.error(error)
+            keep = []
+        uploads["DTM"] = keep
     uploads.setdefault("DSM_First", [])
     uploads.setdefault("DSM_Last", [])
     return uploads
+
+
+PREP_SUFFIXES = ("_prep", "_prep1", "_prep2", "_prep3")
+MAX_MOSAIC_BYTES = 1.5e9  # about 375 million float32 cells
+
+
+def usable_rasters(paths):
+    """Rasters that can be stitched into one terrain model.
+
+    Leaves out the smoothed copies made by earlier versions (``*_prep*``) and files in a coordinate system
+    different from the first one (mixing degrees and metres makes a mosaic of absurd size), and estimates
+    the size of the mosaic before anything is read. Returns (paths, notes, error)."""
+    import rasterio
+    from rasterio.warp import transform_bounds
+
+    notes = []
+    files = [Path(p) for p in paths if not Path(p).stem.endswith(PREP_SUFFIXES)]
+    if len(files) < len(paths):
+        notes.append(f"{len(paths) - len(files)} smoothed copies (*_prep*) left out.")
+    keep, crs0, bounds, res = [], None, None, None
+    for p in files:
+        try:
+            with rasterio.open(p) as src:
+                crs, b, r = src.crs, src.bounds, min(abs(src.res[0]), abs(src.res[1]))
+        except Exception as exc:
+            notes.append(f"{p.name}: cannot be read ({exc}).")
+            continue
+        if crs0 is None:
+            crs0 = crs
+        elif crs != crs0:
+            notes.append(f"{p.name} left out: its coordinate system ({crs}) differs from the first file ({crs0}).")
+            continue
+        keep.append(str(p))
+        bounds = b if bounds is None else (min(bounds[0], b[0]), min(bounds[1], b[1]), max(bounds[2], b[2]), max(bounds[3], b[3]))
+        res = r if res is None else min(res, r)
+    error = None
+    if keep and res:
+        cells = ((bounds[2] - bounds[0]) / res) * ((bounds[3] - bounds[1]) / res)
+        if cells * 4 > MAX_MOSAIC_BYTES:
+            error = (f"These files together make a terrain of about {cells / 1e6:,.0f} million cells, too large to open at "
+                     "once on this computer. Load fewer tiles, or a smaller area.")
+    return keep, notes, error
 
 
 def extract_zip_rasters(core, path, dataset_key):
@@ -370,7 +422,7 @@ def extract_zip_rasters(core, path, dataset_key):
         with zipfile.ZipFile(path, "r") as zf:
             zf.extractall(extract_dir)
         marker.write_text("ok", encoding="utf-8")
-    return [str(p) for p in core.list_rasters(extract_dir)]
+    return [str(p) for p in core.list_rasters(extract_dir) if not p.stem.endswith(PREP_SUFFIXES)]
 
 
 def render_public_terrain_sources():
