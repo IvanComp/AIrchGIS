@@ -1,15 +1,4 @@
-"""Automatic choice of the relief visualization that best shows features of a given size.
 
-A grid of standard visualizations (hillshade from several directions,
-multi-direction hillshade, slope, sky-view factor, positive and negative
-openness and local relief model at several radii, multi-scale relief model)
-is computed and each one is scored with a label-free visibility measure
-(:func:`airchgis.enhance.metrics.visibility`): how strongly structures of the
-target size stand out compared with the noise in flat areas. When the user
-has a list of known sites, the AUC of each visualization at those sites is
-reported next to the score; it is not used to rank, so the ranking stays
-valid where no site is known.
-"""
 
 from __future__ import annotations
 
@@ -54,7 +43,7 @@ def _pc1(stack):
 
 
 def candidates(res, target_width_m, quick=False):
-    """The grid of visualizations to compare, with radii scaled to the target size."""
+
     import rvt.vis
 
     t = max(1.0, float(target_width_m) / float(res))
@@ -103,7 +92,7 @@ def compute(cand, dem):
 
 
 def rank(dem, res, target_width_m, site_pixels=None, quick=False, keep_arrays=True):
-    """Score every candidate visualization; returns a dict with the ranking, arrays and an explanation."""
+
     dem = np.asarray(dem, dtype=np.float64)
     win = _window(dem)
     sub = dem[win]
@@ -115,7 +104,7 @@ def rank(dem, res, target_width_m, site_pixels=None, quick=False, keep_arrays=Tr
     for cand in candidates(res, target_width_m, quick=quick):
         try:
             vis = compute(cand, sub)
-        except Exception as exc:  # a visualization that cannot run on this raster is skipped, not fatal
+        except Exception as exc:
             rows.append({"name": cand.name, "family": cand.family, "params": cand.params, "score": None, "error": str(exc)})
             continue
         v = metrics.visibility(vis, res, target_width_m, flat)
@@ -133,7 +122,7 @@ def rank(dem, res, target_width_m, site_pixels=None, quick=False, keep_arrays=Tr
 
 
 def compute_named(dem, res, target_width_m, name):
-    """Compute one candidate of the grid, by name, on the whole raster."""
+
     for cand in candidates(res, target_width_m):
         if cand.name == name:
             return compute(cand, np.asarray(dem, dtype=np.float64))
@@ -141,7 +130,7 @@ def compute_named(dem, res, target_width_m, name):
 
 
 def rank_layers(layers, res, target_width_m, site_pixels=None, flat=None):
-    """Rank already computed layers (e.g. multispectral indices or anomaly maps) with the same score."""
+
     rows = []
     for name, a in layers.items():
         a = np.asarray(a, dtype=np.float64)

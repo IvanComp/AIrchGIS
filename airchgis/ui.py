@@ -1,13 +1,4 @@
-"""Visual identity and motion for the AIrchGIS shell.
 
-Everything here is presentation only: CSS injected once per rerun plus a couple
-of markup helpers. No widget state passes through this module, so the theme can
-change without touching any analysis code.
-
-Motion is used to say something - the header sweep reads as a survey scan, the
-staggered reveal follows the order in which results are produced - and every
-animation is disabled under ``prefers-reduced-motion``.
-"""
 
 from pathlib import Path
 
@@ -32,9 +23,9 @@ PALETTE = {
 }
 
 def logo_svg():
-    """Inline copy of the mark, so its CSS animations run inside the page."""
+
     try:
-        markup = Path(LOGO_PATH).read_text(encoding="utf-8")
+        markup = " ".join(Path(LOGO_PATH).read_text(encoding="utf-8").splitlines())
     except OSError:
         return ""
     return markup.replace("<svg ", '<svg class="as-logo-svg" ', 1)
@@ -52,8 +43,18 @@ def brand_markup(subtitle="AI-assisted archaeological GIS"):
     """
 
 
+def source_code_markup():
+    return (
+        '<a class="as-source-link" href="https://github.com/IvanComp/AIrchGIS" '
+        'target="_blank" rel="noopener noreferrer">'
+        '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">'
+        '<path d="M12 .297C5.37.297 0 5.67 0 12.297c0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577v-2.234c-3.338.726-4.043-1.416-4.043-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.835 2.807 1.305 3.492.998.108-.776.418-1.305.762-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.31.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23a11.52 11.52 0 016.006 0c2.291-1.552 3.297-1.23 3.297-1.23.654 1.652.243 2.873.119 3.176.769.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>'
+        '</svg><span>Source Code v1.0.0</span></a>'
+    )
+
+
 def section_title(title, eyebrow="", hint=""):
-    """A titled band used to open a screen or a major block."""
+
     eyebrow_html = f'<div class="as-eyebrow">{eyebrow}</div>' if eyebrow else ""
     hint_html = f'<p class="as-section-hint">{hint}</p>' if hint else ""
     st.markdown(
@@ -69,16 +70,13 @@ def section_title(title, eyebrow="", hint=""):
 
 
 def inject_styles():
-    """Write the stylesheet into the page.
 
-    Streamlit re-renders the whole script on every interaction, so the style
-    element has to be emitted on each run rather than cached in session state.
-    """
     st.markdown(f"<style>{STYLESHEET}</style>", unsafe_allow_html=True)
 
 
 STYLESHEET = """
-/* hand pointer on dropdowns, like on buttons */
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600&display=swap");
+
 [data-baseweb="select"], [data-baseweb="select"] *, [data-baseweb="popover"] li, [role="option"],
 [data-testid="stSelectbox"] div, [data-testid="stMultiSelect"] div, [data-testid="stExpander"] summary {
     cursor: pointer !important;
@@ -101,7 +99,7 @@ STYLESHEET = """
     --as-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-/* ---------- chrome removal ---------- */
+
 header[data-testid="stHeader"],
 div[data-testid="stToolbar"],
 div[data-testid="stDecoration"],
@@ -115,7 +113,7 @@ footer {
     visibility: hidden;
 }
 
-/* ---------- living background ---------- */
+
 .stApp {
     background: var(--as-brown-950);
     color: var(--as-text);
@@ -167,7 +165,7 @@ footer {
     to   { background-position: 420px 210px; }
 }
 
-/* ---------- brand ---------- */
+
 .as-brandbar {
     align-items: center;
     display: flex;
@@ -218,7 +216,7 @@ footer {
     50%      { background-position: 0% 50%; }
 }
 
-/* ---------- navigation ---------- */
+
 .as-nav-rule {
     background: linear-gradient(90deg, transparent, var(--as-line-strong) 18%, var(--as-line-strong) 82%, transparent);
     height: 1px;
@@ -281,7 +279,7 @@ div[data-testid="stButton"] > button[kind="primary"]:hover {
     box-shadow: 0 14px 30px -10px rgba(241, 199, 91, 0.95);
 }
 
-/* Keep the top bar on one line: the sidebar can take a third of the width. */
+
 div[data-testid="stButton"] > button p { white-space: nowrap; }
 @media (max-width: 1560px) {
     .as-utility-label { display: none; }
@@ -292,7 +290,7 @@ div[data-testid="stButton"] > button p { white-space: nowrap; }
     .as-utility-link { font-size: 0.72rem; padding: 0.3rem 0.55rem; }
 }
 
-/* ---------- utility links ---------- */
+
 .as-utility {
     align-items: center;
     display: flex;
@@ -331,7 +329,7 @@ div[data-testid="stButton"] > button p { white-space: nowrap; }
     transform: translateY(-2px);
 }
 
-/* ---------- sections ---------- */
+
 .as-section { margin: 0.2rem 0 0.9rem; }
 .as-eyebrow {
     color: var(--as-gold-400);
@@ -364,7 +362,7 @@ div[data-testid="stButton"] > button p { white-space: nowrap; }
 }
 @keyframes as-grow { from { width: 0; opacity: 0; } to { width: 72px; opacity: 1; } }
 
-/* ---------- panels, metrics, tables ---------- */
+
 section[data-testid="stSidebar"] {
     background: linear-gradient(180deg, rgba(33, 23, 15, 0.96), rgba(21, 16, 11, 0.96));
     border-right: 1px solid var(--as-line);
@@ -425,7 +423,7 @@ div[data-testid="stDataFrame"], div[data-testid="stTable"] {
 }
 iframe { border-radius: 12px; }
 
-/* ---------- inputs ---------- */
+
 div[data-testid="stRadio"] [role="radiogroup"] label,
 div[data-testid="stCheckbox"] label,
 div[data-testid="stSlider"] label,
@@ -453,7 +451,7 @@ textarea:focus {
     box-shadow: 0 0 0 3px rgba(241, 199, 91, 0.14) !important;
 }
 
-/* ---------- status, spinner, progress ---------- */
+
 div[data-testid="stSpinner"] > div { border-top-color: var(--as-gold-400) !important; }
 div[data-testid="stSpinner"] { color: var(--as-gold-300); }
 div[data-testid="stAlert"] {
@@ -462,7 +460,7 @@ div[data-testid="stAlert"] {
     animation: as-rise 0.45s var(--as-ease) both;
 }
 
-/* ---------- badges and result chips ---------- */
+
 .as-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.15rem 0 0.75rem; }
 .as-chip {
     align-items: center;
@@ -493,7 +491,7 @@ div[data-testid="stAlert"] {
 }
 .as-legend b { color: var(--as-gold-300); }
 
-/* ---------- scrollbar ---------- */
+
 ::-webkit-scrollbar { height: 10px; width: 10px; }
 ::-webkit-scrollbar-track { background: rgba(15, 12, 8, 0.6); }
 ::-webkit-scrollbar-thumb {
@@ -502,7 +500,7 @@ div[data-testid="stAlert"] {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--as-gold-500); }
 
-/* ---------- database screen ---------- */
+
 .as-db-heading {
     align-items: end;
     display: flex;
@@ -637,4 +635,83 @@ div[data-testid="stAlert"] {
         transition-duration: 0.001ms !important;
     }
 }
+
+
+.st-key-terrain_upload { max-width: 960px; margin: .3rem auto 0; }
+.st-key-terrain_upload [data-testid="stFileUploader"] { width: 76%; margin-inline: auto; }
+.st-key-terrain_upload [data-testid="stFileUploader"] > label { justify-content: center; padding: .55rem 0 .65rem; margin-bottom: .4rem; }
+.st-key-terrain_upload [data-testid="stFileUploader"] > label p { color: var(--as-gold-400); font-weight: 700; font-size: 1.05rem; line-height: 1.5; text-align: center; }
+.st-key-terrain_upload [data-testid="stFileUploaderDropzone"] {
+    display: flex; flex-direction: column; justify-content: center; gap: .85rem;
+    box-sizing: border-box; min-height: 180px; padding: 1.4rem 1.5rem; text-align: center; align-items: center;
+    border: 1.5px dashed rgba(212,175,55,.48); border-radius: 18px;
+    background: rgba(33,23,15,.68);
+    transition: border-color .25s, background .25s, box-shadow .25s;
+}
+.st-key-terrain_upload [data-testid="stFileUploaderDropzone"]:hover,
+.st-key-terrain_upload [data-testid="stFileUploaderDropzone"]:focus-within {
+    border-color: var(--as-gold-400); background: rgba(48,32,20,.85);
+    box-shadow: 0 16px 40px -24px rgba(241,199,91,.35);
+}
+.st-key-terrain_upload [data-testid="stFileUploaderDropzoneInstructions"] { display: flex; flex-direction: column; gap: .6rem; margin: 0; }
+.st-key-terrain_upload [data-testid="stFileUploaderDropzoneInstructions"] svg { width: 44px; height: 44px; color: var(--as-gold-400); }
+.st-key-terrain_upload [data-testid="stFileUploaderDropzone"]::before { content: "Drop your files here"; color: var(--as-text); font-size: 1.15rem; font-weight: 600; }
+.st-key-terrain_upload [data-testid="stFileUploaderDropzone"] > span { align-self: center; width: auto; }
+.st-key-terrain_upload [data-testid="stFileUploaderDropzone"] button { border-color: var(--as-gold-500); border-radius: 10px; padding: .55rem 1.4rem; }
+.st-key-terrain_upload ol.as-upload-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); position: relative; list-style: none; padding: 0; margin: 1.8rem 0 0; gap: 0; }
+.as-upload-steps::before { content: ""; position: absolute; top: 37px; left: 16.666%; right: 16.666%; height: 1px; background: linear-gradient(90deg, transparent, var(--as-line-strong) 8%, var(--as-line-strong) 92%, transparent); }
+.as-upload-steps::after { content: ""; position: absolute; top: 37px; left: 16.666%; right: 16.666%; height: 1px; z-index: 0; background: linear-gradient(90deg, transparent, var(--as-gold-300), transparent) no-repeat; background-size: 22% 100%; animation: as-step-scan 6.5s var(--as-ease) infinite; }
+@keyframes as-step-scan { 0% { background-position: -30% 0; opacity: 0; } 12%,88% { opacity: 1; } 100% { background-position: 130% 0; opacity: 0; } }
+.as-upload-steps li { margin: 0; z-index: 1; position: relative; min-width: 0; padding: 0 clamp(10px, 1.8vw, 28px); text-align: center; }
+.as-step-number { box-sizing: border-box; width: 76px; height: 76px; margin: 0 auto 18px; border: 1px solid #9d7038; background: #24170f; border-radius: 50%; display: grid; place-items: center; color: #e4bf6b; font: 600 24px Cinzel, serif; position: relative; }
+.st-key-terrain_upload .as-upload-steps h3 { color: var(--as-text); font: 600 16px/1.5 Cinzel, serif; padding: 0; margin: 0 0 12px; min-height: 50px; }
+.st-key-terrain_upload .as-upload-steps p { color: var(--as-muted); font: 400 13px/1.7 Inter, sans-serif; margin: 0; }
+.as-upload-steps [data-testid="stHeaderActionElements"] { display: none; }
+div[data-testid="stButton"] > button:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+div[data-testid="stButton"] > button:disabled::after { display: none; }
+@media (max-width: 760px) {
+    .st-key-terrain_upload { margin-top: 1rem; }
+    .st-key-terrain_upload ol.as-upload-steps { grid-template-columns: 1fr; gap: 2rem; margin-top: 2rem; }
+    .as-upload-steps::before,.as-upload-steps::after { display: none; }
+    .as-step-number { margin-bottom: 1rem; }
+    .st-key-terrain_upload .as-upload-steps h3 { min-height: 0; }
+    div[data-testid="stButton"] > button p { white-space: normal; }
+}
+
+
+.st-key-nav_guide button[kind] { min-height: 46px; background: rgba(212,175,55,.04); border: 0; border-bottom: 2px solid #a77935; border-radius: 7px 7px 0 0; color: var(--as-gold-300); font-weight: 500; box-shadow: none; }
+.st-key-nav_guide button[kind]:hover { background: rgba(212,175,55,.1); border-color: var(--as-gold-300); box-shadow: 0 8px 18px -16px #ffe9a8; transform: none; }
+.st-key-nav_guide button[kind]::after { display: none; }
+.st-key-nav_guide button[kind="primary"] { background: rgba(212,175,55,.13); border-color: var(--as-gold-300); }
+.st-key-nav_cases { padding: .65rem .85rem .75rem 1.25rem; border-left: 1px solid var(--as-line); background: rgba(33,23,15,.38); border-radius: 0 12px 12px 0; }
+.st-key-nav_cases > div { gap: .5rem; }
+.as-cases-heading { display: flex; align-items: center; gap: .65rem; line-height: 1; margin-bottom: .1rem; }
+.as-cases-heading > span { color: var(--as-muted); font-size: .7rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.st-key-nav_cases button[kind]:disabled { opacity: .65; background: transparent; border-color: rgba(199,184,153,.18); color: var(--as-muted); min-height: 3.4rem; font-weight: 500; }
+@media (max-width: 760px) { .st-key-nav_cases { border-left: 0; border-top: 1px solid var(--as-line); border-radius: 0 0 12px 12px; padding: 1rem .6rem .75rem; } }
+
+.as-logo { height: 58px; width: 58px; }
+.as-brand { font-size: 1.75rem; }
+.as-brand-sub { display: block; font-size: .76rem; letter-spacing: .055em; margin-top: .3rem; }
+.as-brandbar { gap: .8rem; }
+.as-nav-rule { margin: .5rem 0 .35rem; }
+@media (max-width: 1280px) { .as-brand-sub { font-size: .68rem; } }
+@media (max-width: 760px) {
+    .as-brand-sub { font-size: .65rem; }
+    .st-key-terrain_upload [data-testid="stFileUploader"] { width: 100%; }
+}
+@media (min-width: 761px) and (max-height: 740px) {
+    .block-container { padding-bottom: 1rem; }
+    .st-key-terrain_upload ol.as-upload-steps { margin-top: 1.2rem; }
+    .as-step-number { width: 64px; height: 64px; margin-bottom: 14px; font-size: 22px; }
+    .as-upload-steps::before,.as-upload-steps::after { top: 31px; }
+}
+@media (prefers-reduced-motion: reduce) { .as-upload-steps::after { animation: none; background-position: center; } }
+.st-key-nav_cases button[kind] p { white-space: normal; line-height: 1.4; font-size: .78rem; }
+.st-key-nav_guide button[kind] { padding-inline: .5rem; }
+.st-key-nav_guide button[kind] p { white-space: nowrap; font-size: .78rem; }
+.stApp a.as-source-link { box-sizing: border-box; width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: .5rem; background: rgba(212,175,55,.04); border: 0; border-bottom: 2px solid #a77935; border-radius: 7px 7px 0 0; color: var(--as-gold-300); text-decoration: none; font-size: .78rem; font-weight: 500; white-space: nowrap; }
+.stApp a.as-source-link svg { width: 17px; height: 17px; flex: 0 0 17px; }
+.stApp a.as-source-link:hover { color: var(--as-gold-300); background: rgba(212,175,55,.1); border-color: var(--as-gold-300); box-shadow: 0 8px 18px -16px #ffe9a8; }
+.stApp a.as-source-link:focus-visible { outline: 2px solid var(--as-gold-300); outline-offset: 3px; }
 """

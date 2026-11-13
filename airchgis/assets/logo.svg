@@ -12,8 +12,8 @@
     <clipPath id="as-lens">
       <circle cx="112" cy="112" r="60"/>
     </clipPath>
-    <style>
-      @keyframes as-spin { to { transform: rotate(360deg); } }
+    <clipPath id="as-frame"><rect x="17" y="17" width="222" height="222" rx="45"/></clipPath>
+    <style>@keyframes as-spin { to { transform: rotate(360deg); } }
       @keyframes as-pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 0.8; } }
       @keyframes as-trace { 0% { stroke-dashoffset: 300; } 55%,100% { stroke-dashoffset: 0; } }
       .as-ticks { transform-origin: 112px 112px; animation: as-spin 34s linear infinite; }
@@ -24,7 +24,7 @@
         .as-ticks, .as-sweep, .as-strata, .as-plan { animation: none; }
         .as-plan { stroke-dashoffset: 0; }
       }
-    </style>
+</style>
   </defs>
 
   <rect x="8" y="8" width="240" height="240" rx="54" fill="#120e09"/>
@@ -37,22 +37,26 @@
 
   <circle cx="112" cy="112" r="60" fill="#1b130d"/>
   <g clip-path="url(#as-lens)">
-    <g stroke="#f1c75b" stroke-opacity="0.32" stroke-width="4" stroke-linecap="round">
-      <path d="M52 150h120"/>
-      <path d="M60 166h104"/>
-      <path d="M64 72h96"/>
+
+    <path d="M52 130L74 114Q91 66 107 103L120 118Q139 87 151 111L175 130L123 160Z"
+          fill="#f1c75b" fill-opacity="0.14"/>
+    <path d="M95 86Q100 86 107 103L120 118L123 160L94 143Z"
+          fill="#f1c75b" fill-opacity="0.22"/>
+    <path d="M141 101Q146 99 151 111L175 130L123 160L139 130Z"
+          fill="#c99a26" fill-opacity="0.25"/>
+    <g stroke="#f1c75b" stroke-opacity="0.5" stroke-width="3.5" stroke-linecap="round" fill="none">
+      <path d="M56 133Q74 129 85 116Q96 104 108 121L121 134Q139 117 150 124L168 134"/>
+      <path d="M72 143Q88 127 101 137L121 147Q141 132 154 143"/>
+      <path d="M52 130L123 166L175 130"/>
     </g>
-    <path class="as-plan" d="M74 90h76v56H74zM112 90v56M74 118h76" fill="none" stroke="#fff6df"
-          stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+    <path class="as-plan" d="M52 130L74 114Q91 66 107 103L120 118Q139 87 151 111L175 130
+      M95 86Q93 111 101 126L123 160" fill="none" stroke="#fff6df"
+          stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
     <g class="as-sweep">
       <path d="M112 112 L112 42 A70 70 0 0 1 176 84 Z" fill="url(#as-sweep)"/>
     </g>
   </g>
   <circle cx="112" cy="112" r="60" fill="none" stroke="url(#as-gold)" stroke-width="13"/>
-
-  <g class="as-ticks" stroke="#f1c75b" stroke-opacity="0.55" stroke-width="5" stroke-linecap="round">
-    <path d="M112 34v-12M112 190v12M34 112H22M190 112h12M167 57l9-9M48 176l-9 9M167 167l9 9M48 48l-9-9"/>
-  </g>
 
   <path d="M156 156l52 52" stroke="url(#as-gold)" stroke-width="22" stroke-linecap="round" fill="none"/>
   <path d="M156 156l52 52" stroke="#fff6df" stroke-opacity="0.28" stroke-width="7" stroke-linecap="round" fill="none"/>

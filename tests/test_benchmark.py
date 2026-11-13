@@ -71,7 +71,7 @@ class EdgeTests(unittest.TestCase):
 
 class BoundaryTests(unittest.TestCase):
     def make_stack(self):
-        """Two fields with different seasonal behaviour, split down the middle."""
+
         stack = np.zeros((4, 20, 20))
         stack[:, :, :10] = np.array([0.2, 0.8, 0.7, 0.1]).reshape(4, 1, 1)
         stack[:, :, 10:] = np.array([0.7, 0.2, 0.1, 0.6]).reshape(4, 1, 1)

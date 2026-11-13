@@ -1,10 +1,4 @@
-"""Build and show the DetectorLab-style map with AIrchGIS raster layers.
 
-Each raster (relief view, best view, fused view, original hillshade) is reprojected to
-longitude/latitude, coloured, encoded as PNG and added to the MapLibre map as an image source
-with on/off switch and opacity in the layer panel. A small elevation grid lets the coordinate
-tool show the ground height under the clicked point.
-"""
 
 from __future__ import annotations
 
@@ -27,14 +21,14 @@ class MapLayer:
     name: str
     description: str
     png_b64: str
-    bounds: tuple  # west, south, east, north (lon/lat)
+    bounds: tuple
     visible: bool = True
     opacity: float = 1.0
     meta: dict = field(default_factory=dict)
 
 
 def _to_lonlat(arrays, transform, crs, max_side=MAX_SIDE, resampling="bilinear"):
-    """Reproject one or more same-grid arrays to EPSG:4326; returns (list of arrays, bounds)."""
+
     from rasterio.warp import Resampling, calculate_default_transform, reproject
 
     first = np.asarray(arrays[0], dtype=np.float32)
@@ -75,7 +69,7 @@ def _png_b64(rgba):
 
 def georeference(array, transform, crs, layer_id, name, description="", cmap="gray", visible=True, opacity=1.0,
                  p_low=2.0, p_high=98.0):
-    """A :class:`MapLayer` from a 2-D array (coloured with ``cmap``) or an (h, w, 3) RGB array in 0-1."""
+
     import matplotlib
 
     a = np.asarray(array, dtype=np.float32)
@@ -91,7 +85,7 @@ def georeference(array, transform, crs, layer_id, name, description="", cmap="gr
         finite = dst[valid]
         lo, hi = np.percentile(finite, [p_low, p_high]) if finite.size else (0.0, 1.0)
         if finite.size:
-            # robust limits, so a few extreme edge values cannot flatten the whole image
+
             med = float(np.median(finite))
             sigma = 1.4826 * float(np.median(np.abs(finite - med)))
             if sigma > 0:
@@ -103,14 +97,14 @@ def georeference(array, transform, crs, layer_id, name, description="", cmap="gr
 
 
 def elevation_grid(dem, transform, crs, side=DEM_SIDE):
-    """A coarse lon/lat elevation grid for the coordinate tool (values rounded to cm)."""
+
     (dst,), bounds = _to_lonlat([np.asarray(dem, dtype=np.float32)], transform, crs, max_side=side)
     vals = [None if not np.isfinite(v) else round(float(v), 2) for v in dst.ravel()]
     return {"width": int(dst.shape[1]), "height": int(dst.shape[0]), "bounds": bounds, "values": vals}
 
 
 def map_html(layers, basemap_tiles=None, elevation=None, height=640, labels=True, terrain=True):
-    """Full HTML document of the map (MapLibre from unpkg, DetectorLab styles inlined)."""
+
     css = (HERE / "component" / "detectorlab_map.css").read_text(encoding="utf-8")
     js = (HERE / "detectorlab_map.js").read_text(encoding="utf-8")
     template = (HERE / "detectorlab_map.html").read_text(encoding="utf-8")
@@ -122,12 +116,12 @@ def map_html(layers, basemap_tiles=None, elevation=None, height=640, labels=True
         "labels": bool(labels),
         "terrain": bool(terrain),
     }
-    return (template.replace("/*__CSS__*/", css).replace("/*__JS__*/", js)
+    return (template.replace("__AIRCHGIS_CSS__", css).replace("__AIRCHGIS_JS__", js)
             .replace("__CONFIG__", json.dumps(config).replace("</", "<\\/")).replace("__HEIGHT__", str(int(height))))
 
 
 def render_map(layers, basemap_tiles=None, elevation=None, height=640, key=None):
-    """Show the map in Streamlit."""
+
     import streamlit.components.v1 as components
 
     components.html(map_html(layers, basemap_tiles, elevation, height), height=height + 4, scrolling=False)

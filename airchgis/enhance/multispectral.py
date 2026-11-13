@@ -1,18 +1,4 @@
-"""Quality of multispectral images: clouds, shadows, haze, band artefacts.
 
-When the Sentinel-2 scene classification (SCL) is available it is used as is.
-Otherwise simple, documented spectral tests are applied on reflectance
-(values above 1.5 are assumed to be scaled by 10 000):
-
-- cloud: bright and white in the visible bands (mean > 0.25, spread < 0.7 of
-  the mean) and not vegetated (NDVI < 0.4), or very bright in blue (> 0.3);
-- haze: haze-optimized transform HOT = blue - 0.5 * red - 0.08 > 0;
-- shadow: dark in NIR (< 0.12) and in the visible (< 0.06), excluding water
-  when green exceeds NIR (water is reported apart).
-
-These tests are deliberately conservative screening rules, not a cloud model;
-the masks are shown to the user and can be switched off.
-"""
 
 from __future__ import annotations
 
@@ -73,7 +59,7 @@ def masks_from_bands(bands):
 
 
 def band_artifacts(bands, border_px=3):
-    """Per band: no-data share, saturation, constant band, stripe energy and a ring of zeros or no data at the edges."""
+
     rows = []
     for name, a in bands.items():
         a = np.asarray(a, dtype=np.float64)
@@ -86,7 +72,7 @@ def band_artifacts(bands, border_px=3):
             continue
         vmax = vals.max()
         refl_max = float(np.nanmax(to_reflectance(vals)))
-        # saturation: a plateau at the top of the range that is also at or above full reflectance
+
         row["saturated_share"] = float((vals >= vmax).mean()) if vals.std() > 0 and refl_max >= 1.0 else 0.0
         row["constant"] = bool(vals.std() == 0)
         from airchgis.enhance.clean import stripe_energy
@@ -116,7 +102,7 @@ def band_artifacts(bands, border_px=3):
 
 
 def date_quality(bands, scl=None, aoi_mask=None):
-    """Quality of one date: share of clear pixels, of clouds, shadows and haze, band problems, and a 0-1 score."""
+
     m = masks_from_scl(scl) if scl is not None else masks_from_bands(bands)
     shape = next(iter(bands.values())).shape
     region = np.ones(shape, bool) if aoi_mask is None else np.asarray(aoi_mask, bool)
@@ -145,7 +131,7 @@ def date_quality(bands, scl=None, aoi_mask=None):
 
 
 def mask_scene(scene, scl=None):
-    """Set cloudy, shadowed and no-data pixels of a :class:`~airchgis.data_input.Scene` to NaN; returns the quality."""
+
     q = date_quality(scene.bands, scl=scl)
     for k, v in scene.bands.items():
         v = np.asarray(v, dtype=np.float32).copy()

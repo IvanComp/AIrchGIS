@@ -1,19 +1,11 @@
-"""Can the sensor resolve the feature at all? Checked before any detection runs.
 
-The model is the one of docs/PHASE0_RESOLVABILITY.md: a bar of width ``w``
-with contrast ``delta`` is blurred by the sensor PSF (Gaussian, sigma ~0.45 GSD
-for Sentinel-2) and averaged over a pixel of size GSD. The peak modulation is
-``delta * P(|X| < w/2)`` with ``X = N(0, sigma) + U(-GSD/2, GSD/2)``. Dividing by
-the noise of homogeneous fields gives the single-date SNR; stacking N
-independent dates raises it with sqrt(N).
-"""
 
 from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
 
-# Typical values. NDVI noise and contrast are those measured in Phase 0.
+
 SENSORS = {
     "sentinel-2": {"gsd_m": 10.0, "psf_sigma_px": 0.45, "noise": 0.0396, "contrast": 0.15, "kind": "multispectral"},
     "landsat": {"gsd_m": 30.0, "psf_sigma_px": 0.45, "noise": 0.0396, "contrast": 0.15, "kind": "multispectral"},
@@ -27,7 +19,7 @@ SNR_REFUSE = 1.5
 
 @dataclass
 class Resolvability:
-    verdict: str  # "ok", "warn" or "refuse"
+    verdict: str
     feature_width_m: float
     gsd_m: float
     pixels_across: float
@@ -43,7 +35,7 @@ class Resolvability:
 
 
 def _peak_fraction(width_m, gsd_m, sigma_m, samples=4001):
-    """P(|X| < w/2) for X = Gaussian(sigma) + Uniform(+-gsd/2), by numerical integration."""
+
     half_w = width_m / 2.0
     if sigma_m <= 0:
         return min(1.0, width_m / gsd_m) if width_m < gsd_m else 1.0
@@ -64,12 +56,7 @@ def check_resolvability(
     noise: float | None = None,
     n_dates: int = 1,
 ) -> Resolvability:
-    """Verdict on whether a feature of the given width can be detected.
 
-    ``refuse`` when the stacked SNR stays below 1.5 or the feature is narrower
-    than one pixel; ``warn`` when it is narrower than two pixels or the SNR is
-    below 3; ``ok`` otherwise.
-    """
     if feature_width_m <= 0:
         raise ValueError("feature_width_m must be positive")
     spec = SENSORS.get(sensor.lower(), SENSORS["sentinel-2"])
@@ -84,7 +71,7 @@ def check_resolvability(
     snr_n = snr1 * math.sqrt(n)
     pixels = feature_width_m / gsd
 
-    # Smallest width that reaches SNR_OK with the same stack (coarse search).
+
     min_width = None
     w = gsd / 10.0
     while w <= 50 * gsd:

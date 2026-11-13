@@ -1,28 +1,10 @@
-"""Measurement harness for the crop-mark detector.
 
-Every phase of the refactor has to be judged on the same numbers, so the metrics
-live here as pure array functions: no Earth Engine, no Streamlit, no network.
-The script ``scripts/benchmark_cropmarks.py`` fetches the rasters and calls into
-this module.
-
-Three questions are asked of a candidate map:
-
-* does it rank known sites above arbitrary locations (AUC);
-* of the strongest candidates it proposes, how many land on a known site
-  (precision@k);
-* how many land on a field boundary instead, which is the failure mode a
-  neighbourhood z-score produces when its kernel straddles two crops.
-"""
 
 import numpy as np
 
 
 def local_maxima(array, min_distance_px, mask=None, limit=None):
-    """Peaks of ``array`` separated by at least ``min_distance_px``.
 
-    Greedy non-maximum suppression, strongest first. Returns a list of
-    ``(row, col, value)`` ordered by decreasing value.
-    """
     values = np.array(array, dtype=float)
     if mask is not None:
         values = np.where(np.asarray(mask, dtype=bool), values, np.nan)
@@ -59,11 +41,7 @@ def _nearest_distance(peak, targets):
 
 
 def precision_at_k(peaks, targets, tolerance_px, k):
-    """Share of the top ``k`` candidates that land within tolerance of a target.
 
-    Note this is bounded above by ``len(targets)/k`` when targets are scarce,
-    so compare it against the random-placement baseline, never against 1.
-    """
     top = peaks[:k]
     if not top:
         return None
@@ -72,11 +50,7 @@ def precision_at_k(peaks, targets, tolerance_px, k):
 
 
 def random_precision_baseline(shape, targets, tolerance_px, mask=None):
-    """Precision a detector placing candidates at random would reach.
 
-    This is the number precision@k has to beat: the share of the searchable
-    area that lies within tolerance of a target.
-    """
     rows, cols = shape
     yy, xx = np.mgrid[0:rows, 0:cols]
     covered = np.zeros((rows, cols), dtype=bool)
@@ -91,7 +65,7 @@ def random_precision_baseline(shape, targets, tolerance_px, mask=None):
 
 
 def edge_contamination(peaks, edge_mask, k, dilate_px=0):
-    """Share of the top ``k`` candidates sitting on a field boundary."""
+
     top = peaks[:k]
     if not top:
         return None
@@ -104,7 +78,7 @@ def edge_contamination(peaks, edge_mask, k, dilate_px=0):
 
 
 def sample_at(array, positions):
-    """Values of ``array`` at integer ``(row, col)`` positions, NaNs dropped."""
+
     values = []
     a = np.asarray(array, dtype=float)
     rows, cols = a.shape
@@ -116,13 +90,7 @@ def sample_at(array, positions):
 
 
 def boundary_strength(stack):
-    """How differently two neighbouring pixels behave through the season.
 
-    ``stack`` is (dates, rows, cols) of an index such as NDVI. Two pixels in the
-    same field follow the same curve; two pixels across a boundary do not. The
-    result is the maximum Euclidean distance between a pixel's temporal profile
-    and those of its four neighbours, which peaks on parcel limits.
-    """
     a = np.asarray(stack, dtype=float)
     if a.ndim != 3:
         raise ValueError("stack must be (dates, rows, cols)")
@@ -138,7 +106,7 @@ def boundary_strength(stack):
 
 
 def boundary_mask(stack, percentile=88):
-    """Binary field-boundary mask from the temporal dissimilarity."""
+
     strength = boundary_strength(stack)
     finite = strength[np.isfinite(strength) & (strength > 0)]
     if finite.size == 0:
@@ -147,7 +115,7 @@ def boundary_mask(stack, percentile=88):
 
 
 def summarise(report):
-    """One-line rendering of a metric dictionary, for logs and reports."""
+
     def fmt(key, digits=3):
         value = report.get(key)
         return "n/a" if value is None else f"{value:.{digits}f}"

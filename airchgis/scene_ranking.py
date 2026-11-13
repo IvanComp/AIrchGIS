@@ -1,21 +1,8 @@
-"""Pure-python ranking logic for satellite scenes.
 
-Earth Engine returns raw per-scene statistics; the decision of *which* dates are
-worth compositing is taken here so that it can be inspected and unit tested
-without a network round trip.
-
-The ranking answers a specific archaeological question: on which acquisition is
-a buried structure most likely to be legible? That depends on three independent
-things - how much contrast exists at the scale of a wall or a ditch, whether the
-field is under crop or bare soil, and how dry the weeks before the acquisition
-have been.
-"""
 
 import math
 
 
-# Local contrast features used to rank a scene, with the contrast value that
-# already counts as "strong" for that index and the weight of the feature.
 RANK_FEATURES = (
     ("NDVI", 0.045, 1.0),
     ("GNDVI", 0.040, 0.8),
@@ -30,19 +17,18 @@ TIMESERIES_BANDS = ["NDVI", "GNDVI", "SAVI", "NDMI", "TCT_greenness"]
 
 TARGETS = ("Automatico", "Crop marks (vegetation)", "Soil marks (bare soil)")
 
-# NDVI below this value over the analysis mask means the field is essentially bare.
+
 BARE_NDVI = 0.25
-# NDVI above this value means a closed canopy able to express crop marks.
+
 CANOPY_NDVI = 0.45
-# Share of the mask that must be bare before the scene is called a soil-mark scene.
+
 BARE_FRACTION = 0.55
 
 PHENOLOGY_SOIL = "bare soil"
 PHENOLOGY_CANOPY = "vegetation"
 PHENOLOGY_MIXED = "mixed"
 
-# How much a dry antecedent period may boost a scene. Crop marks are a
-# moisture-stress phenomenon: the same field shows nothing after a wet month.
+
 DRYNESS_WEIGHT = 0.45
 
 TARGET_WEIGHTS = {
@@ -52,7 +38,7 @@ TARGET_WEIGHTS = {
 
 
 def phenology_class(ndvi_mean, bare_fraction):
-    """Classify the surface state of a scene over the analysis mask."""
+
     ndvi_mean = float(ndvi_mean or 0.0)
     bare_fraction = float(bare_fraction or 0.0)
     if bare_fraction >= BARE_FRACTION or ndvi_mean < BARE_NDVI:
@@ -70,13 +56,7 @@ def target_weight(phenology, target):
 
 
 def contrast_score(stats):
-    """Weighted local contrast of a scene, normalised per index.
 
-    ``stats`` maps ``<BAND>_contrast`` to the mean absolute deviation of that
-    index from its own neighbourhood mean. Dividing by a per-index reference
-    keeps ratio-like indices from dominating linear transforms; the ``min(3)``
-    clamp stops a single cloud edge from carrying the whole score.
-    """
     total_weight = sum(item[2] for item in RANK_FEATURES)
     score = 0.0
     for band, reference, weight in RANK_FEATURES:
@@ -89,21 +69,18 @@ def contrast_score(stats):
 
 
 def dryness_index(recent_mm, climatology_mm):
-    """0 for a normal or wet antecedent month, 1 for a complete drought."""
+
     if climatology_mm in (None, 0) or recent_mm is None:
         return 0.0
     ratio = float(recent_mm) / max(float(climatology_mm), 1.0)
     return max(0.0, min(1.0, 1.0 - ratio))
 
 
-# A scene that sees a sliver of the area cannot be compared with one that sees
-# all of it: its statistics describe a different place. Coverage is a filter,
-# not a discount.
 MIN_COVERAGE = 0.90
 
 
 def coverage_weight(valid_pixels, max_valid_pixels):
-    """Deprecated soft weight, kept so the old behaviour stays reproducible."""
+
     if not max_valid_pixels:
         return 1.0
     coverage = max(0.0, min(1.0, float(valid_pixels) / float(max_valid_pixels)))
@@ -117,16 +94,7 @@ def coverage(valid_pixels, max_valid_pixels):
 
 
 def rank_scenes(scenes, target="Automatico", dryness_weight=DRYNESS_WEIGHT, min_coverage=MIN_COVERAGE):
-    """Return ``scenes`` sorted by final score, richest date first.
 
-    Each scene is a dict holding the raw Earth Engine statistics. The function
-    adds the derived columns (``contrast``, ``coverage``, ``phenology``,
-    ``dryness``, ``score``) and never mutates the input.
-
-    Scenes below ``min_coverage`` of the area are kept in the table, so the user
-    can see they exist, but scored to zero: they are not comparable with a scene
-    that sees the whole area.
-    """
     prepared = []
     max_valid = max((float(scene.get("valid_pixels") or 0) for scene in scenes), default=0.0)
     for scene in scenes:
@@ -152,11 +120,7 @@ def rank_scenes(scenes, target="Automatico", dryness_weight=DRYNESS_WEIGHT, min_
 
 
 def select_for_composite(scenes, topn):
-    """Flag the best ``topn`` scenes, keeping one scene per calendar date.
 
-    A scene scored to zero was rejected by the coverage filter and is never
-    selected; a scene with no score at all has not been ranked and is eligible.
-    """
     seen_dates = set()
     selected = 0
     out = []
@@ -174,10 +138,7 @@ def select_for_composite(scenes, topn):
 
 
 def roc_auc(positive, control):
-    """Mann-Whitney AUC: probability a known site outscores a random control.
 
-    0.5 means the detector is indistinguishable from chance over the sample.
-    """
     positive = [float(value) for value in positive if value is not None and not math.isnan(float(value))]
     control = [float(value) for value in control if value is not None and not math.isnan(float(value))]
     if not positive or not control:
@@ -193,11 +154,7 @@ def roc_auc(positive, control):
 
 
 def percentile_bucket(value, percentiles):
-    """Describe where ``value`` falls inside the distribution of the area.
 
-    ``percentiles`` maps a percentile (int) to the raster value at that
-    percentile, as returned by Earth Engine.
-    """
     if value is None or not percentiles:
         return None
     reached = 0

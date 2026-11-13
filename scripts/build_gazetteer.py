@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Build the local toponym gazetteer used to georeference catalogue records.
 
-Downloads the GeoNames dump for Italy, keeps the entries inside the bounding
-box of the study area and writes ``airchgis/data/gazetteer.json``.
-
-    python scripts/build_gazetteer.py
-
-GeoNames data is released under CC BY 4.0; the attribution is stored in the
-generated file and shown in the app.
-"""
 
 import argparse
 import csv
@@ -27,11 +18,10 @@ from airchgis.geocoding import GAZETTEER_PATH, normalise  # noqa: E402
 DUMP_URL = "https://download.geonames.org/export/dump/IT.zip"
 LICENSE = "GeoNames, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)"
 
-# Province of Macerata and a margin over the neighbouring valleys.
+
 DEFAULT_BBOX = (42.75, 12.70, 43.70, 13.95)
 
-# Populated places, districts, farms, hills, churches and ruins: the feature
-# types a nineteenth or twentieth century site description actually names.
+
 KEEP_FEATURE_CLASSES = {"P", "S", "T", "H", "L", "A"}
 SKIP_FEATURE_CODES = {"HTL", "RSTN", "PKLT", "BUSTP", "MUS", "PS", "RSD"}
 MUNICIPALITY_CODES = ("ADM3", "PPLA3")
@@ -104,7 +94,7 @@ def build(bbox=DEFAULT_BBOX, destination=GAZETTEER_PATH, url=DUMP_URL):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description='Build the local GeoNames gazetteer for catalogue georeferencing.')
     parser.add_argument("--bbox", nargs=4, type=float, metavar=("SOUTH", "WEST", "NORTH", "EAST"), default=DEFAULT_BBOX)
     parser.add_argument("--url", default=DUMP_URL)
     parser.add_argument("--out", default=str(GAZETTEER_PATH))

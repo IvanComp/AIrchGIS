@@ -19,7 +19,7 @@ def load_json(path, default=None):
 
 
 def enrich_database(database, pvs_database=None, pvs_2017=None):
-    """Join independently extracted sources without mutating the source payloads."""
+
     enriched = copy.deepcopy(database)
     records = enriched.get("records", [])
     pvs_database = pvs_database or load_json(PVS_PATH, {"records": []})
@@ -49,8 +49,7 @@ def enrich_database(database, pvs_database=None, pvs_2017=None):
             coordinates_added_2006 += 1
         linked_standalone_numbers.add(f"PVS.{source_id}")
 
-    # Remove only duplicate standalone PVS rows whose CAM-M correspondence is
-    # univocal and independently supported by an explicit source citation.
+
     before_dedup = len(records)
     records[:] = [record for record in records if record.get("number") not in linked_standalone_numbers]
     deduplicated = before_dedup - len(records)

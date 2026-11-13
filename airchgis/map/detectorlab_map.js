@@ -1,6 +1,3 @@
-/* Map interface adapted from DetectorLab (https://github.com/IvanComp/DetectorLab), Apache License 2.0.
-   Kept: satellite base, 3D terrain, place names, measure, UTM coordinates, Google Earth link, layer panel.
-   Removed: historical maps, Roman roads, prediction-model layer. Added: AIrchGIS raster layers and elevation readout. */
 (function(){
 const CFG=window.AIRCHGIS_MAP||{layers:[]};
 const toast=document.querySelector('.toast');
@@ -42,8 +39,7 @@ function initMap(){
   map.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-right');
   map.addControl(new maplibregl.ScaleControl({maxWidth:90,unit:'metric'}),'bottom-left');
   window.airchgisMap=map;
-  // add our layers as soon as the style is parsed: waiting for 'load' would also wait for every
-  // terrain/label tile, which never happens offline or behind a firewall
+
   let ready=false;
   const onReady=()=>{if(ready)return;ready=true;
     if(bounds){const el=map.getContainer();const right=Math.min(340,el.clientWidth*.42);
@@ -106,7 +102,6 @@ function buildPanel(){
   box.appendChild(sat);
 }
 
-/* measure (from DetectorLab) */
 function distanceBetween(a,b){const r=x=>x*Math.PI/180;const R=6371000;const dLat=r(b[1]-a[1]),dLng=r(b[0]-a[0]);const q=Math.sin(dLat/2)**2+Math.cos(r(a[1]))*Math.cos(r(b[1]))*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));}
 function formatDistance(m){return m<1000?`${m<10?m.toFixed(1):Math.round(m)} m`:`${(m/1000).toFixed(2)} km`;}
 function clearMeasurementMarkers(){measurementMarkers.forEach(m=>m.remove());measurementMarkers=[];}
@@ -121,7 +116,6 @@ function updateMeasurementDrawing(){
 function setMeasurementMode(active){if(active&&coordinateActive)setCoordinateMode(false);measurementActive=active;measureButton.classList.toggle('active',active);map.getCanvas().style.cursor=active||coordinateActive?'crosshair':'';if(active){measurementPoints=[];updateMeasurementDrawing();showToast('Select point 1 on the map');}}
 function handleMeasurementClick(e){if(measurementPoints.length===2){measurementPoints=[];clearMeasurementMarkers();}measurementPoints.push([e.lngLat.lng,e.lngLat.lat]);updateMeasurementDrawing();showToast(measurementPoints.length===1?'Point 1 set. Select point 2':`Distance: ${formatDistance(distanceBetween(measurementPoints[0],measurementPoints[1]))}`);}
 
-/* UTM coordinates (from DetectorLab) + elevation from the loaded terrain */
 function utmBand(lat){if(lat<-80||lat>84)return'';return'CDEFGHJKLMNPQRSTUVWXX'[Math.min(19,Math.floor((lat+80)/8))];}
 function utmZone(lon,lat){let z=Math.floor((lon+180)/6)+1;if(lat>=56&&lat<64&&lon>=3&&lon<12)z=32;if(lat>=72&&lat<84){if(lon>=0&&lon<9)z=31;else if(lon<21)z=33;else if(lon<33)z=35;else if(lon<42)z=37;}return Math.max(1,Math.min(60,z));}
 function toUtm(lon,lat){const a=6378137,e2=0.00669438,k0=0.9996,zone=utmZone(lon,lat),lon0=((zone-1)*6-180+3)*Math.PI/180,phi=lat*Math.PI/180,lam=lon*Math.PI/180,ep2=e2/(1-e2),s=Math.sin(phi),c=Math.cos(phi),t=Math.tan(phi),N=a/Math.sqrt(1-e2*s*s),T=t*t,C=ep2*c*c,A=c*(lam-lon0),e4=e2*e2,e6=e4*e2;

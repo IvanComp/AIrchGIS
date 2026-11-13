@@ -1,15 +1,11 @@
-/* AIrchGIS map workbench.
-   Map interface adapted from DetectorLab (https://github.com/IvanComp/DetectorLab), Apache License 2.0:
-   satellite base, 3D terrain, place names, measure, UTM coordinates, Google Earth link, panel and cards.
-   Tools, layers, downloads and the 3D view talk to Python through the Streamlit component protocol. */
 (function(){
-// ---------------------------------------------------------------- Streamlit protocol (no build step)
+
 function post(type,data){window.parent.postMessage(Object.assign({isStreamlitMessage:true,type},data),'*');}
 function setValue(value){post('streamlit:setComponentValue',{value,dataType:'json'});}
 function setHeight(h){post('streamlit:setFrameHeight',{height:h});}
 
 let ARGS=null,map=null,initialized=false,pendingNonce=null,lastDownload=null,last3d=null,nonceCounter=0;
-const shownLayers=new Map();      // id -> {visible, opacity} as set by the user
+const shownLayers=new Map();
 const toast=document.querySelector('.toast');
 const busy=document.querySelector('.wb-busy');
 const messageBox=document.querySelector('.wb-message');
@@ -34,7 +30,6 @@ window.addEventListener('message',ev=>{
 });
 post('streamlit:componentReady',{apiVersion:1});
 
-// ---------------------------------------------------------------- map
 let terrainEnabled=true,measurementActive=false,coordinateActive=false,measurementPoints=[],measurementMarkers=[],coordinateMarker=null,selectedEarthPoint=null;
 const labelIds=['locality-cities','locality-towns','locality-villages'];
 
@@ -62,7 +57,7 @@ function initMap(){
   map.addControl(new maplibregl.ScaleControl({maxWidth:90,unit:'metric'}),'bottom-left');
   let ready=false;
   const onReady=()=>{if(ready)return;ready=true;
-    if(bounds){const el=map.getContainer();const right=Math.min(360,el.clientWidth*.42);
+    if(bounds){const el=map.getContainer();const right=document.querySelector('.exact-layer-panel').getBoundingClientRect().width+24;
       map.fitBounds(bounds,{padding:{top:30,bottom:30,left:70,right},pitch:0,bearing:0,duration:0});map.jumpTo({pitch:40,bearing:-8});}
     addLabels();
     map.addSource('measurement',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
@@ -82,14 +77,13 @@ function addLabels(){
 }
 function mapReady(){return map&&map.getLayer&&map.getLayer('measurement-line');}
 
-// ---------------------------------------------------------------- layers (Python -> map)
-const mapLayerIds=new Map();      // layer id -> image url, to know when to replace
+const mapLayerIds=new Map();
 function syncLayers(){
   if(!mapReady())return;
   const layers=ARGS.layers||[];
   const wanted=new Set(layers.map(l=>l.id));
   [...mapLayerIds.keys()].forEach(id=>{if(!wanted.has(id)){if(map.getLayer('wb-'+id))map.removeLayer('wb-'+id);if(map.getSource('wb-'+id))map.removeSource('wb-'+id);mapLayerIds.delete(id);shownLayers.delete(id);}});
-  // bottom to top: the first layer in the list is on top
+
   layers.slice().reverse().forEach(l=>{
     const [w,s,e,n]=l.bounds,coords=[[w,n],[e,n],[e,s],[w,s]];
     if(mapLayerIds.get(l.id)!==l.image){
@@ -125,7 +119,7 @@ function renderLayerCards(){
     el.querySelector('.card-expand-content').appendChild(tools);
     box.appendChild(el);
   });
-  // fixed layers: place names and satellite
+
   const lab=card('⌖','Place names','OpenStreetMap place names.',true,1);
   wireFixed(lab,v=>labelIds.forEach(id=>map.getLayer(id)&&map.setLayoutProperty(id,'visibility',v?'visible':'none')),o=>labelIds.forEach(id=>map.getLayer(id)&&map.setPaintProperty(id,'text-opacity',o)),'labels');
   box.appendChild(lab);
@@ -149,29 +143,41 @@ function card(icon,name,desc,checked,opacity){
   return el;
 }
 
-// ---------------------------------------------------------------- tools panel (map -> Python)
 function el(html){const t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstElementChild;}
 function buildTools(){
   const box=document.querySelector('.wb-tools');box.innerHTML='';
   const tools=ARGS.tools||{};
-  // 2. relief views
+
   const views=tools.views||[];
   const rel=el(`<div class="wb-card"><h4>Relief views</h4><p class="wb-view-help"></p>
     <div class="wb-row"><select class="wide wb-view">${views.map(v=>`<option value="${v.id}">${v.name}</option>`).join('')}</select></div>
-    <div class="wb-row wb-param" hidden><label class="wb-param-label"></label><input type="number" class="wb-param-value"></div>
+    <div class="wb-row wb-param" hidden><label class="wb-param-label" for="wb-relief-param"></label><input id="wb-relief-param" type="number" class="wb-param-value"><output class="wb-param-output" for="wb-relief-param" hidden></output></div>
     <button type="button" class="wb-run secondary" data-act="relief">Add to the map</button></div>`);
   const sel=rel.querySelector('.wb-view'),help=rel.querySelector('.wb-view-help'),prow=rel.querySelector('.wb-param');
-  const syncView=()=>{const v=views.find(x=>x.id===sel.value)||{};help.textContent=v.help||'';if(v.param){prow.hidden=false;rel.querySelector('.wb-param-label').textContent=v.param.label;const i=rel.querySelector('.wb-param-value');i.min=v.param.min;i.max=v.param.max;i.step=v.param.step;i.value=v.param.value;}else prow.hidden=true;};
+  const paramInput=rel.querySelector('.wb-param-value'),paramOutput=rel.querySelector('.wb-param-output');
+  paramInput.addEventListener('input',()=>{paramOutput.textContent=`${paramInput.value}°`;});
+  const syncView=()=>{
+    const v=views.find(x=>x.id===sel.value)||{};help.textContent=v.help||'';
+    prow.hidden=!v.param;
+    if(v.param){
+      const slider=v.param.key==='azimuth';
+      prow.classList.toggle('wb-param-slider',slider);
+      rel.querySelector('.wb-param-label').textContent=v.param.label;
+      paramInput.type=slider?'range':'number';
+      paramInput.min=v.param.min;paramInput.max=v.param.max;paramInput.step=v.param.step;paramInput.value=v.param.value;
+      paramOutput.hidden=!slider;paramOutput.textContent=`${paramInput.value}°`;
+    }
+  };
   sel.addEventListener('change',syncView);syncView();
   rel.querySelector('[data-act=relief]').addEventListener('click',()=>{const v=views.find(x=>x.id===sel.value)||{};send({action:'relief',method:sel.value,value:v.param?Number(rel.querySelector('.wb-param-value').value):null});});
   box.appendChild(rel);
-  // 3. fused view
+
   const fu=el(`<div class="wb-card"><h4>Fused view</h4><p>Blends the relief views you added to the map, with weights that make features of this width stand out most. If the blend is not clearer than the best of your views, nothing is added.</p>
     <div class="wb-row"><label>Width of the features (m)</label><input type="number" class="wb-width" min="0.1" step="0.5" value="${tools.width||4}"></div>
     <button type="button" class="wb-run secondary" data-act="fused">Build the fused view</button></div>`);
   fu.querySelector('[data-act=fused]').addEventListener('click',()=>send({action:'fused',width:Number(fu.querySelector('.wb-width').value)}));
   box.appendChild(fu);
-  // 4. 3D
+
   const td=el(`<div class="wb-card"><h4>3D</h4><p>Look at your terrain in 3D, save a high-quality image for a paper, or export open 3D data.</p>
     <button type="button" class="wb-run secondary" data-act="view3d">Open the 3D view of my terrain</button>
     <div class="wb-row"><label>High-quality image</label><select class="wb-fmt"><option value="pdf">PDF</option><option value="png">PNG</option></select></div>
@@ -193,31 +199,14 @@ function buildTools(){
       scale_bar:td.querySelector('.wb-sb').checked,north_arrow:td.querySelector('.wb-na').checked,drape:top?top.id:null});});
   td.querySelector('[data-act=research]').addEventListener('click',()=>send({action:'research'}));
   box.appendChild(td);
-  // 5. details
-  const de=el(`<div class="wb-card wb-details"><details><summary>Details: steps and script</summary><div class="wb-details-body"><p>Every step you run is recorded with its settings and files.</p></div>
-    <button type="button" class="wb-run secondary" data-act="script">Download the steps as a Python script</button></details></div>`);
-  de.querySelector('[data-act=script]').addEventListener('click',()=>send({action:'script'}));
-  box.appendChild(de);
   document.querySelector('[data-act=load_another]').addEventListener('click',()=>send({action:'load_another'}));
 }
-function fmt(v){if(v===null||v===undefined)return'';if(typeof v!=='number')return String(v);return Math.abs(v)>=100||v===0?v.toFixed(0):Number(v.toPrecision(3)).toString();}
-function renderDetails(){
-  const d=ARGS.details||{};const body=document.querySelector('.wb-details-body');if(!body||!d.cleaning)return;
-  let h='<p>Cleaning: before and after</p><table class="wb-table"><tr><th>Measure</th><th>Before</th><th>After</th></tr>';
-  d.cleaning.forEach(r=>{h+=`<tr><td>${r.measure}</td><td class="num">${fmt(r.before)}</td><td class="num">${fmt(r.after)}</td></tr>`;});
-  h+='</table><ul class="wb-notes">'+(d.notes||[]).map(n=>`<li>${n.replace(/</g,'&lt;')}</li>`).join('')+'</ul>';
-  h+='<p>All views, best first</p><table class="wb-table"><tr><th>View</th><th>Visibility</th>'+((d.ranking||[]).some(r=>'auc' in r)?'<th>AUC</th>':'')+'</tr>';
-  (d.ranking||[]).forEach(r=>{h+=`<tr><td>${r.view}</td><td class="num">${fmt(r.visibility)}</td>${'auc' in r?`<td class="num">${fmt(r.auc)}</td>`:''}</tr>`;});
-  h+='</table>'+(d.explanation?`<p>${d.explanation.replace(/</g,'&lt;')}</p>`:'');
-  body.innerHTML=h;
-}
 
-// ---------------------------------------------------------------- updates from Python
 function update(){
   document.querySelector('.wb-file-name').textContent=ARGS.name||'';
   if(ARGS.message){messageBox.hidden=false;messageBox.textContent=ARGS.message;messageBox.classList.toggle('error',/^Not completed|cannot|refused/i.test(ARGS.message));}else messageBox.hidden=true;
   if(pendingNonce&&ARGS.done_nonce===pendingNonce){pendingNonce=null;busy.hidden=true;document.querySelectorAll('.wb-run').forEach(b=>b.disabled=false);}
-  syncLayers();renderDetails();
+  syncLayers();
   const dl=ARGS.download;
   if(dl&&dl.id!==lastDownload){lastDownload=dl.id;const bytes=Uint8Array.from(atob(dl.b64),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:dl.mime}));const a=document.createElement('a');a.href=url;a.download=dl.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);showToast(`Saved: ${dl.filename}`);}
   const v3=ARGS.view3d;
@@ -225,7 +214,6 @@ function update(){
 }
 function init(){initMap();buildTools();wireControls();renderLayerCards();}
 
-// ---------------------------------------------------------------- map tools (from DetectorLab)
 function distanceBetween(a,b){const r=x=>x*Math.PI/180,R=6371000,dLat=r(b[1]-a[1]),dLng=r(b[0]-a[0]);const q=Math.sin(dLat/2)**2+Math.cos(r(a[1]))*Math.cos(r(b[1]))*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));}
 function formatDistance(m){return m<1000?`${m<10?m.toFixed(1):Math.round(m)} m`:`${(m/1000).toFixed(2)} km`;}
 function clearMarkers(){measurementMarkers.forEach(m=>m.remove());measurementMarkers=[];}
@@ -266,7 +254,7 @@ function wireControls(){
   document.querySelector('[data-map-action=earth]').addEventListener('click',()=>{if(selectedEarthPoint)window.open(earthUrl(selectedEarthPoint[0],selectedEarthPoint[1]),'_blank','noopener');});
   const tb=document.querySelector('.terrain-toggle');const label=()=>{tb.querySelector('small').textContent=terrainEnabled?'Relief on':'Flat view';};
   tb.addEventListener('click',()=>{terrainEnabled=!terrainEnabled;map.setTerrain(terrainEnabled?{source:'terrain',exaggeration:1.35}:null);map.easeTo({pitch:terrainEnabled?50:0,bearing:terrainEnabled?-12:0,duration:700});label();});
-  document.querySelector('.panel-handle').addEventListener('click',ev=>{const c=document.querySelector('.detector-map').classList.toggle('panel-collapsed');ev.currentTarget.textContent=c?'‹':'›';});
+  document.querySelector('.panel-handle').addEventListener('click',ev=>{const c=document.querySelector('.detector-map').classList.toggle('panel-collapsed');ev.currentTarget.textContent=c?'‹':'›';ev.currentTarget.title=c?'Show tools':'Hide tools';ev.currentTarget.setAttribute('aria-expanded',String(!c));});
   document.querySelector('.map-fullscreen').addEventListener('click',()=>{const e=document.querySelector('.detector-map');if(!document.fullscreenElement&&e.requestFullscreen)e.requestFullscreen();else if(document.exitFullscreen)document.exitFullscreen();setTimeout(()=>map.resize(),300);});
   document.querySelector('.wb-modal-close').addEventListener('click',()=>{const m=document.querySelector('.wb-modal');m.hidden=true;m.querySelector('iframe').srcdoc='';});
 }

@@ -18,24 +18,24 @@ POTENTIA_DTM = Path(os.environ.get(
 
 
 def clean_terrain(size=160):
-    """Gently undulating terrain with a 4 m bank, a 3 m ditch and a round mound (1 m pixels)."""
+
     y, x = np.mgrid[0:size, 0:size].astype(np.float64)
     z = 50 + 0.03 * x + 0.02 * y + 0.8 * np.sin(x / 37.0) * np.cos(y / 41.0)
-    z[:, 60:64] += 0.5                                   # bank
-    z[100:103, :] -= 0.4                                 # ditch
-    z += 0.6 * np.exp(-((x - 120) ** 2 + (y - 40) ** 2) / (2 * 4.0 ** 2))  # mound
+    z[:, 60:64] += 0.5
+    z[100:103, :] -= 0.4
+    z += 0.6 * np.exp(-((x - 120) ** 2 + (y - 40) ** 2) / (2 * 4.0 ** 2))
     return z
 
 
 def dirty(z, seed=0):
     rng = np.random.default_rng(seed)
     y, x = np.mgrid[0:z.shape[0], 0:z.shape[1]]
-    a = z + 0.15 * np.sin(2 * np.pi * (x * np.cos(0.5) + y * np.sin(0.5)) / 5.0)   # oblique banding, 5 px
+    a = z + 0.15 * np.sin(2 * np.pi * (x * np.cos(0.5) + y * np.sin(0.5)) / 5.0)
     a = a + rng.normal(0, 0.05, z.shape)
     spikes = rng.choice(z.size, 60, replace=False)
     sy, sx = np.unravel_index(spikes, z.shape)
     a[sy, sx] += rng.choice([-3.0, 3.0], 60)
-    a[30:34, 30:34] = np.nan                            # an interior void
+    a[30:34, 30:34] = np.nan
     return a, (sy, sx)
 
 
@@ -83,7 +83,7 @@ class CleaningTests(unittest.TestCase):
     def test_fill_voids_interpolates_interior_holes_only(self):
         a = self.truth.copy()
         a[30:34, 30:34] = np.nan
-        a[:, :3] = np.nan  # outside the survey: must stay empty
+        a[:, :3] = np.nan
         out, rep = clean.fill_voids(a)
         self.assertTrue(np.isfinite(out[30:34, 30:34]).all())
         self.assertLess(np.abs(out[30:34, 30:34] - self.truth[30:34, 30:34]).max(), 0.1)
@@ -116,7 +116,7 @@ class CleaningTests(unittest.TestCase):
         out, n = metrics.zero_nodata(a)
         self.assertEqual(n, 160 * 40)
         self.assertTrue(np.isnan(out[:, :40]).all())
-        low, n2 = metrics.zero_nodata(self.truth - 50)  # real zeros near sea level stay
+        low, n2 = metrics.zero_nodata(self.truth - 50)
         self.assertEqual(n2, 0)
 
     def test_unknown_step_is_rejected(self):
@@ -189,10 +189,10 @@ class MultispectralTests(unittest.TestCase):
                  "nir": np.full((h, w), 0.35)}
         bands = {k: v + np.random.default_rng(i).normal(0, 0.005, (h, w)) for i, (k, v) in enumerate(bands.items())}
         for k in ("blue", "green", "red", "nir"):
-            bands[k][5:20, 5:20] = 0.45  # bright white cloud
+            bands[k][5:20, 5:20] = 0.45
         for k in ("blue", "green", "red"):
             bands[k][30:45, 30:45] = 0.02
-        bands["nir"][30:45, 30:45] = 0.05  # shadow
+        bands["nir"][30:45, 30:45] = 0.05
         return {k: v.astype(np.float32) for k, v in bands.items()}
 
     def test_cloud_and_shadow_are_found(self):

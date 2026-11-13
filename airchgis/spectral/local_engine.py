@@ -1,20 +1,4 @@
-"""Crop- and soil-mark screening on uploaded images, without Earth Engine.
 
-Same logic as the Earth Engine engine, on numpy arrays:
-
-1. indices per date (NDVI, SAVI, NDRE with red edge, NDMI with SWIR; for
-   RGB-only images the visible greenness index VARI and brightness);
-2. local contrast: each index minus its neighbourhood mean (default 60 m,
-   the scale of a wall or ditch), divided by the neighbourhood spread;
-3. crop phase per date (vegetation / bare soil / mixed) and a ranking of the
-   dates by local contrast inside the area;
-4. per-date anomaly maps aggregated afterwards: vegetation deficit and excess,
-   soil marks, linear marks (gradient coherence), persistence across dates;
-5. field-boundary mask from the temporal dissimilarity of neighbouring pixels
-   (needs at least two dates), so edges between parcels are not ranked as marks.
-
-All dates must share one grid (the first scene's); others are resampled.
-"""
 
 from __future__ import annotations
 
@@ -81,7 +65,7 @@ def local_z(a, radius_px):
 
 
 def coherence(a, sigma=1.5):
-    """Directional coherence of the local gradient: ~1 on linear features, ~0 on isotropic noise."""
+
     f = np.where(np.isfinite(a), a, np.nanmedian(a) if np.isfinite(a).any() else 0)
     gx, gy = ndimage.sobel(f, axis=1), ndimage.sobel(f, axis=0)
     jxx = ndimage.gaussian_filter(gx * gx, sigma)
@@ -93,7 +77,7 @@ def coherence(a, sigma=1.5):
 
 
 def boundary_mask_from_shape(stack, percentile=88, min_strength=0.02):
-    """Field boundaries where neighbouring seasonal curves differ in shape (stack already de-meaned)."""
+
     strength = benchmark.boundary_strength(stack)
     finite = strength[np.isfinite(strength) & (strength > 0)]
     if finite.size == 0:
@@ -128,7 +112,7 @@ class LocalResult:
 
 
 def _to_grid(scene, ref):
-    """Resample a scene's bands onto the reference scene grid when they differ."""
+
     any_band = next(iter(scene.bands.values()))
     ref_band = next(iter(ref.bands.values()))
     if any_band.shape == ref_band.shape and scene.transform == ref.transform:
@@ -183,9 +167,8 @@ def run_local_analysis(scenes, radius_m=60.0, threshold=1.5, target="Automatic",
     veg_name = chosen[0]["veg_name"]
     bmask = None
     if len(per_date) >= 3:
-        # Compare the *shape* of each pixel's seasonal curve, not its level: a buried feature shifts
-        # the curve (constant offset), a different crop changes its shape. Removing each pixel's
-        # mean keeps persistent marks out of the boundary mask.
+
+
         stack = np.stack([d["veg"] for d in per_date])
         stack = stack - np.nanmean(stack, axis=0, keepdims=True)
         bmask = boundary_mask_from_shape(stack)
@@ -231,7 +214,7 @@ def run_local_analysis(scenes, radius_m=60.0, threshold=1.5, target="Automatic",
 
 
 def sample_sites_auc(layer, transform, crs, sites, n_controls=500, seed=0):
-    """AUC of a layer at known sites vs random control pixels (a sanity check, not a validation)."""
+
     from pyproj import Transformer
 
     a = np.asarray(layer, dtype=float)

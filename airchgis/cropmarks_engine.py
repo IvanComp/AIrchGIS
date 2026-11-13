@@ -1,22 +1,4 @@
-"""Multispectral screening engine for crop marks and soil marks.
 
-The engine builds a stack of harmonised optical scenes (Sentinel-2 and, for the
-pre-2016 record, the Landsat archive), ranks the acquisitions by how legible a
-buried structure would be on each of them, and derives anomaly maps from the
-best dates.
-
-Three constraints shape the design:
-
-* a mark is a *local* contrast at the scale of a wall or a ditch, so both the
-  ranking and the anomaly maps work on the residual after removing the
-  neighbourhood mean, never on the variance of the whole area of interest;
-* built-up land, woodland and water produce far stronger contrasts than any
-  archaeological feature, so statistics are computed over an open-land mask;
-* crop marks are a moisture-stress phenomenon, so the antecedent rainfall of
-  each acquisition is retrieved and used to weight the ranking.
-
-Scores are investigation priorities, not probabilities.
-"""
 
 import math
 import os
@@ -26,7 +8,7 @@ import folium
 import pandas as pd
 
 from .paths import CROP_EE_PROJECT_FILE, ROOT_EE_PROJECT_FILE
-from .scene_ranking import (  # re-exported for callers and tests
+from .scene_ranking import (
     BARE_NDVI,
     DRYNESS_WEIGHT,
     RANK_BANDS,
@@ -41,7 +23,7 @@ from .scene_ranking import (  # re-exported for callers and tests
 
 CORE_BANDS = ["B2", "B3", "B4", "B8", "B11", "B12"]
 S2_BANDS = ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B11", "B12"]
-BANDS = S2_BANDS  # kept for backwards compatibility
+BANDS = S2_BANDS
 
 BASE_INDEX_BANDS = [
     "NDVI",
@@ -70,8 +52,8 @@ SENSOR_BOTH = "Sentinel-2 + Landsat"
 SENSOR_OPTIONS = (SENSOR_S2, SENSOR_LANDSAT, SENSOR_BOTH)
 
 WORLDCOVER_ASSET = "ESA/WorldCover/v200/2021"
-# Shrubland, grassland, cropland and bare ground: the surfaces where a buried
-# structure can express itself. Trees, built-up, water and snow are excluded.
+
+
 OPEN_LAND_CLASSES = [20, 30, 40, 60]
 EXCLUDED_CLASSES = [10, 50, 70, 80, 90, 95, 100]
 
@@ -87,13 +69,9 @@ CONTRAST_RADIUS = 60
 COHERENCE_RADIUS = 90
 MAX_RANKED_SCENES = 60
 
-# --- parcel segmentation -----------------------------------------------------
-# A circular kernel that straddles a field boundary compares two different crops
-# and reports the margin as a strong, perfectly straight anomaly. Every local
-# statistic is therefore computed inside a parcel, and no candidate is produced
-# within one kernel radius of a boundary.
-BOUNDARY_PERCENTILE = 92        # share of the area that is field interior
-PARCEL_EDGE_BUFFER_M = 60       # equals DEFAULT_LOCAL_RADIUS
+
+BOUNDARY_PERCENTILE = 92
+PARCEL_EDGE_BUFFER_M = 60
 
 S2_SCALE = 20
 LANDSAT_SCALE = 30
@@ -197,29 +175,14 @@ def geom(g):
     raise ValueError("Draw a polygon or a rectangle.")
 
 
-# ---------------------------------------------------------------------------
-# Surface mask
-# ---------------------------------------------------------------------------
-
-
 def analysis_mask(open_land_only=True):
-    """Where anomaly statistics are meaningful.
 
-    Built-up areas, canopy and water dominate any local contrast measure; a
-    roof edge scores higher than any ditch. Restricting to open land is what
-    makes the anomaly maps readable.
-    """
     cover = ee.Image(WORLDCOVER_ASSET).select("Map")
     if open_land_only:
         keep = OPEN_LAND_CLASSES
     else:
         keep = [value for value in range(0, 101) if value not in (50, 80, 70)]
     return cover.remap(keep, [1] * len(keep), 0).rename("analysis_mask")
-
-
-# ---------------------------------------------------------------------------
-# Collections
-# ---------------------------------------------------------------------------
 
 
 def mask_s2(img, max_pixel_cloud=DEFAULT_PIXEL_CLOUD):
@@ -229,9 +192,9 @@ def mask_s2(img, max_pixel_cloud=DEFAULT_PIXEL_CLOUD):
     mask = (
         scl.neq(0)
         .And(scl.neq(1))
-        .And(scl.neq(2))   # dark area and topographic shadow
+        .And(scl.neq(2))
         .And(scl.neq(3))
-        .And(scl.neq(6))   # water
+        .And(scl.neq(6))
         .And(scl.neq(8))
         .And(scl.neq(9))
         .And(scl.neq(10))
@@ -275,13 +238,13 @@ LANDSAT_COLLECTIONS = (
 
 
 def mask_landsat(img, source_bands, label):
-    """Collection 2 level-2 surface reflectance, harmonised to the S2 naming."""
+
     qa = img.select("QA_PIXEL")
     clear = (
-        qa.bitwiseAnd(1 << 1).eq(0)  # dilated cloud
-        .And(qa.bitwiseAnd(1 << 3).eq(0))  # cloud
-        .And(qa.bitwiseAnd(1 << 4).eq(0))  # cloud shadow
-        .And(qa.bitwiseAnd(1 << 5).eq(0))  # snow
+        qa.bitwiseAnd(1 << 1).eq(0)
+        .And(qa.bitwiseAnd(1 << 3).eq(0))
+        .And(qa.bitwiseAnd(1 << 4).eq(0))
+        .And(qa.bitwiseAnd(1 << 5).eq(0))
     )
     scaled = img.select(source_bands, CORE_BANDS).multiply(0.0000275).add(-0.2)
     return (
@@ -309,7 +272,7 @@ def landsat_collection(aoi, start, end, cloud):
 
 
 def build_collection(sensor, aoi, start, end, cloud, pixel_cloud):
-    """Return the scene collection and whether red-edge indices are available."""
+
     if sensor == SENSOR_LANDSAT:
         return landsat_collection(aoi, start, end, cloud), False
     if sensor == SENSOR_BOTH:
@@ -327,11 +290,6 @@ def sensor_scale(sensor):
 
 def sensor_export_scale(sensor):
     return 30 if sensor in (SENSOR_LANDSAT, SENSOR_BOTH) else 10
-
-
-# ---------------------------------------------------------------------------
-# Spectral indices
-# ---------------------------------------------------------------------------
 
 
 def add_indices(img, red_edge=True):
@@ -385,18 +343,8 @@ def safe_num(d, k):
     return ee.Number(ee.Algorithms.If(ee.Algorithms.IsEqual(v, None), 0, v))
 
 
-# ---------------------------------------------------------------------------
-# Per-scene statistics
-# ---------------------------------------------------------------------------
-
-
 def local_contrast(img, band, radius=CONTRAST_RADIUS):
-    """Absolute deviation of a band from its own neighbourhood mean.
 
-    This is the quantity a crop mark actually produces. Ranking on it, rather
-    than on the standard deviation of the whole area, stops large fields of a
-    different crop from outranking a date that shows fine structure.
-    """
     values = img.select(band)
     smooth = values.focal_mean(radius=radius, units="meters")
     return values.subtract(smooth).abs().rename(band + "_contrast")
@@ -438,7 +386,7 @@ def scene_statistics(img, aoi, mask, scale):
 
 
 def scene_table(collection, limit):
-    """Pull the per-scene statistics down in a single request."""
+
     selectors = [
         "scene_id",
         "date",
@@ -459,13 +407,8 @@ def scene_table(collection, limit):
     return [dict(zip(selectors, row)) for row in rows]
 
 
-# ---------------------------------------------------------------------------
-# Rainfall context
-# ---------------------------------------------------------------------------
-
-
 def rainfall_climatology(aoi):
-    """Mean monthly rainfall (mm) over 1991-2020 for the area of interest."""
+
     collection = ee.ImageCollection(RAINFALL_CLIMATOLOGY).filterDate(*CLIMATOLOGY_YEARS).select(RAINFALL_BAND)
 
     def monthly(month):
@@ -482,7 +425,7 @@ def rainfall_climatology(aoi):
 
 
 def antecedent_rainfall(aoi, dates, windows=(30, 90)):
-    """Rainfall (mm) accumulated in the days preceding each acquisition."""
+
     if not dates:
         return {}
     collection = ee.ImageCollection(RAINFALL_COLLECTION).select(RAINFALL_BAND)
@@ -505,12 +448,12 @@ def antecedent_rainfall(aoi, dates, windows=(30, 90)):
 
 
 def attach_rainfall(scenes, aoi):
-    """Add antecedent rainfall and its climatological reference to each scene."""
+
     dates = [scene["date"] for scene in scenes if scene.get("date")]
     try:
         climatology = rainfall_climatology(aoi)
         rainfall = antecedent_rainfall(aoi, dates)
-    except Exception:  # rainfall context is an enrichment, never a blocker
+    except Exception:
         return scenes, False
     for scene in scenes:
         entry = rainfall.get(scene.get("date")) or {}
@@ -533,15 +476,9 @@ def ninety_day_normal(climatology, month):
     return sum(values)
 
 
-# ---------------------------------------------------------------------------
-# Anomaly maps
-# ---------------------------------------------------------------------------
-
-
 def pca(img, bands, aoi, scale):
-    # toArray needs every band valid on every pixel: a partially masked pixel
-    # yields a shorter array and the centred covariance collapses to NaN, which
-    # is what used to make the whole export fail with an opaque 400.
+
+
     image = img.select(bands)
     image = image.updateMask(image.mask().reduce(ee.Reducer.min()))
     means = ee.Dictionary(
@@ -590,12 +527,7 @@ def z(img, band, aoi):
 
 
 def seasonal_signature(collection, aoi, scale, crs="EPSG:32633"):
-    """One NDVI median per month: the annual behaviour of each pixel.
 
-    Two pixels in the same field follow the same curve through sowing, growth
-    and harvest. Two pixels across a boundary do not, whatever a single date
-    happens to show.
-    """
     months = [
         collection.filter(ee.Filter.calendarRange(month, month, "month"))
         .select("NDVI")
@@ -613,7 +545,7 @@ def _shift_kernel(dr, dc):
 
 
 def boundary_strength(signature):
-    """How differently a pixel behaves from its four neighbours over the year."""
+
     distances = []
     for dr, dc in ((0, 1), (1, 0), (0, -1), (-1, 0)):
         shifted = signature.convolve(_shift_kernel(dr, dc))
@@ -622,7 +554,7 @@ def boundary_strength(signature):
 
 
 def field_boundaries(signature, aoi, scale, percentile=BOUNDARY_PERCENTILE):
-    """Binary field-margin mask, thresholded on the area's own distribution."""
+
     strength = boundary_strength(signature)
     threshold = ee.Number(
         strength.reduceRegion(
@@ -639,10 +571,7 @@ def field_boundaries(signature, aoi, scale, percentile=BOUNDARY_PERCENTILE):
 
 MONTH_BANDS = [f"m{month:02d}" for month in range(1, 13)]
 
-# Winter cereal in the Marche is sown in autumn, stays green through winter,
-# peaks in April-May and is harvested in June: the crop-mark crop. A summer crop
-# leaves the ground bare all winter and peaks in July-August. Permanent grass
-# never goes bare and never peaks.
+
 CLASS_OTHER, CLASS_CEREAL, CLASS_SUMMER, CLASS_GRASS = 0, 1, 2, 3
 CLASS_LABELS = {CLASS_OTHER: "altro", CLASS_CEREAL: "cereale", CLASS_SUMMER: "estiva", CLASS_GRASS: "prato"}
 GRASS_MAX_AMPLITUDE = 0.30
@@ -650,35 +579,20 @@ GRASS_MIN_FLOOR = 0.35
 CEREAL_PEAK_MONTHS = (4, 6)
 CEREAL_MIN_DROP = 0.25
 SUMMER_MAX_WINTER = 0.30
-# A crop mark needs a canopy to express itself; a soil mark needs bare ground.
+
 CANOPY_GATE = 0.35
 BARE_GATE = 0.25
-# A pixel judged on one or two acquisitions is not evidence.
+
 MIN_EFFECTIVE_DATES = 3
 
 
 def parcel_curve(signature, radius_m=PARCEL_EDGE_BUFFER_M):
-    """The annual NDVI curve of the field a pixel belongs to.
 
-    Smoothing the seasonal signature over ``radius_m`` and reading it inside
-    :func:`parcel_interior` gives the field's own year: the kernel is the same
-    size as the buffer, so it cannot reach across a margin into another crop.
-
-    Labelling the parcels and reducing over connected components would be more
-    exact and was tried first; on Earth Engine it exhausts the memory limit over
-    areas of this size, and the gain does not justify it - the classification
-    below only needs the shape of the curve.
-    """
     return signature.select(MONTH_BANDS).focal_mean(radius=radius_m, units="meters")
 
 
 def crop_class(curve):
-    """Classify each parcel from the shape of its year.
 
-    The AOI mean NDVI that the ranking used to rely on mixes a wheat field at
-    0.8 with a ploughed one at 0.1 and calls the average a phenological state.
-    This asks the question per field instead.
-    """
     peak = curve.reduce(ee.Reducer.max())
     floor = curve.reduce(ee.Reducer.min())
     amplitude = peak.subtract(floor)
@@ -706,7 +620,7 @@ def crop_class(curve):
 
 
 def target_parcels(classes, target):
-    """Which fields can express the kind of mark being looked for."""
+
     crop_type = classes.select("crop_class")
     if target == "Soil marks (bare soil)":
         return crop_type.eq(CLASS_CEREAL).Or(crop_type.eq(CLASS_SUMMER)).rename("target_parcel")
@@ -716,12 +630,7 @@ def target_parcels(classes, target):
 
 
 def date_weight(img, eligible, target):
-    """How much this acquisition can say about this pixel.
 
-    Zero on a field that cannot carry the mark, and zero on a date when that
-    field was in the wrong state - bare when a crop mark is wanted, under canopy
-    when a soil mark is.
-    """
     ndvi = img.select("NDVI")
     if target == "Soil marks (bare soil)":
         stage = ndvi.lt(BARE_GATE)
@@ -733,11 +642,7 @@ def date_weight(img, eligible, target):
 
 
 def parcel_interior(boundaries, radius_m=PARCEL_EDGE_BUFFER_M):
-    """1 where a neighbourhood of ``radius_m`` stays inside a single field.
 
-    This is what makes a plain circular kernel a within-parcel statistic: no
-    candidate is produced in the band where the kernel could straddle a margin.
-    """
     return boundaries.focal_max(radius=radius_m, units="meters").Not().rename("parcel_interior")
 
 
@@ -773,22 +678,14 @@ def vegetation_excess(img):
 
 
 def soil_mark_index(img):
-    """Brightness and soil-colour contrast, the signature of a soil mark.
 
-    Ploughed soil over a buried wall dries lighter, over a filled ditch darker.
-    The index is symmetric because both cases are informative.
-    """
     brightness = local_signed_z(img, "TCT_brightness").abs()
     soil = local_signed_z(img, "Soil_band").abs()
     return brightness.max(soil).rename("Soil_mark_index")
 
 
 def structure_coherence(image, radius=COHERENCE_RADIUS):
-    """Orientation coherence of the local gradient field, in [0, 1].
 
-    Natural soil variation is isotropic; walls, ditches, roads and field limits
-    are not. Values near 1 mark a locally linear structure.
-    """
     gradient = image.gradient()
     gx = gradient.select("x")
     gy = gradient.select("y")
@@ -819,11 +716,7 @@ def temporal_persistence(images, threshold=DEFAULT_PERSISTENCE_THRESHOLD):
 
 
 def multi_year_recurrence(collection, years, threshold=DEFAULT_PERSISTENCE_THRESHOLD):
-    """Share of distinct years in which the anomaly reappears.
 
-    A mark visible on four dates of one dry spring is one observation. A mark
-    visible in four different years is evidence.
-    """
     if not years:
         return None
     per_year = []
@@ -835,7 +728,7 @@ def multi_year_recurrence(collection, years, threshold=DEFAULT_PERSISTENCE_THRES
 
 
 def anomalies(img, aoi):
-    """Legacy single-image anomaly stack, kept for the context layers only."""
+
     zs = [z(img, band, aoi) for band in ["NDVI", "GNDVI", "Crop_band", "Soil_band", "NDMI", "TCT_greenness"]]
     anomaly = ee.ImageCollection(zs).sum().rename("Anomaly_score")
     local = anomaly.subtract(anomaly.focal_mean(radius=60, units="meters")).rename("Local_contrast")
@@ -847,13 +740,7 @@ SOIL_BANDS = ["TCT_brightness", "Soil_band"]
 
 
 def local_signed_z_multi(img, bands, radius=DEFAULT_LOCAL_RADIUS):
-    """Signed z-scores of several bands against a circular neighbourhood.
 
-    Used together with :func:`parcel_interior`, which keeps only the pixels
-    farther than ``radius`` from any parcel boundary. Inside that mask the
-    kernel cannot cross into another field, so this *is* the within-parcel
-    statistic, at a fraction of the cost of a connected-components reduction.
-    """
     kernel = ee.Kernel.circle(radius=radius, units="meters")
     values = img.select(bands)
     mean = values.reduceNeighborhood(ee.Reducer.mean(), kernel).rename(bands)
@@ -862,12 +749,7 @@ def local_signed_z_multi(img, bands, radius=DEFAULT_LOCAL_RADIUS):
 
 
 def date_marks(img):
-    """Deficit and excess of a single acquisition, measured inside the parcel.
 
-    The signed z-scores are averaged before being split into deficit and excess:
-    averaging the clipped halves instead would let a band that is positive and
-    one that is negative both contribute, inflating weak, incoherent signals.
-    """
     zs = local_signed_z_multi(img, VEGETATION_BANDS + SOIL_BANDS)
     signed = zs.select(VEGETATION_BANDS).reduce(ee.Reducer.mean())
     zero = ee.Image.constant(0)
@@ -887,18 +769,7 @@ DETECTION_BANDS = ["Vegetation_deficit", "Vegetation_excess", "Mark_strength", "
 
 
 def detection_layers(collection, threshold, years, interior, eligible=None, target="Automatico"):
-    """Anomaly maps built date by date, then aggregated with per-pixel weights.
 
-    A crop mark is a transient anomaly, so it must be measured on each
-    acquisition and combined afterwards: compositing the reflectance first and
-    looking for anomalies in the composite removes exactly what is being looked
-    for.
-
-    Each acquisition also contributes only where it can say something. A date is
-    excellent over a wheat field about to be harvested and worthless over the
-    ploughed field next to it, so the weight is per pixel, not per scene, and
-    the aggregation is a weighted mean rather than a plain one.
-    """
     threshold = float(threshold)
     if eligible is None:
         eligible = ee.Image.constant(1)
@@ -954,11 +825,6 @@ def detection_layers(collection, threshold, years, interior, eligible=None, targ
 
 
 PERSISTENCE_BANDS = ["Persistent_deficit", "Persistent_excess", "Persistent_any"]
-
-
-# ---------------------------------------------------------------------------
-# Layers
-# ---------------------------------------------------------------------------
 
 
 def tile(img, vis):
@@ -1176,9 +1042,8 @@ def build_layer_specs(base, detection, context, boundaries, interior, mask, red_
     return specs
 
 
-
 def pca_layer_specs(base, aoi, scale, red_edge):
-    """PCA layers, built lazily so a degenerate decomposition cannot break export."""
+
     pcs = pca(base, pca_bands(red_edge), aoi, max(scale, 30)).select(["PC1", "PC2", "PC3", "PC4", "PC5", "PC6"])
     specs = {}
     add_layer_spec(specs, "PCA PC1-PC2-PC3", pcs, {"bands": ["PC1", "PC2", "PC3"], "min": -2, "max": 2}, "PCA")
@@ -1186,13 +1051,8 @@ def pca_layer_specs(base, aoi, scale, red_edge):
     return specs
 
 
-# ---------------------------------------------------------------------------
-# Validation against the documentary catalogue
-# ---------------------------------------------------------------------------
-
-
 def sites_inside(geometry, sites):
-    """Keep only the catalogue points that fall inside the analysed area."""
+
     bounds = geometry_bounds(geometry or {})
     if not bounds:
         return []
@@ -1205,12 +1065,7 @@ def sites_inside(geometry, sites):
 
 
 def validate_against_sites(result, sites, band="Persistent_any", control_points=40):
-    """Compare the anomaly raster at known sites against random controls.
 
-    This does not prove that an anomaly is archaeological. It answers a narrower
-    and still useful question: inside this area, does the detector give known
-    sites higher values than arbitrary locations?
-    """
     image = result.get("validation_image")
     if image is None:
         return None
@@ -1269,11 +1124,6 @@ def validate_against_sites(result, sites, band="Persistent_any", control_points=
     }
 
 
-# ---------------------------------------------------------------------------
-# Analysis
-# ---------------------------------------------------------------------------
-
-
 def run_analysis(
     project,
     start,
@@ -1328,8 +1178,7 @@ def run_analysis(
     )
     years = sorted({scene["date"][:4] for scene in ranked if scene["selected_for_composite"]})
 
-    # The reference image is for looking at, never for detecting on: see
-    # detection_layers.
+
     best = ee.Image(granules.filter(ee.Filter.eq("scene_id", selected_ids[0])).first()).clip(aoi)
     base = top.median().clip(aoi) if str(mode).startswith("Median") else best
 
@@ -1358,9 +1207,8 @@ def run_analysis(
     layer_specs = build_layer_specs(
         base, detection, context, boundaries, interior, mask.clip(aoi), red_edge, classes, eligible
     )
-    # The PCA eigen decomposition fails on large or heavily masked areas and
-    # would invalidate every export that carried it, so it is built lazily and
-    # kept out of the exported image.
+
+
     layer_specs.update(pca_layer_specs(base, aoi, scale, red_edge))
 
     task_id = None
@@ -1433,7 +1281,7 @@ DISPLAY_COLUMNS = [
 
 
 def scenes_dataframe(scenes):
-    """Client-side ranking table shown to the user."""
+
     rows = []
     for scene in scenes:
         row = {label: scene.get(key) for key, label in DISPLAY_COLUMNS}

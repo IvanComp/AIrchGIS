@@ -17,13 +17,13 @@ from .rvt_web import render_rvt_web
 LOGGER = logging.getLogger(__name__)
 
 
-PRIMARY_TOOLS = ("RVT",)  # the Field marks screen (render_cropmarks) is no longer in the interface
+PRIMARY_TOOLS = ("RVT",)
 
 
 def main():
     try:
         st.set_page_config(page_title="AIrchGIS", layout="wide", page_icon=str(LOGO_PATH))
-    except Exception:  # a missing or unsupported icon must never block the app
+    except Exception:
         st.set_page_config(page_title="AIrchGIS", layout="wide")
     init_state()
     tool = render_navbar()
@@ -50,22 +50,38 @@ def init_state():
 
 def render_navbar():
     ui.inject_styles()
-    brand_col, tool_col, _, help_col = st.columns(
-        [0.22, 0.5, 0.22, 0.06],
-        gap="small",
-        vertical_alignment="center",
+    brand_col, links_col, cases_col = st.columns(
+        [0.30, 0.28, 0.42], gap="large", vertical_alignment="center",
     )
     with brand_col:
         st.markdown(ui.brand_markup(), unsafe_allow_html=True)
-    with tool_col:
-        tool = render_tool_switch()
-    with help_col:
-        if st.button("?", key="as_nav_help", help="What AIrchGIS is and how it works",
-                     type="primary" if tool == "Help" else "secondary", width="stretch"):
-            if tool != "Help":
-                st.session_state.as_help_from = tool
-            st.session_state.as_active_tool = "Help"
-            st.rerun()
+    tool = render_tool_switch()
+    with links_col:
+        help_col, source_col = st.columns([0.43, 0.57], gap="small", vertical_alignment="center")
+        with help_col:
+            with st.container(key="nav_guide"):
+                if st.button("How it Works?", key="as_nav_help", help="What AIrchGIS is and how it works",
+                             icon=":material/menu_book:",
+                             type="primary" if tool == "Help" else "secondary", width="stretch"):
+                    if tool != "Help":
+                        st.session_state.as_help_from = tool
+                    st.session_state.as_active_tool = "Help"
+                    st.rerun()
+        with source_col:
+            st.markdown(ui.source_code_markup(), unsafe_allow_html=True)
+    with cases_col:
+        with st.container(key="nav_cases"):
+            st.markdown('<div class="as-cases-heading"><span>Use cases</span></div>', unsafe_allow_html=True)
+            case_cols = st.columns([0.44, 0.27, 0.29], gap="small")
+            cases = (
+                ("Colle San Mauro, L'Aquila, Italy", "🇮🇹"),
+                ("TODO, TODO, UK", "🏴\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f"),
+                ("TODO, TODO, Romania", "🇷🇴"),
+            )
+            for col, (label, flag) in zip(case_cols, cases):
+                with col:
+                    st.button(label, key=f"as_case_{label}", disabled=True, width="stretch",
+                              icon=flag, help=label)
     st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
     return tool
 
@@ -398,7 +414,7 @@ def result_chips(result, selected):
 
 
 def add_known_sites(target_map, bounds, padding=0.03):
-    """Draw the documentary catalogue over an imagery map."""
+
     if not bounds:
         return 0
     try:
@@ -450,7 +466,7 @@ def add_known_sites(target_map, bounds, padding=0.03):
 
 
 def render_site_validation(result):
-    """Does the anomaly map actually favour the sites we already know about?"""
+
     sites = cropmarks.sites_inside(
         result.get("geometry"), site_index.georeferenced_sites(methods=("pubblicata",))
     )

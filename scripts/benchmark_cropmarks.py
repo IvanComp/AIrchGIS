@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Run the crop-mark engine over a calibration region and measure it.
 
-    python scripts/benchmark_cropmarks.py --label baseline
-    python scripts/benchmark_cropmarks.py --label fase-a --mode "Best single date"
-
-Writes one JSON per run under ``docs/benchmarks/`` so that phases can be
-compared on identical numbers. The metrics themselves live in
-``airchgis/benchmark.py`` and carry their own tests.
-"""
 
 import argparse
 import datetime
@@ -31,18 +23,17 @@ REGION_PATH = Path(__file__).resolve().parents[1] / "airchgis" / "data" / "calib
 OUT_DIR = Path(__file__).resolve().parents[1] / "docs" / "benchmarks"
 CACHE = Path(__file__).resolve().parents[1] / ".benchmark_cache"
 
-# A Roman farm or villa platform is tens of metres across; two candidates closer
-# than 100 m are the same anomaly reported twice.
+
 ANALYSIS_SCALE_M = 20
 MIN_PEAK_DISTANCE_M = 100
-# Surface scatters are displaced from the buried structure by ploughing, so a
-# candidate within 100 m of a catalogue point counts as a hit.
+
+
 HIT_TOLERANCE_M = 100
 TOP_K = 20
 
 
 def download(image, region, scale, path, crs="EPSG:32633", attempts=4):
-    """Fetch a raster, retrying: Earth Engine returns 400 under memory pressure."""
+
     import time
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -54,7 +45,7 @@ def download(image, region, scale, path, crs="EPSG:32633", attempts=4):
             )
             urllib.request.urlretrieve(url, path)
             return path
-        except Exception as exc:  # noqa: BLE001 - the message is what matters
+        except Exception as exc:  # noqa: BLE001
             last = exc
             detail = exc.read().decode("utf-8", "replace")[:200] if hasattr(exc, "read") else str(exc)[:200]
             print(f"    [{path.name}] tentativo {attempt + 1}/{attempts}: {detail}")
@@ -63,7 +54,7 @@ def download(image, region, scale, path, crs="EPSG:32633", attempts=4):
 
 
 def ndvi_stack(aoi, start, end, region_key, dates=10):
-    """A seasonal NDVI stack, used only to find field boundaries."""
+
     path = CACHE / f"{region_key}_stack{ANALYSIS_SCALE_M}.tif"
     if path.exists():
         with rasterio.open(path) as src:
@@ -75,8 +66,8 @@ def ndvi_stack(aoi, start, end, region_key, dates=10):
         .filter(ee.Filter.lte("CLOUDY_PIXEL_PERCENTAGE", 15))
         .map(lambda i: i.normalizedDifference(["B8", "B4"]).rename("NDVI").copyProperties(i, ["system:time_start"]))
     )
-    # One median per month: fields separate by their rotation, and a fixed
-    # number of bands keeps the request small.
+
+
     image = ee.Image.cat(
         [
             coll.filter(ee.Filter.calendarRange(month, month, "month")).median().rename(f"m{month:02d}")
@@ -98,13 +89,7 @@ def to_rowcol(transform, lon, lat):
 
 
 def legacy_detection(result, aoi, mode):
-    """Rebuild the pre-Fase-A detection path on the current scene selection.
 
-    Anomalies computed on the composite, neighbourhood z-scores with no parcel
-    constraint. Reconstructing it here rather than comparing against an old run
-    keeps both arms on the same scenes, the same grid and the same metrics, so
-    only the construction differs.
-    """
     top = result["selected_collection"]
     base = top.median().clip(aoi) if str(mode).startswith("Median") else result["best_image"]
     deficit = c.vegetation_deficit(base)
@@ -118,10 +103,8 @@ def legacy_detection(result, aoi, mode):
 
 
 def evaluate(result, band, region_key, label, aoi, sites, k=TOP_K, image=None):
-    # Deliberately not result["download_image"]: that image carries the PCA
-    # bands, whose eigen decomposition fails on large areas and invalidates the
-    # whole export graph. validation_image holds persistence plus the anomaly
-    # maps and nothing else.
+
+
     path = CACHE / f"{region_key}_{label}_{band}_{ANALYSIS_SCALE_M}.tif"
     source = result["validation_image"] if image is None else image
     download(source.select(band), aoi, ANALYSIS_SCALE_M, path)
@@ -136,11 +119,8 @@ def evaluate(result, band, region_key, label, aoi, sites, k=TOP_K, image=None):
     with rasterio.open(mask_path) as src:
         analysis_mask = src.read(1).astype(float) > 0.5
     analysis_mask = analysis_mask[: shape[0], : shape[1]]
-    # The random baseline, the controls and the edge share must all be computed
-    # over the pixels the detector actually looked at. Fase A masks out the band
-    # near field boundaries, so its searchable area is smaller and comparing it
-    # against a baseline drawn over the whole region would be unfair in both
-    # directions.
+
+
     searchable = analysis_mask & np.isfinite(layer)
 
     stack = ndvi_stack(aoi, "2023-01-01", "2026-01-01", region_key)
@@ -184,12 +164,7 @@ def evaluate(result, band, region_key, label, aoi, sites, k=TOP_K, image=None):
 
 
 def pool(reports, k_values=(20, 50)):
-    """Combine per-region measurements into one set of numbers.
 
-    Candidates are ranked across all regions together, so a strong anomaly in
-    one region competes with a strong anomaly in another, but a hit is always
-    judged against the targets of the region the candidate came from.
-    """
     ranked = sorted(
         (
             (value, hit, edge)
@@ -233,7 +208,7 @@ def pool(reports, k_values=(20, 50)):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description='Run the crop-mark engine over a calibration region and measure it.')
     parser.add_argument("--label", required=True)
     parser.add_argument("--band", default="Persistent_any")
     parser.add_argument("--mode", default="Best single date")

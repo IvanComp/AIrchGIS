@@ -21,7 +21,7 @@
       <button type="button" class="earth-tool" data-map-action="earth" title="Open the point in Google Earth" disabled>◉</button>
     </div>
     <div class="map-compass"><span>◈</span><button type="button" class="terrain-toggle" aria-pressed="true"><b>3D</b><small>Relief on</small></button></div>
-    <aside class="exact-layer-panel">
+    <aside id="workbench-tools" class="exact-layer-panel" aria-label="Tools and layers">
       <div class="wb-file"><span class="wb-file-name"></span><button type="button" class="wb-link" data-act="load_another">Load another file</button></div>
       <div class="wb-message" hidden></div>
       <div class="exact-panel-title"><span>◌</span><h3>TOOLS</h3></div>
@@ -30,7 +30,7 @@
       <div class="layer-cards"></div>
       <div class="wb-busy" hidden><i></i><span>Working…</span></div>
     </aside>
-    <button class="panel-handle" type="button" title="Hide panel">›</button>
+    <button class="panel-handle" type="button" title="Hide tools" aria-label="Toggle tools panel" aria-controls="workbench-tools" aria-expanded="true">›</button>
   </div>
 </div>
 <div class="wb-modal" hidden><div class="wb-modal-box"><button type="button" class="wb-modal-close" title="Close">×</button><iframe title="3D view"></iframe></div></div>

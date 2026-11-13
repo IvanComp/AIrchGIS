@@ -1,10 +1,4 @@
-"""The map workbench: after upload, every tool runs from panels inside the map.
 
-The map (``airchgis/map/component``) sends events (run a tool, find the best view, build a
-fused view, export, download, load another file); :func:`handle_event` runs the same Python
-functions as before and updates the state; the map then receives the new layers, the
-one-sentence explanation and any file to download.
-"""
 
 from __future__ import annotations
 
@@ -25,7 +19,7 @@ MAX_DOWNLOAD_MB = 200
 
 
 class Workbench:
-    """State of one loaded terrain: layers, arrays, messages, details and the provenance log."""
+
 
     def __init__(self, dem, transform, crs, profile, name="terrain"):
         from airchgis.enhance.metrics import zero_nodata
@@ -37,8 +31,8 @@ class Workbench:
         self.transform, self.crs, self.profile = transform, crs, dict(profile)
         self.res = float(abs(transform.a))
         self.name = name
-        self.layers = []          # list of dicts sent to the map (without the arrays)
-        self.arrays = {}          # layer id -> float array (for downloads and 3D figures)
+        self.layers = []
+        self.arrays = {}
         self.message = ""
         self.details = {}
         self.download = None
@@ -49,9 +43,9 @@ class Workbench:
         self.src_path = None
         self.clean_path = None
         self.sites = None
-        self.paths = {}           # layer id -> GeoTIFF written by the tool that made it
+        self.paths = {}
 
-    # ------------------------------------------------------------ helpers
+
     def input_path(self):
         if self.src_path is None or not Path(self.src_path).exists():
             self.src_path = str(write_raster(self.dem, self.profile, self.crs, OUT_DIR / f"{self.name}_input.tif"))
@@ -102,7 +96,7 @@ class Workbench:
 
 
 def to_metric(dem, transform, crs, profile):
-    """Reproject a terrain model in geographic coordinates (degrees) to its UTM zone, so pixel sizes are metres."""
+
     from rasterio.crs import CRS
 
     c = CRS.from_user_input(crs) if crs is not None else None
@@ -174,9 +168,8 @@ def hillshade(dem, res):
     return h
 
 
-# ------------------------------------------------------------ event handlers
 def run_relief(wb, core, method, value, compute=None):
-    """Add one relief visualization as a map layer (recorded in the session log as the ``relief_view`` tool)."""
+
     from airchgis.gis.tools import run_tool
     from airchgis.rvt_web import RADIUS_TOOLS, TOOL_HELP
 
@@ -240,7 +233,7 @@ def run_best_view(wb, width):
 
 
 def run_fused(wb, width=None):
-    """Blend the single-band relief views the user added to the map."""
+
     from airchgis.gis.tools import run_tool
 
     width = float(width or max(2 * wb.res, 4.0))
@@ -257,7 +250,7 @@ def run_fused(wb, width=None):
     out = r["outputs"]
     best = out["best_single"]["name"]
     best_name = next((names[i] for i in ids if Path(wb.paths[i]).stem == best), best)
-    if out["gain_over_best_single"] < 1.005:  # less than 0.5% clearer: not worth a new layer
+    if out["gain_over_best_single"] < 1.005:
         wb.message = (f"The blend of your {len(ids)} views does not show features {width:g} m wide more clearly than "
                       f"{best_name} alone, so nothing was added.")
         return
@@ -339,7 +332,7 @@ def save_sites(wb, filename, b64):
 
 
 def handle_event(wb, event, compute=None, core=None, view3d=None):
-    """Run one event coming from the map; returns 'reload' when the user wants another file."""
+
     action = event.get("action")
     wb.download = None
     wb.view3d = None
@@ -377,7 +370,7 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
             return "reload"
         else:
             wb.message = f"Unknown action: {action}"
-    except Exception as exc:  # shown in the map panel, never a crash
+    except Exception as exc:
         wb.message = f"Not completed: {exc}"
     wb.done_nonce = event.get("nonce")
     return None

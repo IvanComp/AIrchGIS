@@ -1,14 +1,4 @@
-"""Fused view: a blend of the best visualizations, weighted to maximize visibility.
 
-Layers are robustly normalized and oriented so that features point the same
-way (otherwise a ditch dark in one layer and bright in another would cancel).
-Two blends are offered:
-
-- ``optimized``: non-negative weights summing to one, found by maximizing the
-  visibility score of the blend (starting from the best single layer, so the
-  blend is never worse than it);
-- ``pca``: the first principal component of the normalized layers.
-"""
 
 from __future__ import annotations
 
@@ -25,7 +15,7 @@ def _prepare(layers):
 
 
 def _orient(z, res, target_width_m):
-    """Flip layers whose target-scale response is anti-correlated with the first (best) layer."""
+
     s = metrics.target_scale_px(target_width_m, res)
 
     def band(a):
@@ -58,7 +48,7 @@ def _softmax(theta):
 
 
 def fuse(layers, res, target_width_m, method="optimized", flat=None, max_iter=200):
-    """Blend layers (ordered best first). Returns (fused array, report)."""
+
     if not layers:
         raise ValueError("No layers to fuse.")
     names, z = _prepare(layers)
@@ -70,7 +60,7 @@ def fuse(layers, res, target_width_m, method="optimized", flat=None, max_iter=20
         from airchgis.enhance.bestview import _pc1
 
         fused = _pc1(np.stack(z))
-        # PC1 has an arbitrary sign; align it with the best layer
+
         if np.nansum(fused * z[best_i]) < 0:
             fused = -fused
         weights = None
@@ -82,7 +72,7 @@ def fuse(layers, res, target_width_m, method="optimized", flat=None, max_iter=20
         theta0[best_i] = 3.0
         theta, best_val = theta0, neg(theta0)
         if len(z) > 1:
-            # two starts: the best single layer and an even blend
+
             for start in (theta0, np.zeros(len(z))):
                 r = optimize.minimize(neg, start, method="Nelder-Mead",
                                       options={"maxiter": max_iter, "xatol": 1e-2, "fatol": 1e-3})
@@ -117,7 +107,7 @@ def fuse(layers, res, target_width_m, method="optimized", flat=None, max_iter=20
 
 
 def apply(layers, report):
-    """Blend full-size layers with the signs and weights found by :func:`fuse` (e.g. on a smaller window)."""
+
     names, z = _prepare({n: layers[n] for n in report["layers"]})
     z = [sg * a for sg, a in zip(report["signs"], z)]
     if report["weights"] is None:

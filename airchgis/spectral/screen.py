@@ -1,4 +1,4 @@
-"""Field-marks screen for the user's own images (upload first, no Earth Engine)."""
+
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def _load_scenes(paths, preset_name, positions, scale, offset, dates):
 
 
 def _overlay(layer, transform, crs, cmap="magma", diverging=False):
-    """Colour a layer and reproject it to lon/lat for the map."""
+
     import matplotlib
     from PIL import Image
     from rasterio.warp import Resampling, calculate_default_transform, reproject

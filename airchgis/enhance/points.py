@@ -1,10 +1,4 @@
-"""Statistical outlier removal for LAS/LAZ point clouds.
 
-Isolated points (birds, multipath returns, sensor noise below the ground)
-create spikes and pits in the DTM. Each point's mean distance to its ``k``
-nearest neighbours is compared with the distribution over the whole cloud;
-points farther than ``mean + std_ratio * std`` are removed (Rusu et al. 2008).
-"""
 
 from __future__ import annotations
 
@@ -15,7 +9,7 @@ from scipy.spatial import cKDTree
 
 
 def outlier_mask(xyz, k=8, std_ratio=2.5, chunk=200_000):
-    """Boolean mask of outliers for an (n, 3) array."""
+
     xyz = np.asarray(xyz, dtype=np.float64)
     n = len(xyz)
     if n <= k:
@@ -30,7 +24,7 @@ def outlier_mask(xyz, k=8, std_ratio=2.5, chunk=200_000):
 
 
 def remove_outliers(input, output, k=8, std_ratio=2.5):
-    """Write a copy of a LAS/LAZ file without statistical outliers; returns a report."""
+
     import laspy
 
     las = laspy.read(str(input))

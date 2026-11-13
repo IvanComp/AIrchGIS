@@ -1,11 +1,4 @@
-"""Georeferenced view over the documentary catalogue.
 
-The catalogue data lives in ``airchgis/data``; this module
-exposes the same records as plain points so that satellite screens can draw
-known sites over an area of interest and compare an anomaly map against them.
-It deliberately avoids importing Streamlit or Earth Engine so it stays usable
-from tests and scripts.
-"""
 
 import json
 from functools import lru_cache
@@ -82,11 +75,7 @@ def _cached_sites(stamp):
 
 
 def georeferenced_sites(methods=None):
-    """Catalogue records with usable coordinates, optionally by how they were obtained.
 
-    ``methods`` filters on ``coordinate_method``: pass ``("pubblicata",)`` when a
-    derived position would make the answer circular, as in validation.
-    """
     stamp = 0
     for path in (DATA_PATH, COORDINATES_PATH, geocoding.GAZETTEER_PATH):
         if Path(path).exists():
@@ -99,7 +88,7 @@ def georeferenced_sites(methods=None):
 
 
 def sites_in_bounds(bounds, padding=0.0, sites=None, methods=None):
-    """Sites inside ``[[south, west], [north, east]]``, optionally widened."""
+
     if not bounds:
         return []
     (south, west), (north, east) = bounds
@@ -114,7 +103,7 @@ def sites_in_bounds(bounds, padding=0.0, sites=None, methods=None):
 
 
 def bounds_from_geometry(geometry):
-    """Leaflet-order bounds of a GeoJSON polygon, without importing folium."""
+
     if not geometry:
         return None
     points = []

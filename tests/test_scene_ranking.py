@@ -96,8 +96,8 @@ class RankingTests(unittest.TestCase):
             scene(scene_id="sliver", valid_pixels=800, NDVI_contrast=0.20),
         ]
         ranked = ranking.rank_scenes(scenes, min_coverage=0.9)
-        # The sliver has by far the strongest contrast and still must not win:
-        # its statistics describe a different piece of ground.
+
+
         self.assertEqual(ranked[0]["scene_id"], "full")
         selected = ranking.select_for_composite(ranked, 5)
         self.assertEqual([s["scene_id"] for s in selected if s["selected_for_composite"]], ["full"])

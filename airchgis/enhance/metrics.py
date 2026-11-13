@@ -1,7 +1,4 @@
-"""Label-free quality measures for terrain models and visualizations.
 
-All functions accept 2-D float arrays with NaN for no data.
-"""
 
 from __future__ import annotations
 
@@ -12,13 +9,13 @@ MAD_TO_SIGMA = 1.4826
 
 
 def finite_fill(a, value=None):
-    """Copy of ``a`` with NaN replaced (by the median unless ``value``), plus the NaN mask."""
+
     a = np.asarray(a, dtype=np.float64)
     mask = ~np.isfinite(a)
     out = a.copy()
     if mask.any():
         if value is None and (~mask).any():
-            # nearest valid value: no artificial step at the edge of the data
+
             idx = ndimage.distance_transform_edt(mask, return_distances=False, return_indices=True)
             out = a[idx[0], idx[1]]
         else:
@@ -27,12 +24,7 @@ def finite_fill(a, value=None):
 
 
 def zero_nodata(a, min_share=0.005, min_level=20.0):
-    """Mask exact zeros used as fill outside the survey (common in merged tiles).
 
-    Zeros are treated as no data only when they cover at least ``min_share``
-    of the raster and the other values are clearly far from zero (median
-    absolute elevation above ``min_level``). Returns (array, number of pixels masked).
-    """
     a = np.asarray(a, dtype=np.float64)
     zeros = a == 0
     if zeros.mean() < min_share:
@@ -54,11 +46,7 @@ def robust_sigma(values):
 
 
 def noise_sigma(a):
-    """Noise standard deviation by Immerkaer's (1996) Laplacian-difference estimator.
 
-    The kernel cancels planes and smooth curvature, so on terrain what is left
-    is mostly sensor noise and very fine texture.
-    """
     filled, mask = finite_fill(a)
     if filled.shape[0] < 3 or filled.shape[1] < 3:
         return float("nan")
@@ -78,7 +66,7 @@ def void_fraction(a):
 
 
 def spike_mask(a, size=3, k=6.0, min_abs=None):
-    """Pixels that differ from their local median by more than ``k`` robust sigmas."""
+
     filled, mask = finite_fill(a)
     med = ndimage.median_filter(filled, size=size, mode="reflect")
     res = filled - med
@@ -90,7 +78,7 @@ def spike_mask(a, size=3, k=6.0, min_abs=None):
     if min_abs is not None:
         thr = max(thr, float(min_abs))
     out = np.abs(np.nan_to_num(res)) > thr
-    # a spike or pit is a local extremum, not the edge of a bank or a ditch
+
     extreme = (filled >= ndimage.maximum_filter(filled, size=3)) | (filled <= ndimage.minimum_filter(filled, size=3))
     out &= extreme
     out[ndimage.binary_dilation(mask, iterations=1)] = False
@@ -109,7 +97,7 @@ def _highpass(a, sigma_px=3.0):
 
 
 def directional_spectrum(a, n_bins=36, sigma_px=3.0, r_min=3):
-    """Share of high-pass spectral energy in each orientation bin (0-180 degrees)."""
+
     hp = _highpass(a, sigma_px)
     h, w = hp.shape
     win = np.outer(np.hanning(h), np.hanning(w))
@@ -127,13 +115,7 @@ def directional_spectrum(a, n_bins=36, sigma_px=3.0, r_min=3):
 
 
 def stripe_index(a, n_bins=36, sigma_px=3.0):
-    """Peak-to-median ratio of the directional spectrum and the peak orientation.
 
-    About 1-2 on natural terrain; banding or striping along one direction
-    concentrates energy in one bin and raises the index (often above 3).
-    The angle is the orientation of the frequency vector, i.e. perpendicular
-    to the stripes, in degrees (0 = along image columns, counter-clockwise).
-    """
     spec = directional_spectrum(a, n_bins, sigma_px)
     med = float(np.median(spec)) or 1e-12
     k = int(np.argmax(spec))
@@ -141,7 +123,7 @@ def stripe_index(a, n_bins=36, sigma_px=3.0):
 
 
 def flat_mask(dem, res, percentile=30):
-    """Pixels whose slope is in the lowest ``percentile`` (where noise is easiest to see)."""
+
     filled, mask = finite_fill(dem)
     gy, gx = np.gradient(filled, res)
     slope = np.hypot(gx, gy)
@@ -153,7 +135,7 @@ def flat_mask(dem, res, percentile=30):
 
 
 def robust_normalize(a, clip=4.0):
-    """(a - median) / robust sigma, clipped; NaN preserved."""
+
     a = np.asarray(a, dtype=np.float64)
     med = np.nanmedian(a) if np.isfinite(a).any() else 0.0
     s = robust_sigma(a)
@@ -168,21 +150,7 @@ def target_scale_px(target_width_m, res):
 
 
 def visibility(vis, res, target_width_m, flat=None):
-    """Label-free visibility of features of the target size in a visualization.
 
-    On the robustly normalized image:
-
-    - signal: 95th percentile of the absolute difference-of-Gaussians response
-      at the target scale (sigma = width / 2 and 3 x that);
-    - noise: robust spread of the finest-scale residual inside flat areas,
-      where real micro-relief is least likely;
-    - background: spread of the next coarser band (3x to 9x the target
-      scale), i.e. the broad landscape that can swamp small features.
-
-    The score is signal / sqrt(noise x background): a view must lift features
-    of the chosen size above both the noise and the broad relief. Values of
-    different visualizations (degrees, metres, ratios) are comparable.
-    """
     z = robust_normalize(vis)
     filled, mask = finite_fill(z, 0.0)
     s = target_scale_px(target_width_m, res)
@@ -208,7 +176,7 @@ def visibility(vis, res, target_width_m, flat=None):
 
 
 def auc(values_at_sites, controls):
-    """Probability that a site value exceeds a control value (ties count half)."""
+
     s = np.asarray([v for v in values_at_sites if np.isfinite(v)], dtype=np.float64)
     c = np.asarray([v for v in controls if np.isfinite(v)], dtype=np.float64)
     if s.size == 0 or c.size == 0:
@@ -219,11 +187,7 @@ def auc(values_at_sites, controls):
 
 
 def site_auc(vis, site_pixels, n_controls=500, radius_px=1, seed=0):
-    """AUC of the anomaly magnitude |z| at known sites against random pixels.
 
-    ``site_pixels`` are (row, col) positions; each site takes the maximum over
-    a small window to allow for positional uncertainty.
-    """
     z = np.abs(robust_normalize(vis))
     h, w = z.shape
     at = []
@@ -246,7 +210,7 @@ def site_auc(vis, site_pixels, n_controls=500, radius_px=1, seed=0):
 
 
 def spike_threshold(a, size=3, k=6.0):
-    """Absolute spike threshold (k robust sigmas of the local-median residual)."""
+
     filled, mask = finite_fill(a)
     res = filled - ndimage.median_filter(filled, size=size, mode="reflect")
     res[mask] = np.nan
@@ -257,7 +221,7 @@ def spike_threshold(a, size=3, k=6.0):
 
 
 def dtm_report(dem, res, spike_abs=None):
-    """Quality summary of a terrain model; pass ``spike_abs`` to compare spikes on a fixed threshold."""
+
     from airchgis.enhance.clean import stripe_energy
 
     share, ang = stripe_energy(dem)

@@ -1,15 +1,4 @@
-"""Registry of GIS tools that an assistant can call.
 
-Each tool has a plain-language description and a JSON-schema for its
-parameters, so the registry can be handed to an LLM as tool definitions
-(:func:`tool_specs` returns the Claude API format; ``fmt="openai"`` returns
-the function format used by Ollama and OpenAI-compatible servers).
-
-Tools that exist in QGIS Processing run there when QGIS is installed; all
-tools also have a native rvt-py/rasterio implementation. Every run goes
-through :func:`run_tool`, which validates the parameters, applies the
-resolvability guardrail and records the step in a :class:`ProvenanceLog`.
-"""
 
 from __future__ import annotations
 
@@ -37,7 +26,7 @@ class Tool:
     description: str
     parameters: dict
     native: Callable
-    qgis: Callable | None = None  # params -> (algorithm id, qgis params, outputs)
+    qgis: Callable | None = None
     input_keys: tuple = ()
     output_keys: tuple = ("output",)
     tags: tuple = field(default_factory=tuple)
@@ -60,7 +49,6 @@ def tool_specs(fmt="claude", names=None):
     return [t.spec(fmt) for n, t in REGISTRY.items() if names is None or n in names]
 
 
-# ---------------------------------------------------------------- validation
 _TYPES = {"string": str, "number": (int, float), "integer": int, "boolean": bool, "array": (list, tuple), "object": dict}
 
 
@@ -105,7 +93,6 @@ _TARGET = {
 }
 
 
-# ---------------------------------------------------------------- raster io
 def _read(path):
     import rasterio
 
@@ -151,7 +138,6 @@ def _finish(out, mask, key=None):
     return out
 
 
-# ---------------------------------------------------------------- native implementations
 def _native_raster_info(input):
     import rasterio
 
@@ -340,7 +326,6 @@ def _native_qgis_run(algorithm_id, parameters):
     return backend.run_algorithm(algorithm_id, parameters)
 
 
-# ---------------------------------------------------------------- QGIS mappings
 def _q_hillshade(p):
     return "native:hillshade", {"INPUT": p["input"], "Z_FACTOR": p["z_factor"], "AZIMUTH": p["azimuth"],
                                 "V_ANGLE": p["altitude"], "OUTPUT": p["output"]}
@@ -371,7 +356,6 @@ def _q_zonal(p):
                                         "OUTPUT": p["output"]}
 
 
-# ---------------------------------------------------------------- registry
 register(Tool("raster_info", "Describe a raster: CRS, size, pixel size in metres, extent and elevation range. Use it first to know what the data can show.",
               _schema(["input"], input=_IN), _native_raster_info, input_keys=("input",), output_keys=()))
 register(Tool("hillshade", "Shaded relief of a terrain model, as if lit by a low sun. Good first look at earthworks; one light direction can hide features parallel to it.",
@@ -440,7 +424,6 @@ register(Tool("qgis_run_algorithm", "Run any QGIS Processing algorithm by id wit
               _native_qgis_run, output_keys=(), tags=("qgis",)))
 
 
-# ---------------------------------------------------------------- loaders (bring your own data)
 def _native_load_raster(input):
     from airchgis.data_input import describe_raster, plain_description
 
@@ -496,9 +479,8 @@ register(Tool("check_raster_resolvability", "Check a feature width against the r
               _native_check_raster, input_keys=("input",), output_keys=()))
 
 
-# ---------------------------------------------------------------- cleaning, enhancement, best view
 def _site_pixels(sites, profile):
-    """(row, col) of the user's known sites on a raster grid."""
+
     if not sites:
         return None
     from pyproj import Transformer
@@ -637,7 +619,7 @@ def _native_fused_view(input, output, target_feature_width_m, method, n_layers, 
     r = bestview.rank(arr, res, target_feature_width_m)
     names = [x["name"] for x in r["ranking"][:n_layers]]
     win = r["window"]
-    # weights are optimized on the scoring window, then applied to the whole raster
+
     _, rep = fuse.fuse({n: r["arrays"][n] for n in names}, res, target_feature_width_m, method=method,
                        flat=em.flat_mask(arr[win], res))
     layers = {n: bestview.compute_named(arr, res, target_feature_width_m, n) for n in names}
@@ -695,7 +677,6 @@ register(Tool("fused_view", "Blend the best visualizations into one image whose 
               _native_fused_view, None, ("input",), tags=("lidar", "enhance")))
 
 
-# ---------------------------------------------------------------- 3D figure
 def _native_export_3d_figure(input, output, drape=None, azimuth=-44.0, elevation=29.0, vertical_exaggeration=None, dpi=300,
                              width_mm=190.0, scale_bar=True, north_arrow=True, caption=None):
     from airchgis.terrain.figure3d import render_3d_figure
@@ -726,7 +707,6 @@ register(Tool("export_3d_figure", "Save a high-quality 3D image of a terrain mod
               _native_export_3d_figure, None, ("input", "drape"), tags=("lidar", "3d")))
 
 
-# ---------------------------------------------------------------- map workbench: any relief view, fusion of views
 RELIEF_METHODS = ("Hillshade", "Multi-Hillshade", "Slope", "Sky-View Factor", "Anisotropic Sky-View Factor",
                   "Positive Openness", "Simple Local Relief Model", "Multi-Scale Relief Model",
                   "Multi-Scale Topographic Position", "Sky Illumination", "Local Dominance", "e3MSTP (RGB)", "Raw")
@@ -757,7 +737,7 @@ def _native_relief_view(input, output, method, azimuth=315.0, altitude=35.0, rad
     arr, prof = _read(input)
     out = np.asarray(core.compute_method(method, arr, _res(prof), float(azimuth), float(altitude),
                                          float(vertical_exaggeration), float(radius_px), int(directions)), dtype=np.float32)
-    if out.ndim == 3:  # colour views: one band per channel
+    if out.ndim == 3:
         if out.shape[0] != 3 and out.shape[-1] == 3:
             out = np.moveaxis(out, -1, 0)
         p = prof.copy()
@@ -800,7 +780,6 @@ register(Tool("fuse_layers", "Blend relief views of the same terrain into one im
               _native_fuse_layers, None, ("input",), tags=("lidar",)))
 
 
-# ---------------------------------------------------------------- execution
 def _guard(tool, params):
     width = params.get("target_feature_width_m")
     if not width or "input" not in params:
@@ -815,7 +794,7 @@ def _guard(tool, params):
 
 
 def run_tool(name: str, log: ProvenanceLog | None = None, prefer: str = "auto", **params) -> dict:
-    """Run a registered tool and record it. ``prefer`` is "auto", "qgis" or "native"."""
+
     if name not in REGISTRY:
         raise ToolError(f"Unknown tool: {name}. Available: {', '.join(REGISTRY)}")
     tool = REGISTRY[name]

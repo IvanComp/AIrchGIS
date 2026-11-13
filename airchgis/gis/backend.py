@@ -1,8 +1,4 @@
-"""Find and drive QGIS Processing through the ``qgis_process`` command line.
 
-QGIS is optional. When it is missing, tools fall back to their native
-rvt-py/rasterio implementation and say so in their result.
-"""
 
 from __future__ import annotations
 
@@ -30,7 +26,7 @@ class QgisError(RuntimeError):
 
 
 def find_qgis_process() -> Path | None:
-    """Return the ``qgis_process`` executable, or None if QGIS is not installed."""
+
     override = os.environ.get(ENV_VAR)
     if override:
         path = Path(override)
@@ -83,7 +79,7 @@ def qgis_version() -> str | None:
 
 
 def list_algorithms(timeout=120) -> dict:
-    """Map of algorithm id -> name for every installed Processing provider."""
+
     data = _json_out(_run(["list", "--json"], timeout))
     out = {}
     for provider in (data.get("providers") or {}).values():
@@ -105,7 +101,7 @@ def _format_value(value):
 
 
 def build_command(alg_id: str, params: dict, exe: str | os.PathLike | None = None) -> list[str]:
-    """The exact ``qgis_process run`` command line, also used for replay scripts."""
+
     exe = str(exe or find_qgis_process() or "qgis_process")
     args = [exe, "run", alg_id, "--json", "--"]
     for key, value in params.items():
@@ -119,7 +115,7 @@ def build_command(alg_id: str, params: dict, exe: str | os.PathLike | None = Non
 
 
 def run_algorithm(alg_id: str, params: dict, timeout=3600) -> dict:
-    """Run one Processing algorithm and return its ``results`` dictionary."""
+
     command = build_command(alg_id, params)
     data = _json_out(_run(command[1:], timeout))
     return data.get("results", data)

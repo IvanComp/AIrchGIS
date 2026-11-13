@@ -34,7 +34,7 @@ PERSISTENT_KEYS = ("as_rvt_source_mode", "as_rvt_place", "as_rvt_tool", "as_rvt_
 
 
 def keep_settings(keys):
-    """Streamlit forgets widget values when a screen is not shown; restore them from a shadow copy."""
+
     saved = st.session_state.setdefault("_as_saved_settings", {})
     for k in keys:
         if k not in st.session_state and k in saved:
@@ -60,26 +60,24 @@ def render_rvt_web():
 
 
 def render_start_page(core):
-    """Before any data: only the upload (and a collapsed public download), centred."""
-    _, mid, _ = st.columns([0.18, 0.64, 0.18])
+
+    _, mid, _ = st.columns([0.12, 0.76, 0.12])
     with mid:
-        st.markdown("### Load your terrain")
-        st.caption("A terrain model or a LiDAR point cloud, from any country and coordinate system. "
-                   "All the tools open on the map once the file is loaded.")
-        current = st.session_state.get("as_rvt_source_mode", "Upload")
-        if current not in ("Upload", "DTM from map"):
-            st.session_state.as_rvt_source_mode = current = "Upload"
-        uploads = render_upload_controls(core) if current == "Upload" else {}
-        with st.expander("Other source: public download", expanded=current != "Upload"):
-            source_mode = st.radio("Data from", ["Upload", "DTM from map"], format_func=SOURCE_LABELS.get,
-                                   key="as_rvt_source_mode")
-        payload = {"uploads": uploads} if source_mode == "Upload" else {"generated_dtm": st.session_state.as_rvt_generated_dtm}
-        if source_mode == "DTM from map" and not payload.get("generated_dtm"):
-            render_public_terrain_sources()
-            st.markdown("**Italy: regional DTM, cut from the map**")
-            render_regional_dtm_selector(core)
-            return
-        if source_mode == "Upload" and not uploads.get("DTM"):
+        with st.container(key="terrain_upload"):
+            st.session_state.as_rvt_source_mode = source_mode = "Upload"
+            uploads = render_upload_controls(core)
+            st.markdown(
+                '<ol class="as-upload-steps" aria-label="Research workflow">'
+                '<li><span class="as-step-number" aria-hidden="true">01</span>'
+                '<h3>Upload your digital terrain model</h3><p>Load a terrain raster or a LiDAR point cloud to open the map.</p></li>'
+                '<li><span class="as-step-number" aria-hidden="true">02</span>'
+                '<h3>Preprocessing and visualization</h3><p>Set the processing parameters, generate relief views and combine layers.</p></li>'
+                '<li><span class="as-step-number" aria-hidden="true">03</span>'
+                '<h3>Export and compare</h3><p>Compare layers on the map and export GeoTIFFs, figures or 3D data.</p></li></ol>',
+                unsafe_allow_html=True,
+            )
+        payload = {"uploads": uploads}
+        if not uploads.get("DTM"):
             return
         params = {"source_mode": source_mode, "source_payload": payload, "base_mode": "Original"}
         data = current_rvt_data(core, params)
@@ -126,7 +124,7 @@ def relief_params(method, value):
 
 
 def render_workbench(core, wb):
-    """The map with every tool inside it."""
+
     from airchgis.map.workbench_component import map_workbench
     from airchgis.workbench import handle_event
 
@@ -150,8 +148,8 @@ def render_workbench(core, wb):
         html_path, _las, _meta = build_3d_cloud(core, data, {"source_mode": "Upload", "source_payload": {}}, 
                                                 list(core.CLOUD_PREPROCESS_PROFILES.keys())[0])
         html = Path(html_path).read_text(encoding="utf-8")
-        # the LAS link (relative file) and the old OpenCV analysis do not belong to this view: hide them;
-        # open 3D data are downloaded from the map panel instead
+
+
         hide = "<style>a.toolbar-btn[download],.analysis-mode-btn{display:none!important}</style>"
         return html.replace("</head>", hide + "</head>", 1) if "</head>" in html else hide + html
 
@@ -243,7 +241,7 @@ SOURCE_LABELS = {"Upload": "Your files", "DTM from map": "Public source (downloa
 
 
 def _slider(label, lo, hi, state_key, **kw):
-    """Slider whose value lives in session_state[state_key]; avoids keyed sliders that appear later starting at their minimum."""
+
     value = st.slider(label, lo, hi, value=type(lo)(st.session_state[state_key]), key=f"{state_key}__w", **kw)
     st.session_state[state_key] = value
     return value
@@ -251,24 +249,9 @@ def _slider(label, lo, hi, state_key, **kw):
 
 def render_rvt_controls(core):
     st.markdown("**1 · Load data**")
-    current = st.session_state.get("as_rvt_source_mode", "Upload")
-    if current not in ("Upload", "DTM from map"):
-        st.session_state.as_rvt_source_mode = current = "Upload"
-    with st.expander("Other source: public download", expanded=current != "Upload"):
-        source_mode = st.radio("Data from", ["Upload", "DTM from map"], format_func=SOURCE_LABELS.get,
-                               key="as_rvt_source_mode")
-        source_payload = {}
-        if source_mode == "DTM from map":
-            generated = st.session_state.as_rvt_generated_dtm
-            source_payload["generated_dtm"] = generated
-            if generated:
-                st.caption(Path(generated).name)
-                if st.button("New area", width="stretch"):
-                    st.session_state.as_rvt_generated_dtm = None
-                    st.session_state.as_rvt_data_sig = None
-                    st.rerun()
-    if source_mode == "Upload":
-        source_payload["uploads"] = render_upload_controls(core)
+    source_mode = "Upload"
+    st.session_state.as_rvt_source_mode = source_mode
+    source_payload = {"uploads": render_upload_controls(core)}
 
     method_values = available_methods(core)
     waiting_for_map_dtm = source_mode == "DTM from map" and not source_payload.get("generated_dtm")
@@ -288,7 +271,7 @@ def render_rvt_controls(core):
                 help="About the size of the features you are looking for, in pixels.")
 
     with st.expander("Advanced"):
-        st.session_state.as_rvt_dataset = "DTM"  # surface models (DSM) are not offered in the interface for now
+        st.session_state.as_rvt_dataset = "DTM"
         st.slider("Sun height (degrees)", 0.0, 90.0, key="as_rvt_altitude")
         st.slider("Vertical exaggeration", 0.1, 10.0, key="as_rvt_z_factor")
         st.slider("Search directions", 4, 64, key="as_rvt_n_dir")
@@ -358,7 +341,7 @@ def render_upload_controls(core):
                 st.error(f"{p.name}: cannot be read ({exc}).")
         uploads[key] = out
 
-    load_group("DTM", "Terrain model (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ), any country and coordinate system")
+    load_group("DTM", "Upload your terrain model or LiDAR point cloud")
     if uploads.get("DTM"):
         keep, notes, error = usable_rasters(uploads["DTM"])
         for n in notes:
@@ -373,15 +356,11 @@ def render_upload_controls(core):
 
 
 PREP_SUFFIXES = ("_prep", "_prep1", "_prep2", "_prep3")
-MAX_MOSAIC_BYTES = 1.5e9  # about 375 million float32 cells
+MAX_MOSAIC_BYTES = 1.5e9
 
 
 def usable_rasters(paths):
-    """Rasters that can be stitched into one terrain model.
 
-    Leaves out the smoothed copies made by earlier versions (``*_prep*``) and files in a coordinate system
-    different from the first one (mixing degrees and metres makes a mosaic of absurd size), and estimates
-    the size of the mosaic before anything is read. Returns (paths, notes, error)."""
     import rasterio
     from rasterio.warp import transform_bounds
 
@@ -736,7 +715,7 @@ def render_view_toolbar(core, data, rgb, params):
 
 
 def terrain_map_layers(data, rgb, name, description):
-    """Map layers for the current relief view and an elevation grid for the coordinate tool."""
+
     from airchgis.map.view import elevation_grid, georeference
 
     transform = (data.profile or {}).get("transform")
@@ -749,7 +728,7 @@ def terrain_map_layers(data, rgb, name, description):
     if rgb is not None:
         rgb = np.array(rgb, dtype=np.float32)
         if dem is not None and rgb.shape[:2] == dem.shape:
-            rgb[~np.isfinite(dem)] = np.nan  # outside the survey: transparent on the map
+            rgb[~np.isfinite(dem)] = np.nan
         layers.append(georeference(rgb, transform, data.crs, "relief", name, description,
                                    opacity=float(st.session_state.get("as_rvt_overlay_opacity", 1.0))))
     elevation = None
@@ -1116,7 +1095,7 @@ def render_3d_cloud(core, data, params):
 
 
 def render_3d_figure_export(data, params):
-    """High-quality image (PDF or PNG) of the terrain in 3D, with the current view draped on it."""
+
     from airchgis.enhance.screen import OUT_DIR, _write_input, session_log
     from airchgis.gis.tools import ToolError, run_tool
 

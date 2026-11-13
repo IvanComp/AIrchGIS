@@ -1,13 +1,4 @@
-"""High-quality 3D figure of a terrain model, for papers and reports (PDF or PNG).
 
-The terrain is drawn with matplotlib as a 3D surface, with the chosen relief
-visualization draped on it, from a given camera direction and height. The
-defaults match the starting view of the browser 3D viewer: camera from the
-south-east, about 29 degrees above the horizon, and the same automatic
-vertical exaggeration (0.42 x horizontal span / height range, limited to
-0.45-2.5). The surface is rasterized at the chosen resolution, while text,
-scale bar and north arrow stay vector in the PDF.
-"""
 
 from __future__ import annotations
 
@@ -15,13 +6,13 @@ from pathlib import Path
 
 import numpy as np
 
-VIEWER_AZIMUTH = -44.0   # degrees, matplotlib convention (from +x towards +y); viewer camera at (1.22, -1.18, 0.92) r
+VIEWER_AZIMUTH = -44.0
 VIEWER_ELEVATION = 29.0
 MM_PER_INCH = 25.4
 
 
 def viewer_exaggeration(x_span, y_span, z_span, cap=2.5):
-    """Vertical exaggeration used by the browser 3D viewer."""
+
     xy = max(1.0, float(max(x_span, y_span)))
     z = max(1e-6, float(z_span))
     return float(np.clip(0.42 * xy / z, 0.45, cap))
@@ -34,7 +25,7 @@ def _downsample(a, max_side):
 
 
 def _nice_length(span):
-    """A round scale-bar length of about a fifth of the span."""
+
     target = span / 5.0
     base = 10 ** np.floor(np.log10(max(target, 1e-9)))
     for m in (5, 2, 1):
@@ -55,7 +46,7 @@ def _hillshade(z, res, azimuth=315.0, altitude=35.0):
 def render_3d_figure(dem, res, output, drape=None, azimuth=VIEWER_AZIMUTH, elevation=VIEWER_ELEVATION,
                      vertical_exaggeration=None, dpi=300, width_mm=190.0, height_mm=None, scale_bar=True,
                      north_arrow=True, caption=None, max_side=500, cmap="gray"):
-    """Write a 3D figure of ``dem`` (2-D array, metres, north up) to ``output`` (.pdf or .png); returns a report."""
+
     import matplotlib
     import matplotlib.patches
 
@@ -74,11 +65,11 @@ def render_3d_figure(dem, res, output, drape=None, azimuth=VIEWER_AZIMUTH, eleva
     r = float(res) * step
     h, w = z_small.shape
     x = np.arange(w) * r
-    y = (h - 1 - np.arange(h)) * r          # north up
+    y = (h - 1 - np.arange(h)) * r
     X, Y = np.meshgrid(x, y)
     valid = np.isfinite(z_small)
     if (~valid).any():
-        # cells next to no data are often interpolated ramps towards the fill value: leave them out
+
         from scipy import ndimage
 
         valid &= ndimage.binary_erosion(valid, iterations=2, border_value=1)
@@ -98,11 +89,11 @@ def render_3d_figure(dem, res, output, drape=None, azimuth=VIEWER_AZIMUTH, eleva
     norm = np.clip((d - lo) / max(hi - lo, 1e-12), 0, 1)
     colors = colormaps[cmap](np.nan_to_num(norm))
     colors[~valid] = (1, 1, 1, 0)
-    Z = np.where(valid, z_small, np.nan) * ve  # no walls where there are no data
+    Z = np.where(valid, z_small, np.nan) * ve
 
     height_mm = height_mm or width_mm * 0.68
     fig = plt.figure(figsize=(width_mm / MM_PER_INCH, height_mm / MM_PER_INCH), dpi=dpi)
-    # axes larger than the figure crop matplotlib's empty 3D margins (zoom would break the 2D overlay projection)
+
     bottom = 0.07 if caption else 0.0
     ax = fig.add_axes([-0.22, bottom - 0.22, 1.44, (1.0 - bottom) + 0.44], projection="3d")
     ax.plot_surface(X, Y, Z, facecolors=colors, rstride=1, cstride=1, linewidth=0, antialiased=False, shade=False,
@@ -113,7 +104,7 @@ def render_3d_figure(dem, res, output, drape=None, azimuth=VIEWER_AZIMUTH, eleva
     ax.set_axis_off()
 
     if scale_bar or north_arrow:
-        # draw in 2D on top of the rendered surface, using the projection of 3D points
+
         from mpl_toolkits.mplot3d import proj3d
 
         fig.canvas.draw()

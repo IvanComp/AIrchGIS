@@ -1,12 +1,4 @@
-"""Public data sources, offered after the user's own upload.
 
-Each provider says what it covers, at what resolution, under which licence
-and how to get the data. Automatic download is implemented only where an
-open API works without credentials (Copernicus DEM GLO-30 on AWS), with the
-user's own key (OpenTopography) or with the existing Earth Engine setup
-(Sentinel-2, Landsat). For the others AIrchGIS shows the link and the format to
-expect, and the user uploads what they download.
-"""
 
 from __future__ import annotations
 
@@ -25,11 +17,11 @@ CONFIG_PATH = Path(os.environ.get("AIRCHGIS_CONFIG", Path.home() / ".airchgis" /
 class Provider:
     key: str
     name: str
-    kind: str  # "terrain" or "multispectral"
+    kind: str
     coverage: str
     resolution: str
     licence: str
-    access: str  # "automatic", "api key", "earth engine", "manual"
+    access: str
     url: str
     format: str
     notes: str = ""
@@ -79,7 +71,6 @@ def providers(kind=None):
     return [p for p in PROVIDERS if kind is None or p.kind == kind]
 
 
-# ---------------------------------------------------------------- local config (API keys)
 def load_config() -> dict:
     try:
         return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
@@ -88,7 +79,7 @@ def load_config() -> dict:
 
 
 def save_config_value(key: str, value: str) -> None:
-    """Store a value (e.g. an API key) in the user's config file, readable only by the user."""
+
     cfg = load_config()
     cfg[key] = value
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -103,7 +94,6 @@ def has_secret(key: str) -> bool:
     return bool(load_config().get(key))
 
 
-# ---------------------------------------------------------------- Copernicus DEM GLO-30 (open, no credentials)
 COP_DEM_URL = "https://copernicus-dem-30m.s3.amazonaws.com/{name}/{name}.tif"
 
 
@@ -118,7 +108,7 @@ def cop_dem_tile_names(west, south, east, north):
 
 
 def download_cop_dem(bounds_lonlat, output, max_tiles=4) -> Path:
-    """Crop Copernicus DEM GLO-30 to a lon/lat box, reading the cloud-optimized tiles directly."""
+
     import rasterio
     from rasterio.merge import merge
 
@@ -132,7 +122,7 @@ def download_cop_dem(bounds_lonlat, output, max_tiles=4) -> Path:
             try:
                 sources.append(rasterio.open("/vsicurl/" + COP_DEM_URL.format(name=n)))
             except Exception:
-                continue  # sea tiles do not exist
+                continue
         if not sources:
             raise ValueError("No Copernicus DEM tile covers this area.")
         mosaic, transform = merge(sources, bounds=(west, south, east, north))
@@ -149,7 +139,6 @@ def download_cop_dem(bounds_lonlat, output, max_tiles=4) -> Path:
     return output
 
 
-# ---------------------------------------------------------------- OpenTopography (user's API key)
 OPENTOPO_URL = "https://portal.opentopography.org/API/globaldem"
 OPENTOPO_DEMS = {"COP30": "Copernicus GLO-30", "SRTMGL1": "SRTM 30 m", "AW3D30": "ALOS World 3D 30 m", "NASADEM": "NASADEM 30 m"}
 
@@ -164,7 +153,7 @@ def download_opentopography(bounds_lonlat, output, dem="COP30", timeout=300) -> 
     params = {"demtype": dem, "west": west, "south": south, "east": east, "north": north, "outputFormat": "GTiff", "API_Key": key}
     r = requests.get(OPENTOPO_URL, params=params, timeout=timeout)
     if r.status_code != 200 or not r.content[:4] in (b"II*\x00", b"MM\x00*"):
-        # never echo the request URL: it contains the key
+
         raise RuntimeError(f"OpenTopography refused the request (HTTP {r.status_code}).")
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)

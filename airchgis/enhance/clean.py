@@ -1,20 +1,4 @@
-"""Cleaning of terrain models (DTM/DSM) before visualization.
 
-Each step is optional and returns a report with a measured before/after value,
-so the user can see what changed and undo a step that did not help:
-
-- :func:`destripe`: removes banding and striping along one direction (an
-  adaptive notch in the frequency domain: only frequencies far stronger than
-  the same scale in other directions are damped, so ordinary features with
-  that orientation survive);
-- :func:`remove_spikes`: replaces isolated spikes and pits (local median
-  outliers) by the local median;
-- :func:`fill_voids`: fills no-data holes smoothly from their borders
-  (harmonic inpainting) and records which pixels were filled;
-- :func:`denoise`: edge-preserving smoothing with a self-guided filter whose
-  strength is set from the measured noise, so banks and ditches larger than
-  the noise are kept.
-"""
 
 from __future__ import annotations
 
@@ -26,7 +10,6 @@ from airchgis.enhance import metrics
 STEPS = ("destripe", "despike", "fill_voids", "denoise")
 
 
-# ---------------------------------------------------------------- destriping
 def _spectrum_geometry(h, w):
     fy = np.fft.fftfreq(h)[:, None] * np.ones((1, w))
     fx = np.fft.fftfreq(w)[None, :] * np.ones((h, 1))
@@ -36,14 +19,7 @@ def _spectrum_geometry(h, w):
 
 
 def periodic_peaks(P, angle_deg=None, width_deg=10.0, k=3.0, n_r=48, n_a=36):
-    """Isolated peaks of a power spectrum (unshifted): the signature of periodic stripes.
 
-    A frequency is a peak when its power exceeds ``k`` times both the median
-    power at the same radius in all directions and the median along its own
-    ray at nearby radii. A single long feature (a road) spreads smoothly along
-    its ray and is not selected; regular banding produces isolated peaks and
-    their harmonics. With ``angle_deg`` only that orientation is searched.
-    """
     h, w = P.shape
     rho, ang = _spectrum_geometry(h, w)
     rbin = np.minimum((rho / (rho.max() + 1e-12) * n_r).astype(int), n_r - 1)
@@ -78,7 +54,7 @@ def _highpass_spectrum(a, sigma_px, pad):
 
 
 def stripe_energy(dem, sigma_px=3.0, k=6.0, pad=16):
-    """Share of fine-scale energy in periodic stripe peaks (0 = none), and their main orientation."""
+
     _, _, _, F = _highpass_spectrum(dem, sigma_px, pad)
     P = np.abs(F) ** 2
     peaks, _, ang = periodic_peaks(P, k=k)
@@ -89,7 +65,7 @@ def stripe_energy(dem, sigma_px=3.0, k=6.0, pad=16):
 
 
 def destripe(dem, angle_deg=None, sigma_px=3.0, width_deg=10.0, k=6.0, min_share=0.02, force=False, pad=16, passes=2):
-    """Remove periodic banding in up to ``passes`` rounds (a second direction is often present)."""
+
     out, rep = _destripe_once(dem, angle_deg, sigma_px, width_deg, k, min_share, force, pad)
     notes, total_damped = [rep["note"]], rep.get("frequencies_damped", 0)
     for _ in range(int(passes) - 1):
@@ -111,13 +87,7 @@ def destripe(dem, angle_deg=None, sigma_px=3.0, width_deg=10.0, k=6.0, min_share
 
 
 def _destripe_once(dem, angle_deg=None, sigma_px=3.0, width_deg=10.0, k=6.0, min_share=0.02, force=False, pad=16):
-    """Remove periodic banding/striping; returns (array, report).
 
-    Only isolated periodic peaks of the fine-scale spectrum are damped (to the
-    level of other directions at the same scale). ``angle_deg`` restricts the
-    search to one orientation of the stripe frequencies. The step is skipped
-    when stripes carry less than ``min_share`` of the fine-scale energy.
-    """
     a = np.asarray(dem, dtype=np.float64)
     filled, mask, low, F = _highpass_spectrum(a, sigma_px, pad)
     P = np.abs(F) ** 2
@@ -146,7 +116,6 @@ def _destripe_once(dem, angle_deg=None, sigma_px=3.0, width_deg=10.0, k=6.0, min
     return out, report
 
 
-# ---------------------------------------------------------------- spikes and pits
 def remove_spikes(dem, size=3, k=6.0, min_abs=None):
     a = np.asarray(dem, dtype=np.float64)
     mask = metrics.spike_mask(a, size=size, k=k, min_abs=min_abs)
@@ -162,9 +131,8 @@ def remove_spikes(dem, size=3, k=6.0, min_abs=None):
                  "note": f"{int(mask.sum())} spikes or pits replaced by the local median."}
 
 
-# ---------------------------------------------------------------- voids
 def fill_voids(dem, max_void_px=None, iterations=300):
-    """Harmonic inpainting of NaN holes; holes larger than ``max_void_px`` pixels stay empty."""
+
     a = np.asarray(dem, dtype=np.float64)
     holes = ~np.isfinite(a)
     before = float(holes.mean())
@@ -178,7 +146,7 @@ def fill_voids(dem, max_void_px=None, iterations=300):
         sizes = ndimage.sum(holes, lab, range(1, n + 1))
         big = np.isin(lab, np.flatnonzero(sizes > max_void_px) + 1)
         fill &= ~big
-    # exclude holes touching the border of the raster (outside the survey, not voids)
+
     lab, n = ndimage.label(fill)
     border = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
     fill &= ~np.isin(lab, border[border > 0])
@@ -199,13 +167,12 @@ def fill_voids(dem, max_void_px=None, iterations=300):
     return out, report
 
 
-# ---------------------------------------------------------------- denoising
 def _box(a, r):
     return ndimage.uniform_filter(a, size=2 * r + 1, mode="reflect")
 
 
 def guided_filter(img, radius=2, eps=1e-3):
-    """Self-guided filter (He et al. 2013): smooths where local variance is below ``eps``."""
+
     I = np.asarray(img, dtype=np.float64)
     mean = _box(I, radius)
     var = np.maximum(_box(I * I, radius) - mean * mean, 0.0)
@@ -215,7 +182,7 @@ def guided_filter(img, radius=2, eps=1e-3):
 
 
 def denoise(dem, radius_px=2, strength=2.0):
-    """Edge-preserving denoising; ``strength`` scales the measured noise sigma into the filter's eps."""
+
     a = np.asarray(dem, dtype=np.float64)
     noise = metrics.noise_sigma(a)
     report = {"step": "denoise", "metric": "noise_sigma", "before": noise}
@@ -224,7 +191,7 @@ def denoise(dem, radius_px=2, strength=2.0):
         return a.copy(), report
     filled, mask = metrics.finite_fill(a)
     trend = ndimage.gaussian_filter(filled, 4 * radius_px, mode="reflect")
-    detail = filled - trend  # filter the detail, so slopes do not count as local variance
+    detail = filled - trend
     out = trend + guided_filter(detail, int(radius_px), (strength * noise) ** 2)
     out[mask] = np.nan
     after = metrics.noise_sigma(out)
@@ -233,9 +200,8 @@ def denoise(dem, radius_px=2, strength=2.0):
     return out, report
 
 
-# ---------------------------------------------------------------- pipeline
 def clean_dtm(dem, res, steps=STEPS, options=None):
-    """Run the selected steps in a fixed, sensible order; returns (array, reports, summary)."""
+
     options = options or {}
     order = [s for s in STEPS if s in steps]
     unknown = set(steps) - set(STEPS)

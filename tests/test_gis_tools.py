@@ -14,7 +14,7 @@ from airchgis.terrain import export3d
 
 
 def synthetic_dtm(folder, size=60, res=1.0):
-    """A tilted plane with a 4 m wide bank and a ditch, in EPSG:32633."""
+
     y, x = np.mgrid[0:size, 0:size].astype(np.float32)
     z = 100 + 0.05 * x + 0.02 * y
     z[:, 20:24] += 0.6
@@ -49,7 +49,7 @@ class RegistryTests(unittest.TestCase):
 
     def test_validation_rejects_bad_parameters(self):
         with self.assertRaises(tools.ToolError):
-            tools.run_tool("hillshade", input="a.tif")  # missing output
+            tools.run_tool("hillshade", input="a.tif")
         with self.assertRaises(tools.ToolError):
             tools.run_tool("check_resolvability", feature_width_m=5, sensor="hubble")
         with self.assertRaises(tools.ToolError):

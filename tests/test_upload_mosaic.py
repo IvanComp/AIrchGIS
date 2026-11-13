@@ -18,7 +18,7 @@ def tif(path, crs, transform, shape=(50, 50)):
 
 class UploadMosaicTests(unittest.TestCase):
     def test_mixed_crs_and_prep_copies_are_left_out(self):
-        # the case that raised "array is too big": a tile in degrees next to a smoothed copy in metres
+
         with tempfile.TemporaryDirectory() as d:
             a = tif(Path(d) / "marche_DTM.tiff", "EPSG:4326", from_origin(13.64, 43.44, 2e-5, 2e-5))
             p = tif(Path(d) / "marche_DTM_prep1.tiff", "EPSG:32633", from_origin(389906, 4810576, 1.94, 1.94))

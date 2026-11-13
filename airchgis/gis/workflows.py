@@ -1,10 +1,4 @@
-"""Ready-made archaeological workflows built from the tools in the registry.
 
-A workflow is what a non-specialist asks for ("look for micro-relief here"),
-not an algorithm name. Each one checks first what the data can resolve, then
-chains tools and records every step in the provenance log, so the whole
-analysis can be re-run from the exported script.
-"""
 
 from __future__ import annotations
 
@@ -28,7 +22,7 @@ class Workflow:
 
 
 def lidar_micro_relief(dtm, output_dir, aoi=None, target_feature_width_m=None, radius_m=10.0, log=None, prefer="auto"):
-    """Clip -> local relief model -> sky-view factor -> positive and negative openness -> hillshade."""
+
     log = log or ProvenanceLog("LiDAR micro-relief")
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -63,13 +57,7 @@ def lidar_micro_relief(dtm, output_dir, aoi=None, target_feature_width_m=None, r
 
 
 def crop_mark_screening(target_feature_width_m, sensor="sentinel-2", n_dates=1, aoi=None, start=None, end=None, log=None):
-    """Guarded entry to the Crop Marks engine.
 
-    The scene ranking and parcel-interior anomaly maps run on Google Earth
-    Engine in the Crop Marks screen. This workflow checks first whether the
-    target can be resolved; if not it refuses and says what to use instead,
-    otherwise it returns the settings to run in that screen.
-    """
     log = log or ProvenanceLog("Crop-mark screening")
     r = run_tool("check_resolvability", log=log, feature_width_m=float(target_feature_width_m), sensor=sensor, n_dates=int(n_dates))
     verdict = r["outputs"]

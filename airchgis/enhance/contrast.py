@@ -1,10 +1,4 @@
-"""Display enhancement: adaptive local contrast, multi-scale detail, pan-sharpening.
 
-These functions change how an image looks, not what was measured: outputs are
-display images in 0-1, and the report says so. There is no super-resolution
-here; pan-sharpening only transfers detail that a real panchromatic band
-recorded at higher resolution.
-"""
 
 from __future__ import annotations
 
@@ -27,11 +21,7 @@ def _to01(img, p_low=0.5, p_high=99.5):
 
 
 def clahe(img, tiles=8, clip_limit=0.01, bins=256):
-    """Contrast-limited adaptive histogram equalization (Zuiderveld 1994), NaN-aware.
 
-    ``tiles`` is the number of tiles along the longer side; ``clip_limit`` is
-    the share of a tile's pixels allowed in one histogram bin before clipping.
-    """
     a, mask = _to01(img)
     h, w = a.shape
     ty = max(1, int(round(tiles * h / max(h, w))))
@@ -53,7 +43,7 @@ def clahe(img, tiles=8, clip_limit=0.01, bins=256):
             hist = np.minimum(hist, limit) + excess / bins
             cdf = np.cumsum(hist)
             luts[i, j] = (cdf - cdf[0]) / max(cdf[-1] - cdf[0], 1e-12)
-    # bilinear interpolation between the tile centres
+
     cy = (ys[:-1] + ys[1:]) / 2.0
     cx = (xs[:-1] + xs[1:]) / 2.0
     yy = np.interp(np.arange(h), cy, np.arange(ty)) if ty > 1 else np.zeros(h)
@@ -76,7 +66,7 @@ def clahe(img, tiles=8, clip_limit=0.01, bins=256):
 
 
 def multiscale_detail(img, sigmas=(1.0, 2.0, 4.0), gains=(1.6, 1.3, 1.1)):
-    """Boost detail at several scales (a Laplacian-pyramid-like decomposition), then rescale to 0-1."""
+
     a, mask = _to01(img)
     base = a
     out = np.zeros_like(a)
@@ -91,7 +81,7 @@ def multiscale_detail(img, sigmas=(1.0, 2.0, 4.0), gains=(1.6, 1.3, 1.1)):
 
 
 def enhance(img, method="clahe", **kw):
-    """Return (display image 0-1, report with the local-contrast gain)."""
+
     funcs = {"clahe": clahe, "multiscale": multiscale_detail}
     if method not in funcs:
         raise ValueError(f"Unknown method {method}; choose {list(funcs)}.")
@@ -109,12 +99,7 @@ def enhance(img, method="clahe", **kw):
 
 
 def pansharpen(ms, pan, method="brovey"):
-    """Pan-sharpen a (bands, h, w) stack with a co-registered panchromatic band of higher resolution.
 
-    The multispectral stack is upsampled bilinearly to the pan grid; ``brovey``
-    scales each band by pan / intensity, ``hpf`` adds the pan high frequencies
-    (high-pass filter fusion). Returns (stack on the pan grid, report).
-    """
     ms = np.asarray(ms, dtype=np.float64)
     pan = np.asarray(pan, dtype=np.float64)
     if ms.ndim == 2:

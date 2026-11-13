@@ -1,17 +1,4 @@
-"""Open, georeferenced 3D export of a DTM for research.
 
-Writes, next to each other:
-
-* a point cloud as LAZ (when a LAZ backend is installed) or LAS, and as PLY;
-* a terrain mesh as binary glTF (``.glb``);
-* a JSON sidecar with source, CRS, bounds, resolution, date, relief
-  visualization and vertical exaggeration.
-
-Coordinates stay in the raster CRS. glTF stores float32 and is Y-up, so the
-mesh is written relative to an origin (stored in the sidecar and in the glTF
-``extras``) with X = east, Y = up, Z = -north. The existing 3D Cloud viewer
-is not touched.
-"""
 
 from __future__ import annotations
 
@@ -89,7 +76,7 @@ def write_las(path, xs, ys, zs, crs=None):
             pass
     las = laspy.LasData(header)
     las.x, las.y, las.z = xs, ys, zs
-    las.classification = np.full(xs.size, 2, dtype=np.uint8)  # ground
+    las.classification = np.full(xs.size, 2, dtype=np.uint8)
     path = Path(path)
     if path.suffix.lower() == ".laz" and not laspy.LazBackend.detect_available():
         path = path.with_suffix(".las")
@@ -175,7 +162,7 @@ def export_terrain_3d(
     max_points=2_000_000,
     mesh_max_side=1024,
 ):
-    """Export a DTM as point cloud and mesh with a metadata sidecar. Returns the sidecar dict."""
+
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     dtm = np.asarray(dtm)
@@ -250,7 +237,7 @@ def export_terrain_3d(
 
 
 def zip_package(meta, zip_path):
-    """Bundle the exported files (for upload to Zenodo or similar)."""
+
     import zipfile
 
     zip_path = Path(zip_path)

@@ -1,9 +1,11 @@
-/* AIrchGIS additions to the DetectorLab map styles */
 html,body{margin:0;padding:0;background:transparent;font-family:Inter,system-ui,sans-serif}
 .detector-map{max-width:none}
 .map-stage{height:calc(100vh - 4px);min-height:560px}
-.exact-layer-panel{width:345px}
-.panel-handle{right:330px}
+.detector-map{--tools-width:345px}
+.exact-layer-panel{box-sizing:border-box;width:var(--tools-width);padding:18px 16px 24px}
+.panel-handle{box-sizing:border-box;right:var(--tools-width);top:18px;translate:none;width:32px;height:44px;border-width:1px;border-right:0;border-radius:9px 0 0 9px;font-size:24px}
+.maplibregl-ctrl-bottom-right{right:var(--tools-width)}
+.panel-handle:focus-visible{outline:2px solid #ffe9a8;outline-offset:2px}
 .exact-layer-card.expanded .card-expand-content{display:block}
 button,select,summary,label,input[type=checkbox],input[type=range],input[type=file],.exact-switch,.card-expand{cursor:pointer}
 select,select option{cursor:pointer}
@@ -45,5 +47,10 @@ select,select option{cursor:pointer}
 .wb-modal-close{position:absolute;top:8px;right:10px;z-index:2;width:34px;height:34px;border:1px solid #d7aa56;border-radius:8px;background:#4a301d;color:#f9dda0;font-size:20px}
 .layer-meta{margin:6px 0 0;color:#bba78c;font-size:10px}
 .coordinate-utm-popup code{font-size:11px}
-@media(max-width:760px){.exact-layer-panel{width:250px;padding:16px 12px}.panel-handle{right:235px}}
+@media(max-width:760px){.detector-map{--tools-width:min(280px,calc(100vw - 100px))}.exact-layer-panel{padding:16px 12px}.exact-controls button{width:38px;height:38px}}
+.wb-param-slider{flex-wrap:wrap;gap:8px}
+.wb-param-slider label{flex-basis:calc(100% - 60px)}
+.wb-param-slider input[type=range]{order:3;width:100%;margin:4px 0 7px;accent-color:#e4bf6b}
+.wb-param-output{color:#f3d68f;font-size:12px;font-variant-numeric:tabular-nums;min-width:44px;text-align:right}
+.wb-param-output[hidden]{display:none}
 .wb-row[hidden]{display:none}

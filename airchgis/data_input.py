@@ -1,10 +1,4 @@
-"""Bring your own data: loaders for rasters, point clouds, multispectral scenes and site lists.
 
-Every screen starts from the user's own files (any country, any sensor, any
-CRS). Public archives are an optional second route (see :mod:`airchgis.sources`).
-Nothing here depends on Streamlit; the UI helpers live in
-:func:`render_file_input`.
-"""
 
 from __future__ import annotations
 
@@ -29,9 +23,8 @@ POINT_CLOUD_EXTS = {".las", ".laz"}
 SITE_EXTS = {".csv", ".txt", ".geojson", ".json", ".gpkg", ".shp", ".kml", ".zip"}
 
 
-# ---------------------------------------------------------------- generic file handling
 def save_upload(name: str, raw: bytes, subdir: str = "misc") -> Path:
-    """Store an uploaded file under workspace/uploads, named by content hash (no duplicates)."""
+
     digest = hashlib.sha1(raw).hexdigest()[:12]
     dest = UPLOAD_DIR / subdir
     dest.mkdir(parents=True, exist_ok=True)
@@ -42,7 +35,7 @@ def save_upload(name: str, raw: bytes, subdir: str = "misc") -> Path:
 
 
 def resolve_local_paths(text: str, exts=None) -> list[Path]:
-    """Paths typed by the user (one per line, files or folders). Avoids copying large files."""
+
     out = []
     for line in (text or "").splitlines():
         line = line.strip().strip('"').strip("'")
@@ -56,7 +49,6 @@ def resolve_local_paths(text: str, exts=None) -> list[Path]:
     return out
 
 
-# ---------------------------------------------------------------- rasters
 def describe_raster(path) -> dict:
     import rasterio
     from rasterio.warp import transform_bounds
@@ -101,7 +93,7 @@ def pixel_size_m(info) -> float | None:
 
 
 def plain_description(info) -> str:
-    """One sentence a non-specialist can read."""
+
     px = info.get("pixel_size_m")
     w, h = info.get("extent_m") or (0, 0)
     size = f"{w / 1000:.1f} × {h / 1000:.1f} km" if w > 2000 else f"{w:.0f} × {h:.0f} m"
@@ -111,7 +103,6 @@ def plain_description(info) -> str:
     return f"{bands}, {pix}, covering about {size}, in {crs}."
 
 
-# ---------------------------------------------------------------- point clouds
 def describe_point_cloud(path) -> dict:
     import laspy
 
@@ -134,7 +125,7 @@ def describe_point_cloud(path) -> dict:
 
 
 def rasterize_point_cloud(path, output, resolution=1.0, ground_only=True, crs=None, fill_distance=20) -> Path:
-    """Grid a LAS/LAZ point cloud into a DTM (lowest ground point per cell, small gaps filled)."""
+
     import laspy
     import rasterio
     from rasterio.fill import fillnodata
@@ -180,7 +171,6 @@ def rasterize_point_cloud(path, output, resolution=1.0, ground_only=True, crs=No
     return output
 
 
-# ---------------------------------------------------------------- known sites
 _LON = ("lon", "lng", "long", "longitude", "x", "easting", "east")
 _LAT = ("lat", "latitude", "y", "northing", "north")
 _NAME = ("name", "site", "id", "label", "nome", "title")
@@ -203,7 +193,7 @@ def _pick(header, options):
 
 
 def read_sites(path, crs=None) -> list[Site]:
-    """Read a site list: CSV with lon/lat (or x/y + ``crs``), GeoJSON, GeoPackage, Shapefile or KML."""
+
     path = Path(path)
     ext = path.suffix.lower()
     if ext == ".zip":
@@ -315,9 +305,6 @@ def _read_ogr_sites(path):
     return sites
 
 
-# ---------------------------------------------------------------- multispectral scenes
-# Band roles used by the local engine. Positions are 1-based band numbers in a stacked file;
-# tokens are the band names used in file names of single-band downloads.
 BAND_PRESETS = {
     "Sentinel-2 (B2, B3, B4, B8 stack)": {"positions": {"blue": 1, "green": 2, "red": 3, "nir": 4}, "gsd_m": 10.0},
     "Sentinel-2 (all 12 L2A bands)": {"positions": {"blue": 2, "green": 3, "red": 4, "rededge": 5, "nir": 8, "swir1": 11}, "gsd_m": 10.0,
@@ -353,7 +340,7 @@ def parse_date(text) -> date | None:
 
 
 def roles_from_descriptions(descriptions) -> dict:
-    """Guess band roles from band descriptions written in the file, if any."""
+
     roles = {}
     for i, d in enumerate(descriptions, 1):
         low = (d or "").lower().strip()
@@ -370,7 +357,7 @@ def roles_from_descriptions(descriptions) -> dict:
 class Scene:
     name: str
     date: date | None
-    bands: dict  # role -> float32 array (reflectance-like, NaN for no data)
+    bands: dict
     transform: object
     crs: object
     gsd_m: float
@@ -378,7 +365,7 @@ class Scene:
 
 
 def load_scene(path, positions: dict, scale=1.0, offset=0.0, scene_date=None) -> Scene:
-    """Read one multiband file and return its bands by role."""
+
     import rasterio
 
     with rasterio.open(path) as src:
@@ -398,7 +385,7 @@ _BAND_TOKEN = re.compile(r"(?:^|[_\-.])(B\d{1,2}A?)(?=[_\-.]|$)", re.IGNORECASE)
 
 
 def group_single_band_files(paths, tokens: dict) -> list[dict]:
-    """Group single-band downloads (e.g. ..._B04.tif, ..._SR_B4.TIF) by date into scenes."""
+
     groups = {}
     want = {v.upper(): k for k, v in tokens.items()}
     for p in paths:
@@ -416,7 +403,7 @@ def group_single_band_files(paths, tokens: dict) -> list[dict]:
 
 
 def load_single_band_scene(files: dict, scale=1.0, offset=0.0, scene_date=None) -> Scene:
-    """Stack single-band files on the grid of the finest band (others resampled bilinearly)."""
+
     import rasterio
     from rasterio.warp import Resampling, reproject
 

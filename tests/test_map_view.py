@@ -10,7 +10,7 @@ from airchgis.map import view
 
 class MapViewTests(unittest.TestCase):
     def setUp(self):
-        self.t = from_origin(350000, 4800000, 1.0, 1.0)  # UTM 33N, 1 m pixels, 80 x 60 m
+        self.t = from_origin(350000, 4800000, 1.0, 1.0)
         y, x = np.mgrid[0:60, 0:80].astype(np.float32)
         self.dem = 100 + 0.1 * x + 0.05 * y
 

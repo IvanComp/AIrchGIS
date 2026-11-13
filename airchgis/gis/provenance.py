@@ -1,11 +1,4 @@
-"""Record every tool run and replay it as a script.
 
-A log holds one step per run: tool, parameters, input files with their
-SHA-256, outputs, backend, the exact ``qgis_process`` command when QGIS ran,
-software versions and timing. It is saved as JSON and as a Python script
-that re-runs the same steps through :func:`airchgis.gis.tools.run_tool`, plus a
-shell script with the QGIS commands.
-"""
 
 from __future__ import annotations
 
@@ -91,13 +84,6 @@ class ProvenanceLog:
 
     def to_python(self) -> str:
         lines = [
-            '"""Replay of an AIrchGIS session, generated automatically.',
-            "",
-            f"Title: {self.title}",
-            f"Recorded: {self.created}",
-            "Run with the AIrchGIS virtual environment: python <this file>",
-            '"""',
-            "",
             "from airchgis.gis.provenance import ProvenanceLog, file_sha256",
             "from airchgis.gis.tools import run_tool",
             "",
@@ -106,9 +92,7 @@ class ProvenanceLog:
         ]
         for i, step in enumerate(self.steps, 1):
             if step.status not in {"ok", "warn"}:
-                lines.append(f"# Step {i}: {step.tool} was {step.status} in the original session ({step.message})")
                 continue
-            lines.append(f"# Step {i}: {step.tool} ({step.backend}) {step.message}".rstrip())
             for item in step.inputs:
                 if item.get("sha256"):
                     lines.append(
@@ -122,16 +106,11 @@ class ProvenanceLog:
         return "\n".join(lines) + "\n"
 
     def to_shell(self) -> str:
-        lines = ["#!/bin/sh", f"# QGIS commands of: {self.title} ({self.created})", "set -e", ""]
-        found = False
+        lines = ["#!/bin/sh", "set -e", ""]
         for i, step in enumerate(self.steps, 1):
             if step.command:
-                found = True
-                lines.append(f"# Step {i}: {step.tool}")
                 lines.append(shlex.join(step.command))
                 lines.append("")
-        if not found:
-            lines.append("# No step ran on QGIS: use the Python replay script.")
         return "\n".join(lines) + "\n"
 
     def save_scripts(self, folder, stem="airchgis_session") -> dict:

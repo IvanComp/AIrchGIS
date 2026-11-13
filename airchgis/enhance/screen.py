@@ -1,8 +1,4 @@
-"""Streamlit panels: "Enhance & best view" on the Terrain and Field marks screens.
 
-Every action goes through :func:`airchgis.gis.tools.run_tool`, so it is
-recorded in the session's provenance log and can be replayed as a script.
-"""
 
 from __future__ import annotations
 
@@ -98,9 +94,8 @@ def render_provenance_download(key):
                        file_name=f"airchgis_steps_{datetime.now():%Y%m%d_%H%M}.py", key=key)
 
 
-# ---------------------------------------------------------------- Terrain
 def one_sentence(ranking, width):
-    """Short explanation of the winner, for the main result."""
+
     if not ranking:
         return "No view could be computed."
     top = ranking[0]
@@ -176,7 +171,7 @@ def _show_best(bv, sites, key, width, full_table=False, before=None, geo=None):
 
 
 def render_terrain_enhance(dem, res, profile, crs, label="DTM", on_apply=None, key="as_enh_t"):
-    """One button for the recommended pipeline (clean, rank views, show the best); single steps under Advanced."""
+
     if dem is None or profile is None or profile.get("transform") is None:
         st.info("Load a georeferenced terrain model first.")
         return
@@ -303,9 +298,8 @@ def render_terrain_enhance(dem, res, profile, crs, label="DTM", on_apply=None, k
             _download(pco["output"], "Download the cleaned point cloud", f"{key}_pc_dl")
 
 
-# ---------------------------------------------------------------- Field marks
 def render_scene_quality(load_scenes, key="as_enh_q"):
-    """Quality of each date on request (clouds, shadows, haze, band problems)."""
+
     with st.expander("Image quality per date"):
         if st.button("Check image quality", key=f"{key}_go"):
             try:
@@ -319,7 +313,7 @@ def render_scene_quality(load_scenes, key="as_enh_q"):
 
 
 def render_field_marks_enhance(result, sites=None, key="as_enh_fm"):
-    """Rank the computed layers by visibility and show the best one with adaptive contrast."""
+
     with st.expander("Enhance & best view", expanded=False):
         width = st.number_input("Width of the features sought (m)", 0.5, 2000.0, float(max(2 * result.gsd_m, 20.0)), key=f"{key}_width")
         layers = {k: v for k, v in result.layers.items() if k != "Field boundaries"}

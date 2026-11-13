@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="docs/assets/airchgis-logo.svg" alt="AIrchGIS" width="620">
+  <img src="airchgis/assets/logo.svg" alt="AIrchGIS: terrain relief inside a magnifying glass" width="110">
 </p>
 
-<p align="center"><b>An AI-assisted archaeological GIS for LiDAR terrain data (DTM, point clouds), on your own data, anywhere in the world.</b></p>
+<h1 align="center">AIrchGIS</h1>
+<p align="center"><b>AI-assisted archaeological GIS</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
@@ -14,16 +15,18 @@
   <img src="https://img.shields.io/badge/status-paper%20in%20preparation%20(DAACH)-orange" alt="Paper in preparation">
 </p>
 
-AIrchGIS brings LiDAR relief visualization, fused views and 3D terrain exploration into one browser app, built for archaeologists with little IT background. You start from your own files (any country, sensor or coordinate system); public elevation models are an optional download. Relief views go on an interactive map where you can compare them, blend them into a fused view and export them as GeoTIFF, open 3D data and figures for papers. Every step is saved as a re-runnable script, and a resolution check tells you when the data cannot show features of the width you are looking for.
+AIrchGIS is a local research application for examining digital terrain models and LiDAR point clouds. Upload terrain data, generate relief visualizations, compare layers on a map and export results as GeoTIFF, 3D data or figures for papers. A resolution check assesses whether the data can resolve features of the requested width.
 
 <p align="center">
-  <img src="docs/assets/screenshot-terrain.jpg" alt="AIrchGIS terrain screen: LiDAR hillshade over satellite imagery" width="900">
+  <img src="docs/assets/screenshot-upload.png" alt="AIrchGIS upload screen and three-stage research workflow" width="900">
 </p>
 
 # Table of contents
 
 - [What it does](#what-it-does)
+- [Research workflow](#research-workflow)
 - [Bring your own data](#bring-your-own-data)
+- [Guide and use cases](#guide-and-use-cases)
 - [Tools on the map](#tools-on-the-map)
 - [Scripts and provenance](#scripts-and-provenance)
 - [3D export for research](#3d-export-for-research)
@@ -38,40 +41,63 @@ AIrchGIS brings LiDAR relief visualization, fused views and 3D terrain explorati
 
 - **Resolution check**: warns when a target is smaller than the data can resolve.
 - **Map**: after upload everything happens on a MapLibre map in the style of DetectorLab: tools and layers in the right panel, satellite base, 3D relief, distance measure, UTM coordinates with the elevation of your terrain, Google Earth link.
-- **Help**: the **?** button at the top right explains the tool and each feature.
+- **Guide**: **How it Works?** opens a guide with a contents index, numbered sections, a relief-method reference table and practical questions.
 
-Scores are investigation priorities, not archaeological probabilities.
+Terrain anomalies require interpretation alongside other evidence; AIrchGIS does not confirm archaeological sites.
+
+# Research workflow
+
+The start page presents three stages:
+
+1. **Upload your digital terrain model**: load a terrain raster or LiDAR point cloud.
+2. **Preprocessing and visualization**: prepare the terrain, set visualization parameters and generate relief views.
+3. **Export and compare**: compare layers and save results for further analysis or publication.
+
+The interface uses a brown and gold palette, Cinzel headings and a numbered workflow joined by an animated light sweep. The logo shows shaded terrain inside a magnifying glass. Animations respect the system's reduced-motion setting.
 
 # Bring your own data
 
-The app starts with **Upload your files** (up to 4 GB per file). Public elevation models are under **Other source**.
+Use **Upload your terrain model or LiDAR point cloud** on the start page. Multiple files are supported, up to 4 GB per file.
 
-- **Terrain**: DTM as GeoTIFF, ASCII grid or zip; LAS/LAZ point clouds, gridded to a DTM from their ground points.
+| Input | Preparation |
+|---|---|
+| GeoTIFF or ASCII grid | Requires georeferencing and a coordinate system to appear on the map |
+| ZIP archive of raster tiles | Raster files are extracted and checked before loading |
+| LAS/LAZ point cloud | Gridded at the selected cell size using classified ground points when available; otherwise all points are used |
 
-**Download from a public source** is the second option:
+Terrain in geographic coordinates is reprojected to a metric UTM coordinate system. The map opens automatically after loading. For large datasets, available memory may require fewer tiles or a smaller area.
 
-| Source | Coverage | Access in AIrchGIS |
-|---|---|---|
-| Copernicus DEM GLO-30 | Global, 30 m | Automatic, no account |
-| OpenTopography | Global DEMs, national LiDAR | Automatic with your API key (kept in `~/.airchgis/config.json`) |
-| National LiDAR: England, Netherlands, Denmark, France, Spain, Slovenia, Italy, USA… | National, 0.25–2 m | Link and expected format |
+The start page uses file upload. Public-source download helpers remain in the codebase but are not exposed in the current interface.
+
+# Guide and use cases
+
+**How it Works?** opens the AIrchGIS guide. Its layout follows DetectorLab's Useful Information page, with an index and sections covering input, preprocessing, relief methods, fused views, map controls, exports and practical limitations. **Back to the tool** returns to the workbench or upload screen.
+
+**Source Code v1.0.0**, beside the guide button, opens the [GitHub repository](https://github.com/IvanComp/AIrchGIS).
+
+The separate **Use cases** group contains three disabled placeholders:
+
+- 🇮🇹 **Colle San Mauro, L'Aquila, Italy**
+- 🏴󠁧󠁢󠁥󠁮󠁧󠁿 **TODO, TODO, UK**
+- 🇷🇴 **TODO, TODO, Romania**
+
+These buttons do not load example datasets yet.
 
 # Tools on the map
 
 The start page only asks for your terrain model or point cloud. Once it is loaded, the map opens with every tool in the **Tools** panel on the right, in the style of the DetectorLab map:
 
-1. **Relief views**: choose a view (hillshade, slope, sky-view factor, openness, local relief model, MSRM…) and its main setting, then **Add to the map**.
+1. **Relief views**: choose a view (hillshade, slope, sky-view factor, openness, local relief model, MSRM…) and its main setting, then **Add to the map**. Hillshade and anisotropic sky-view factor use a **Light direction (°)** slider with a live degree readout.
 2. **Fused view**: after adding two or more relief views, type the width of the features you are looking for; AIrchGIS blends your views with weights that make features of that width stand out most from the noise and from the broad landscape. If the blend is not clearer than the best of your views, it says so and adds nothing.
 3. **3D**: the 3D view of your terrain, a high-quality image (PDF or PNG, 300 dpi by default) with the top layer draped on the terrain, and open 3D data (LAZ/LAS, PLY, glTF) for QGIS, CloudCompare or Blender.
-4. **Details**: the steps of the session as a Python script.
 
-Each layer can be switched on and off, faded, shown with stronger contrast (display only), downloaded as GeoTIFF or removed. **Load another file** (top of the panel) goes back to the start page. Terrain models in longitude/latitude are reprojected to their UTM zone, so that all sizes are in metres. There is no super-resolution.
+Layers can be switched on and off, faded, shown with stronger contrast (display only) or removed. Single-band result layers can be downloaded as GeoTIFF. The arrow on the panel edge hides or restores Tools and Layers. **Load another file** (top of the panel) goes back to the start page. Terrain models in longitude/latitude are reprojected to their UTM zone, so that all sizes are in metres. There is no super-resolution.
 
 Terrain cleaning (banding, spikes and pits, voids, noise) and the automatic best view are available in scripts through `airchgis/gis/tools.py` (`clean_terrain`, `best_view`); they are not in the interface for now.
 
 # Scripts and provenance
 
-Every step runs through `airchgis/gis/tools.py` and is logged with its parameters, input SHA-256, software versions and backend. The log downloads as a Python script that repeats the analysis. QGIS Processing is used through `qgis_process` when installed; otherwise rvt-py and rasterio.
+The Python tool API in `airchgis/gis/tools.py` supports provenance logs containing parameters, input SHA-256, software versions and backend details. Scripts can be generated programmatically with `ProvenanceLog.save_scripts()`. The current map interface has no Details card or script-download button. QGIS Processing is available through `qgis_process` for supported tools; native backends use rvt-py and rasterio.
 
 ```python
 from airchgis.gis import ProvenanceLog, run_tool
@@ -104,7 +130,9 @@ pip install -r requirements.txt
 streamlit run airchgis_app.py
 ```
 
-The app opens at http://localhost:8501. QGIS is optional.
+The app opens at [localhost:8501](http://localhost:8501). QGIS is optional.
+
+Terrain processing runs locally. Basemap imagery, geographic labels and global terrain tiles require internet access. Opening Google Earth shares the selected coordinates with that service.
 
 # Project structure
 
@@ -115,7 +143,11 @@ The app opens at http://localhost:8501. QGIS is optional.
 ├── airchgis/
 │   ├── app.py                 # shell and navigation
 │   ├── rvt_web.py             # Terrain screen, 3D view, 3D figure and research export
-│   ├── help_page.py           # the ? help page
+│   ├── help_page.py           # How it Works? guide content and navigation
+│   ├── help_page.css          # guide layout, index, cards and FAQ
+│   ├── ui.py                  # shared theme, navigation and upload styling
+│   ├── assets/logo.svg        # animated terrain logo
+│   ├── workbench.py           # map events, analysis state and exports
 │   ├── map/                   # MapLibre map (interface adapted from DetectorLab, Apache-2.0)
 │   ├── data_input.py          # loaders: rasters, LAS/LAZ, site lists
 │   ├── input_ui.py            # shared upload input
@@ -130,5 +162,7 @@ The app opens at http://localhost:8501. QGIS is optional.
 ├── scripts/                   # benchmark and data-preparation scripts
 └── tests/
 ```
+
+Third-party attribution: [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md).
 
 Method notes: [`docs/PHASE0_RESOLVABILITY.md`](docs/PHASE0_RESOLVABILITY.md), [`docs/PHASE_A.md`](docs/PHASE_A.md), [`docs/AIRCHGIS_STRUCTURE.md`](docs/AIRCHGIS_STRUCTURE.md).

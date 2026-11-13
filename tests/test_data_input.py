@@ -14,7 +14,7 @@ from airchgis.gis import tools
 from airchgis.gis.guardrails import check_resolvability
 from airchgis.spectral import local_engine as le
 
-ORIGIN = (500000, 6200000)  # UTM 32N, Denmark: the tool is not tied to Italy
+ORIGIN = (500000, 6200000)
 
 
 def write_tif(path, bands, res=3.0, crs="EPSG:32632", descriptions=None, nodata=None):
@@ -30,7 +30,7 @@ def write_tif(path, bands, res=3.0, crs="EPSG:32632", descriptions=None, nodata=
 
 
 def field_scene(seed, marked=True, size=80):
-    """B, G, R, NIR of a cereal field; a 4-pixel-wide buried wall stunts the crop (lower NIR)."""
+
     rng = np.random.default_rng(seed)
     red = 0.05 + rng.normal(0, 0.004, (size, size))
     nir = 0.40 + rng.normal(0, 0.01, (size, size))
@@ -75,7 +75,7 @@ class PointCloudTests(unittest.TestCase):
             n = xs.size
             las.x = np.concatenate([xs.ravel(), xs.ravel()]) + ORIGIN[0]
             las.y = np.concatenate([ys.ravel(), ys.ravel()]) + ORIGIN[1]
-            las.z = np.concatenate([np.full(n, 10.0), np.full(n, 25.0)])  # ground + trees
+            las.z = np.concatenate([np.full(n, 10.0), np.full(n, 25.0)])
             las.classification = np.concatenate([np.full(n, 2), np.full(n, 5)]).astype(np.uint8)
             src = Path(tmp) / "cloud.las"
             las.write(str(src))
@@ -182,7 +182,7 @@ class LocalEngineTests(unittest.TestCase):
             self.assertEqual(res.gsd_m, 3.0)
             self.assertTrue(all(r["phase"] == "vegetation" for r in res.table))
             self.assertIn("Field boundaries", res.layers)
-            self.assertLess(np.mean(res.layers["Field boundaries"][10:70, 38:42]), 0.2)  # the wall is not a boundary
+            self.assertLess(np.mean(res.layers["Field boundaries"][10:70, 38:42]), 0.2)
 
     def test_a_different_crop_is_masked_as_boundary(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -190,7 +190,7 @@ class LocalEngineTests(unittest.TestCase):
             for i, growth in enumerate((0.0, 0.3, 0.6)):
                 bands = field_scene(i, marked=False)
                 bands[3, :, :40] += growth
-                bands[2, :, :40] -= growth / 15  # left field greens up through the season, right field does not
+                bands[2, :, :40] -= growth / 15
                 p = write_tif(Path(tmp) / f"s_2023060{i}.tif", bands, res=3.0)
                 scenes.append(di.load_scene(p, di.BAND_PRESETS["PlanetScope 4-band (B, G, R, NIR)"]["positions"]))
             res = le.run_local_analysis(scenes, radius_m=30)
@@ -234,7 +234,7 @@ class GuardrailWithRealPixelSize(unittest.TestCase):
             p = write_tif(Path(tmp) / "planet.tif", field_scene(0), res=3.0)
             r = tools.run_tool("check_raster_resolvability", input=str(p), feature_width_m=5)
             self.assertEqual(r["outputs"]["pixel_size_from_file_m"], 3.0)
-            self.assertNotEqual(r["outputs"]["verdict"], "refuse")  # 5 m streets: refused on Sentinel-2, not at 3 m
+            self.assertNotEqual(r["outputs"]["verdict"], "refuse")
         self.assertEqual(check_resolvability(5, gsd_m=10).verdict, "refuse")
         self.assertEqual(check_resolvability(5, gsd_m=0.5).verdict, "ok")
 
