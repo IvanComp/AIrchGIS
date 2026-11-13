@@ -66,7 +66,7 @@ The start page only asks for your terrain model or point cloud. Once it is loade
 3. **Fused view**: blends the four best views; if the blend is not clearer than the best single view, AIrchGIS says so and adds nothing.
 4. **3D**: the 3D view of your terrain, a high-quality image (PDF or PNG, 300 dpi by default) with the top layer draped on the terrain, and open 3D data (LAZ/LAS, PLY, glTF) for QGIS, CloudCompare or Blender.
 
-Each layer can be switched on and off, faded, downloaded as GeoTIFF or removed. **Load another file** (top of the panel) goes back to the start page. Terrain models in longitude/latitude are reprojected to their UTM zone, so that all sizes are in metres. There is no super-resolution.
+Each layer can be switched on and off, faded, shown with stronger contrast (display only), downloaded as GeoTIFF or removed. **Load another file** (top of the panel) goes back to the start page. Terrain models in longitude/latitude are reprojected to their UTM zone, so that all sizes are in metres. There is no super-resolution.
 
 # Scripts and provenance
 

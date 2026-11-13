@@ -43,6 +43,8 @@ class WorkbenchTests(unittest.TestCase):
         self.ev(action="relief", method="Slope", value=None)
         self.assertEqual(self.wb.layers[0]["name"], "Slope")
         self.ev(action="best_view", width=4)
+        self.ev(action="contrast", layer="best", nonce="c1")
+        self.assertEqual(self.wb.layers[0]["id"], "best_clahe")
         self.ev(action="fused", width=4)
         self.assertTrue(self.wb.message)
         self.ev(action="download", layer="best", nonce="d1")

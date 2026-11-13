@@ -118,7 +118,8 @@ function renderLayerCards(){
     t.addEventListener('change',()=>{st.visible=t.checked;shownLayers.set(l.id,st);map.setLayoutProperty('wb-'+l.id,'visibility',t.checked?'visible':'none');el.classList.toggle('active',t.checked);});
     r.addEventListener('input',()=>{st.opacity=Number(r.value)/100;shownLayers.set(l.id,st);o.textContent=`${r.value}%`;map.setPaintProperty('wb-'+l.id,'raster-opacity',st.opacity);});
     const tools=document.createElement('div');tools.className='layer-tools';
-    tools.innerHTML='<button type="button" data-a="download">Download GeoTIFF</button><button type="button" data-a="remove">Remove</button>';
+    tools.innerHTML='<button type="button" data-a="contrast" title="Adaptive histogram equalization, display only">Stronger contrast</button><button type="button" data-a="download">GeoTIFF</button><button type="button" data-a="remove">Remove</button>';
+    tools.querySelector('[data-a=contrast]').addEventListener('click',()=>send({action:'contrast',layer:l.id}));
     tools.querySelector('[data-a=download]').addEventListener('click',()=>send({action:'download',layer:l.id}));
     tools.querySelector('[data-a=remove]').addEventListener('click',()=>send({action:'remove',layer:l.id}));
     el.querySelector('.card-expand-content').appendChild(tools);

@@ -277,6 +277,19 @@ def offer_layer(wb, layer_id):
     wb.message = f"{name} saved as GeoTIFF."
 
 
+def run_contrast(wb, layer_id):
+    from airchgis.enhance import contrast
+
+    arr = wb.arrays.get(layer_id)
+    if arr is None or np.ndim(arr) != 2:
+        raise ValueError("Stronger contrast works on single-band layers.")
+    name = next((l["name"] for l in wb.layers if l["id"] == layer_id), layer_id)
+    out, rep = contrast.enhance(arr, "clahe")
+    wb.add_layer(f"{layer_id}_clahe", f"{name} · stronger contrast", "Adaptive histogram equalization: display only, "
+                 "values are no longer elevations.", out)
+    wb.message = rep["note"]
+
+
 def offer_script(wb):
     path = OUT_DIR / f"{wb.name}_steps.py"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -316,6 +329,8 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
             run_research_export(wb)
         elif action == "download":
             offer_layer(wb, event["layer"])
+        elif action == "contrast":
+            run_contrast(wb, event["layer"])
         elif action == "script":
             offer_script(wb)
         elif action == "sites":
