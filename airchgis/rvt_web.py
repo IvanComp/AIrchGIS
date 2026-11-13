@@ -28,13 +28,36 @@ WEB_3D_LAS_MAX_POINTS = 500_000
 WEB_3D_BROWSER_MAX_SIDE = 950
 
 
+PERSISTENT_KEYS = ("as_rvt_source_mode", "as_rvt_place", "as_rvt_tool", "as_rvt_azimuth", "as_rvt_radius", "as_rvt_dataset",
+                   "as_rvt_altitude", "as_rvt_z_factor", "as_rvt_n_dir", "as_rvt_p_low", "as_rvt_p_high", "as_rvt_invert",
+                   "as_rvt_base_mode", "as_rvt_basemap_year", "as_rvt_overlay_opacity", "as_enh_t_width",
+                   "as_rvt_in_DTM_paths", "as_rvt_in_DSM_First_paths", "as_rvt_in_DSM_Last_paths")
+
+
+def keep_settings(keys):
+    """Streamlit forgets widget values when a screen is not shown; restore them from a shadow copy."""
+    saved = st.session_state.setdefault("_as_saved_settings", {})
+    for k in keys:
+        if k not in st.session_state and k in saved:
+            st.session_state[k] = saved[k]
+
+
+def save_settings(keys):
+    saved = st.session_state.setdefault("_as_saved_settings", {})
+    for k in keys:
+        if k in st.session_state:
+            saved[k] = st.session_state[k]
+
+
 def render_rvt_web():
     core = load_rvt_core()
+    keep_settings(PERSISTENT_KEYS)
     init_rvt_state(core)
 
     controls, viewer = st.columns([0.28, 0.72], gap="large")
     with controls:
         params = render_rvt_controls(core)
+    save_settings(PERSISTENT_KEYS)
 
     with viewer:
         if params["source_mode"] == "DTM from map" and not params["source_payload"].get("generated_dtm"):
@@ -44,9 +67,12 @@ def render_rvt_web():
             return
 
         data = current_rvt_data(core, params)
+        if params["source_mode"] == "Upload" and not (params["source_payload"].get("uploads") or {}).get("DTM"):
+            st.info("Load a terrain model in step 1, or open the example data under Other sources.")
+            return
         if data is None or not data.loaded:
             msg = getattr(data, "error", None) if data is not None else None
-            st.warning(msg or "No RVT data loaded.")
+            st.warning(msg or "The terrain data could not be loaded.")
             return
 
         render_rvt_viewer(core, data, params)
@@ -106,102 +132,118 @@ def init_rvt_state(core):
         st.session_state.as_rvt_place = places[0] if places else ""
 
 
+BEST_VIEW_TOOL = "Improve and find the best view"
+TOOL_HELP = {
+    BEST_VIEW_TOOL: "Recommended: cleans the terrain and picks the clearest view for the size of your features.",
+    "Raw": "The elevations as they are.",
+    "Hillshade": "Shaded relief lit by a low sun; a single light direction can hide features parallel to it.",
+    "Multi-Hillshade": "Shaded relief from many light directions at once.",
+    "Slope": "Steepness; shows banks, terraces and the edges of mounds and ditches.",
+    "Sky-View Factor": "How much sky each point sees: hollows dark, ridges bright, no light direction.",
+    "Anisotropic Sky-View Factor": "Sky-view factor weighted towards one direction.",
+    "Positive Openness": "Highlights convex micro-relief such as banks and walls.",
+    "Simple Local Relief Model": "Removes the large landscape and keeps small bumps and hollows.",
+    "Multi-Scale Relief Model": "Local relief at several scales in one image.",
+    "Multi-Scale Topographic Position": "Colour image of relief position at local, middle and broad scale.",
+    "Sky Illumination": "Shading under a diffuse sky.",
+    "Local Dominance": "How much each point rises above its surroundings; good for low mounds.",
+    "e3MSTP (RGB)": "Colour blend of several visualizations for archaeology.",
+}
+RADIUS_TOOLS = {"Sky-View Factor", "Anisotropic Sky-View Factor", "Positive Openness", "Simple Local Relief Model",
+                "Multi-Scale Relief Model", "Local Dominance"}
+SOURCE_LABELS = {"Upload": "Your files", "Database": "Example data", "DTM from map": "Public source (download)"}
+
+
+def _slider(label, lo, hi, state_key, **kw):
+    """Slider whose value lives in session_state[state_key]; avoids keyed sliders that appear later starting at their minimum."""
+    value = st.slider(label, lo, hi, value=type(lo)(st.session_state[state_key]), key=f"{state_key}__w", **kw)
+    st.session_state[state_key] = value
+    return value
+
+
 def render_rvt_controls(core):
-    source_mode = st.radio(
-        "Source",
-        ["Upload", "DTM from map", "Database"],
-        format_func={
-            "Upload": "Upload your files",
-            "DTM from map": "Download from a public source",
-            "Database": "Example data",
-        }.get,
-        key="as_rvt_source_mode",
-        horizontal=True,
-    )
-
-    source_payload = {}
-    if source_mode == "Database":
-        places = core.list_database_places(RVT_DIR)
-        if places:
-            if st.session_state.as_rvt_place not in places:
-                st.session_state.as_rvt_place = places[0]
-            source_payload["place"] = st.selectbox(
-                "Place",
-                places,
-                key="as_rvt_place",
-            )
-        else:
-            st.warning("RVT database is empty.")
-            source_payload["place"] = ""
-
-    elif source_mode == "Upload":
+    st.markdown("**1 · Load data**")
+    current = st.session_state.get("as_rvt_source_mode", "Upload")
+    with st.expander("Other sources: example data or public download", expanded=current != "Upload"):
+        source_mode = st.radio("Data from", ["Upload", "Database", "DTM from map"], format_func=SOURCE_LABELS.get,
+                               key="as_rvt_source_mode")
+        source_payload = {}
+        if source_mode == "Database":
+            places = core.list_database_places(RVT_DIR)
+            if places:
+                if st.session_state.as_rvt_place not in places:
+                    st.session_state.as_rvt_place = places[0]
+                source_payload["place"] = st.selectbox("Example area", places, key="as_rvt_place")
+            else:
+                st.warning("No example data on this computer.")
+                source_payload["place"] = ""
+        elif source_mode == "DTM from map":
+            generated = st.session_state.as_rvt_generated_dtm
+            source_payload["generated_dtm"] = generated
+            if generated:
+                st.caption(Path(generated).name)
+                if st.button("New area", width="stretch"):
+                    st.session_state.as_rvt_generated_dtm = None
+                    st.session_state.as_rvt_data_sig = None
+                    st.rerun()
+    if source_mode == "Upload":
         source_payload["uploads"] = render_upload_controls(core)
 
-    else:
-        generated = st.session_state.as_rvt_generated_dtm
-        source_payload["generated_dtm"] = generated
-        if generated:
-            st.caption(Path(generated).name)
-            if st.button("New area", width="stretch"):
-                st.session_state.as_rvt_generated_dtm = None
-                st.session_state.as_rvt_data_sig = None
-                st.rerun()
-
-    mode = st.selectbox("Base", core.BASE_IMAGE_OPTIONS, index=1, key="as_rvt_base_mode")
-
-    preset_cols = st.columns(2)
-    with preset_cols[0]:
-        if st.button("Preset Arch", width="stretch"):
-            apply_archaeology_preset(core)
-            st.rerun()
-    with preset_cols[1]:
-        if st.button("Preset Rect/Ditches", width="stretch"):
-            apply_rectangles_preset(core)
-            st.rerun()
-
     method_values = available_methods(core)
-    dataset_values = ["DTM", "DSM_First", "DSM_Last", "nDSM", "First-Last", "Original"]
     waiting_for_map_dtm = source_mode == "DTM from map" and not source_payload.get("generated_dtm")
 
-    if waiting_for_map_dtm:
-        st.session_state.as_rvt_dataset = "DTM"
-        dataset = "DTM"
-        method = st.session_state.as_rvt_method
-        if method not in method_values:
-            method = "Hillshade" if "Hillshade" in method_values else method_values[0]
-            st.session_state.as_rvt_method = method
-    else:
-        dataset = st.radio("Dataset", dataset_values, key="as_rvt_dataset", horizontal=False)
-        method = st.selectbox("RVT method", method_values, key="as_rvt_method")
+    st.markdown("**2 · Choose a tool**")
+    tools = [BEST_VIEW_TOOL] + method_values
+    if st.session_state.get("as_rvt_tool") not in tools:
+        st.session_state.as_rvt_tool = BEST_VIEW_TOOL
+    tool = st.selectbox("Tool", tools, key="as_rvt_tool", label_visibility="collapsed")
+    st.caption(TOOL_HELP.get(tool, ""))
+    method = tool if tool != BEST_VIEW_TOOL else (st.session_state.as_rvt_method if st.session_state.as_rvt_method in method_values else "Hillshade")
+    st.session_state.as_rvt_method_used = method
+    if tool in ("Hillshade", "Anisotropic Sky-View Factor"):
+        _slider("Light direction (degrees from north)", 0.0, 360.0, "as_rvt_azimuth")
+    if tool in RADIUS_TOOLS:
+        _slider("Search radius (pixels)", 1.0, 200.0, "as_rvt_radius",
+                help="About the size of the features you are looking for, in pixels.")
 
-    is_original = dataset == "Original"
-    azimuth = st.slider("Azimuth", 0.0, 360.0, key="as_rvt_azimuth", disabled=is_original)
-    altitude = st.slider("Altitude", 0.0, 90.0, key="as_rvt_altitude", disabled=is_original)
-    z_factor = st.slider("Z-factor", 0.1, 10.0, key="as_rvt_z_factor", disabled=is_original)
-    radius = st.slider("Radius", 1.0, 200.0, key="as_rvt_radius", disabled=is_original)
-    n_dir = st.slider("Directions", 4, 64, key="as_rvt_n_dir", disabled=is_original)
-    p_low = st.slider("Stretch low (p)", 0.0, 20.0, key="as_rvt_p_low", disabled=is_original)
-    p_high = st.slider("Stretch high (p)", 80.0, 100.0, key="as_rvt_p_high", disabled=is_original)
-    invert = st.checkbox("Invert", key="as_rvt_invert", disabled=is_original)
-
-    basemap_years = ["Current"] + cached_wayback_years(core)
-    basemap_year = st.selectbox("Original", basemap_years, key="as_rvt_basemap_year")
+    with st.expander("Advanced"):
+        dataset_values = ["DTM", "DSM_First", "DSM_Last", "nDSM", "First-Last", "Original"]
+        if waiting_for_map_dtm:
+            st.session_state.as_rvt_dataset = "DTM"
+        st.selectbox("Surface", dataset_values, key="as_rvt_dataset",
+                     help="DTM = bare ground. DSM = surface with trees and buildings (if loaded). Original = satellite only.")
+        st.slider("Sun height (degrees)", 0.0, 90.0, key="as_rvt_altitude")
+        st.slider("Vertical exaggeration", 0.1, 10.0, key="as_rvt_z_factor")
+        st.slider("Search directions", 4, 64, key="as_rvt_n_dir")
+        st.slider("Contrast: dark cut (percentile)", 0.0, 20.0, key="as_rvt_p_low")
+        st.slider("Contrast: bright cut (percentile)", 80.0, 100.0, key="as_rvt_p_high")
+        st.checkbox("Invert colours", key="as_rvt_invert")
+        mode = st.selectbox("Pre-smoothing of the input", core.BASE_IMAGE_OPTIONS, index=1, key="as_rvt_base_mode")
+        preset_cols = st.columns(2)
+        preset_cols[0].button("Preset: earthworks", width="stretch", on_click=apply_archaeology_preset, args=(core,),
+                              help="Settings that suit banks, mounds and terraces.")
+        preset_cols[1].button("Preset: ditches", width="stretch", on_click=apply_rectangles_preset, args=(core,),
+                              help="Settings that suit ditches and rectangular enclosures.")
+        basemap_years = ["Current"] + cached_wayback_years(core)
+        basemap_year = st.selectbox("Satellite image year", basemap_years, key="as_rvt_basemap_year")
+    dataset = st.session_state.as_rvt_dataset
     overlay_opacity = float(st.session_state.as_rvt_overlay_opacity)
 
     return {
         "source_mode": source_mode,
         "source_payload": source_payload,
         "base_mode": mode,
+        "tool": tool,
         "dataset": dataset,
         "method": method,
-        "azimuth": azimuth,
-        "altitude": altitude,
-        "z_factor": z_factor,
-        "radius": radius,
-        "n_dir": n_dir,
-        "p_low": p_low,
-        "p_high": p_high,
-        "invert": invert,
+        "azimuth": float(st.session_state.as_rvt_azimuth),
+        "altitude": float(st.session_state.as_rvt_altitude),
+        "z_factor": float(st.session_state.as_rvt_z_factor),
+        "radius": float(st.session_state.as_rvt_radius),
+        "n_dir": int(st.session_state.as_rvt_n_dir),
+        "p_low": float(st.session_state.as_rvt_p_low),
+        "p_high": float(st.session_state.as_rvt_p_high),
+        "invert": bool(st.session_state.as_rvt_invert),
         "basemap_on": overlay_opacity < 1.0,
         "basemap_mix": 1.0 - overlay_opacity,
         "overlay_opacity": overlay_opacity,
@@ -213,37 +255,36 @@ def render_upload_controls(core):
     from airchgis import data_input as di
     from airchgis.input_ui import render_file_input
 
-    st.caption("Your own terrain data, from any country and in any coordinate system. DSM First/Last are optional.")
     uploads = {}
-    specs = [
-        ("DTM", "DTM (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ)"),
-        ("DSM_First", "DSM First (optional)"),
-        ("DSM_Last", "DSM Last (optional)"),
-    ]
-    for key, label in specs:
+
+    def load_group(key, label):
         exts = {".tif", ".tiff", ".asc", ".zip"} | ({".las", ".laz"} if key == "DTM" else set())
-        with st.expander(label, expanded=key == "DTM"):
-            paths = render_file_input(label, exts, f"as_rvt_in_{key}", f"terrain_{key}")
-            if key == "DTM" and any(p.suffix.lower() in di.POINT_CLOUD_EXTS for p in paths):
-                res = st.number_input("DTM cell size from the point cloud (m)", 0.1, 10.0, 1.0, 0.1, key="as_rvt_las_res")
-            out = []
-            for p in paths:
-                try:
-                    if p.suffix.lower() == ".zip":
-                        out.extend(extract_zip_rasters(core, p, key))
-                    elif p.suffix.lower() in di.POINT_CLOUD_EXTS:
-                        tif = di.UPLOAD_DIR / "dtm_from_point_cloud" / f"{p.stem}_{res:g}m.tif"
-                        if not tif.exists():
-                            with st.spinner(f"Gridding {p.name} into a DTM..."):
-                                di.rasterize_point_cloud(p, tif, resolution=res)
-                        out.append(str(tif))
-                    else:
-                        out.append(str(p))
-                    info = di.describe_raster(out[-1])
-                    st.caption(f"{p.name}: {di.plain_description(info)}")
-                except Exception as exc:
-                    st.error(f"{p.name}: cannot be read ({exc}).")
-            uploads[key] = out
+        paths = render_file_input(label, exts, f"as_rvt_in_{key}", f"terrain_{key}")
+        res = 1.0
+        if key == "DTM" and any(p.suffix.lower() in di.POINT_CLOUD_EXTS for p in paths):
+            res = st.number_input("Cell size of the terrain made from the point cloud (m)", 0.1, 10.0, 1.0, 0.1, key="as_rvt_las_res")
+        out = []
+        for p in paths:
+            try:
+                if p.suffix.lower() == ".zip":
+                    out.extend(extract_zip_rasters(core, p, key))
+                elif p.suffix.lower() in di.POINT_CLOUD_EXTS:
+                    tif = di.UPLOAD_DIR / "dtm_from_point_cloud" / f"{p.stem}_{res:g}m.tif"
+                    if not tif.exists():
+                        with st.spinner(f"Making a terrain model from {p.name}..."):
+                            di.rasterize_point_cloud(p, tif, resolution=res)
+                    out.append(str(tif))
+                else:
+                    out.append(str(p))
+                st.caption(f"{p.name}: {di.plain_description(di.describe_raster(out[-1]))}")
+            except Exception as exc:
+                st.error(f"{p.name}: cannot be read ({exc}).")
+        uploads[key] = out
+
+    load_group("DTM", "Terrain model (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ), any country and coordinate system")
+    with st.expander("Surface models with trees and buildings (optional)"):
+        load_group("DSM_First", "First-return surface (DSM first)")
+        load_group("DSM_Last", "Last-return surface (DSM last)")
     return uploads
 
 
@@ -316,7 +357,6 @@ def render_regional_dtm_selector(core):
     method_values = available_methods(core)
     if st.session_state.as_rvt_method not in method_values:
         st.session_state.as_rvt_method = "Hillshade" if "Hillshade" in method_values else method_values[0]
-    st.session_state.as_rvt_dataset = "DTM"
     selector_cols = st.columns([0.56, 0.44], gap="medium")
     with selector_cols[0]:
         st.selectbox(
@@ -521,36 +561,30 @@ def ensure_preprocessed_groups(core, src_groups, profile):
 
 
 def render_rvt_viewer(core, data, params):
-    available = dataset_options(data)
-    if params["dataset"] not in available:
-        st.info("Dataset not available for this source.")
-        params = dict(params)
-        params["dataset"] = available[0] if available else "DTM"
-
-    try:
-        if params["dataset"] == "Original":
-            rgb, raw_out, status = compose_current_view(core, data, params)
-        else:
-            with st.spinner("Computing RVT..."):
-                rgb, raw_out, status = compose_current_view(core, data, params)
-        st.session_state.as_rvt_last_rgb = rgb
-        if rgb is not None and params["dataset"] != "Original":
-            st.session_state.as_rvt_last_rvt_rgb = rgb
-        st.session_state.as_rvt_last_out = raw_out
-        st.session_state.as_rvt_last_status = status
-    except Exception as exc:
-        st.error(str(exc))
-        return
-
-    render_view_toolbar(core, data, rgb, params)
-
-    action_tabs = st.tabs(["Enhance & best view", "3D view", "Export"])
-    with action_tabs[0]:
+    st.markdown("**3 · Result**")
+    if params["tool"] == BEST_VIEW_TOOL:
         render_enhance(data, params)
-    with action_tabs[1]:
-        render_3d_cloud(core, data, params)
-    with action_tabs[2]:
+    else:
+        available = dataset_options(data)
+        if params["dataset"] not in available:
+            params = dict(params)
+            params["dataset"] = available[0] if available else "DTM"
+        try:
+            with st.spinner("Computing..."):
+                rgb, raw_out, status = compose_current_view(core, data, params)
+            st.session_state.as_rvt_last_rgb = rgb
+            if rgb is not None and params["dataset"] != "Original":
+                st.session_state.as_rvt_last_rvt_rgb = rgb
+            st.session_state.as_rvt_last_out = raw_out
+            st.session_state.as_rvt_last_status = status
+        except Exception as exc:
+            st.error(str(exc))
+            return
+        render_view_toolbar(core, data, rgb, params)
+        st.caption(f"{params['method']} of the {params['dataset']}. {TOOL_HELP.get(params['method'], '')}")
         render_exports(core, data, params, rgb, raw_out)
+    with st.expander("3D view and 3D export"):
+        render_3d_cloud(core, data, params)
 
 
 _DATASET_ATTR = {"DTM": "dtm", "DSM_First": "dsmf", "DSM_Last": "dsml", "nDSM": "ndsm", "First-Last": "diff"}
@@ -572,35 +606,21 @@ def render_enhance(data, params):
 
 
 def render_view_toolbar(core, data, rgb, params):
-    tool_cols = st.columns([0.08, 0.08, 0.32, 0.52], vertical_alignment="center")
-    with tool_cols[0]:
-        if st.button(
-            "📍",
-            key="as_rvt_coordinate_tool_button",
-            help="Coordinates",
-            type="primary" if st.session_state.as_rvt_image_tool == "coordinate" else "secondary",
-            width="stretch",
-        ):
-            st.session_state.as_rvt_image_tool = "coordinate"
-            st.rerun()
-    with tool_cols[1]:
-        if st.button(
-            "📏",
-            key="as_rvt_measure_tool_button",
-            help="Measure",
-            type="primary" if st.session_state.as_rvt_image_tool == "measure" else "secondary",
-            width="stretch",
-        ):
-            st.session_state.as_rvt_image_tool = "measure"
-            st.rerun()
-    with tool_cols[2]:
-        st.slider(
-            "RVT opacity over Original",
-            0.0,
-            1.0,
-            key="as_rvt_overlay_opacity",
-            help="1 shows only RVT, 0 shows only the underlying original image.",
-        )
+    with st.expander("Map tools: coordinates, measure, satellite overlay"):
+        tool_cols = st.columns([0.15, 0.15, 0.7], vertical_alignment="center")
+        with tool_cols[0]:
+            if st.button("📍", key="as_rvt_coordinate_tool_button", help="Click the map to read coordinates and elevation",
+                         type="primary" if st.session_state.as_rvt_image_tool == "coordinate" else "secondary", width="stretch"):
+                st.session_state.as_rvt_image_tool = "coordinate"
+                st.rerun()
+        with tool_cols[1]:
+            if st.button("📏", key="as_rvt_measure_tool_button", help="Measure distances",
+                         type="primary" if st.session_state.as_rvt_image_tool == "measure" else "secondary", width="stretch"):
+                st.session_state.as_rvt_image_tool = "measure"
+                st.rerun()
+        with tool_cols[2]:
+            _slider("View over satellite", 0.0, 1.0, "as_rvt_overlay_opacity",
+                    help="1 shows only the relief view, 0 only the satellite image.")
 
     render_view_map(core, data, rgb, params)
 
@@ -854,28 +874,22 @@ def rgb_to_image(rgb):
 
 
 def render_exports(core, data, params, rgb, raw_out):
-    st.caption("Save the current view. For the cleaned terrain, the best view and the fused view, use the Enhance & best view tab.")
-    cols = st.columns(2)
-    with cols[0]:
-        if st.button("Save as GeoTIFF", width="stretch", disabled=params["dataset"] == "Original"):
-            path = export_tiff(core, data, params, raw_out)
-            st.session_state.as_rvt_export_tiff = str(path)
-    with cols[1]:
-        if st.button("Save as PNG image", width="stretch", disabled=rgb is None):
-            path = export_png(core, params, rgb)
-            st.session_state.as_rvt_export_png = str(path)
-
-    for state_key, label, mime in [
-        ("as_rvt_export_tiff", "Download TIFF", "image/tiff"),
-        ("as_rvt_export_png", "Download PNG", "image/png"),
-    ]:
-        value = st.session_state.get(state_key)
-        if value and Path(value).exists():
-            st.download_button(label, Path(value).read_bytes(), file_name=Path(value).name, mime=mime)
-            st.caption(value)
-
-    if st.session_state.get("as_rvt_batch_log"):
-        st.caption(st.session_state.as_rvt_batch_log)
+    if params["dataset"] == "Original" or raw_out is None:
+        return
+    if st.button("Prepare download (GeoTIFF)", key="as_rvt_export_tiff_go"):
+        st.session_state.as_rvt_export_tiff = str(export_tiff(core, data, params, raw_out))
+    value = st.session_state.get("as_rvt_export_tiff")
+    if value and Path(value).exists():
+        st.download_button("Download GeoTIFF", Path(value).read_bytes(), file_name=Path(value).name, mime="image/tiff",
+                           key="as_rvt_export_tiff_dl")
+    with st.expander("Details"):
+        st.caption(st.session_state.get("as_rvt_last_status", ""))
+        if st.button("Prepare PNG image", key="as_rvt_export_png_go", disabled=rgb is None):
+            st.session_state.as_rvt_export_png = str(export_png(core, params, rgb))
+        png = st.session_state.get("as_rvt_export_png")
+        if png and Path(png).exists():
+            st.download_button("Download PNG", Path(png).read_bytes(), file_name=Path(png).name, mime="image/png",
+                               key="as_rvt_export_png_dl")
 
 
 def export_tiff(core, data, params, raw_out):
@@ -1422,6 +1436,9 @@ def apply_archaeology_preset(core):
     preferred = ["Hillshade", "Simple Local Relief Model", "Sky-View Factor", "Multi-Hillshade"]
     st.session_state.as_rvt_dataset = "DTM"
     st.session_state.as_rvt_method = next((m for m in preferred if m in methods), methods[0])
+    st.session_state.as_rvt_tool = st.session_state.as_rvt_method
+    for k in ("as_rvt_azimuth__w", "as_rvt_radius__w"):
+        st.session_state.pop(k, None)
     st.session_state.as_rvt_basemap_on = False
     st.session_state.as_rvt_invert = False
     st.session_state.as_rvt_azimuth = 315.0
@@ -1438,6 +1455,9 @@ def apply_rectangles_preset(core):
     preferred = ["Sky-View Factor", "Anisotropic Sky-View Factor", "Simple Local Relief Model", "Hillshade", "Multi-Hillshade"]
     st.session_state.as_rvt_dataset = "DTM"
     st.session_state.as_rvt_method = next((m for m in preferred if m in methods), methods[0])
+    st.session_state.as_rvt_tool = st.session_state.as_rvt_method
+    for k in ("as_rvt_azimuth__w", "as_rvt_radius__w"):
+        st.session_state.pop(k, None)
     st.session_state.as_rvt_basemap_on = False
     st.session_state.as_rvt_invert = False
     st.session_state.as_rvt_azimuth = 330.0

@@ -98,6 +98,31 @@ def render_provenance_download(key):
                        file_name=f"airchgis_steps_{datetime.now():%Y%m%d_%H%M}.py", key=key)
 
 
+def extent_geometry(transform, crs, shape):
+    """GeoJSON polygon (lon/lat) of a raster's extent."""
+    from rasterio.warp import transform_bounds
+
+    h, w = shape
+    west, north = transform.c, transform.f
+    east, south = west + w * transform.a, north + h * transform.e
+    if crs is not None:
+        west, south, east, north = transform_bounds(crs, "EPSG:4326", min(west, east), min(south, north),
+                                                    max(west, east), max(south, north))
+    return {"type": "Polygon", "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]]}
+
+
+def render_save_candidate(geometry, evidence, default_title, key):
+    """Save the analysed area as a candidate, with its evidence, for the Candidates screen."""
+    from airchgis import candidate_store
+
+    with st.popover("Save as candidate"):
+        title = st.text_input("Name", default_title, key=f"{key}_cand_title")
+        notes = st.text_area("Note (optional)", key=f"{key}_cand_notes")
+        if st.button("Save", type="primary", key=f"{key}_cand_save"):
+            candidate_store.save_candidate({"title": title, "notes": notes, "geometry": geometry, "evidence": evidence})
+            st.success("Saved. See the Candidates screen.")
+
+
 # ---------------------------------------------------------------- Terrain
 def one_sentence(ranking, width):
     """Short explanation of the winner, for the main result."""
@@ -113,37 +138,39 @@ def one_sentence(ranking, width):
 def _show_cleaning(cleaned, dem, res, key, on_apply):
     q = cleaned["quality"]
     rows = [{"measure": METRIC_LABELS[k], "before": q["before"][k], "after": q["after"][k]} for k in METRIC_LABELS]
+    st.markdown("Cleaning: before and after")
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
                  column_config={"before": st.column_config.NumberColumn(format="%.3g"),
                                 "after": st.column_config.NumberColumn(format="%.3g")})
-    with st.expander("What each cleaning step did"):
-        for note in cleaned["summary"]:
-            st.caption("· " + note)
-        clean_arr = _read(cleaned["output"])
-        c1, c2 = st.columns(2)
-        c1.image(_png(_hillshade(dem, res)), caption="Before (hillshade)", width="stretch")
-        c2.image(_png(_hillshade(clean_arr, res)), caption="After (hillshade)", width="stretch")
+    for note in cleaned["summary"]:
+        st.caption("· " + note)
     b1, b2 = st.columns(2)
     with b1:
         _download(cleaned["output"], "Download the cleaned terrain (GeoTIFF)", f"{key}_clean_dl")
-    if on_apply is not None and b2.button("Use the cleaned terrain in all views", key=f"{key}_apply",
+    if on_apply is not None and b2.button("Use the cleaned terrain in all tools", key=f"{key}_apply",
                                           help="The original stays on disk; reload the data to go back to it."):
         on_apply(_read(cleaned["output"]))
         st.rerun()
 
 
-def _show_best(bv, sites, key, width, full_table=False):
+def _show_best(bv, sites, key, width, full_table=False, before=None):
     if bv["status"] == "refused":
         st.error(bv["message"])
         return
     if bv.get("message"):
         st.warning(bv["message"])
     out = bv["outputs"]
-    st.success(one_sentence(out["ranking"], width))
-    contrast_on = st.toggle("Stronger local contrast (display only)", value=False, key=f"{key}_bv_disp",
-                            help="Adaptive histogram equalization: easier to see, but values are no longer elevations.")
-    st.image(_png(_read(out["output"]), enhance="clahe" if contrast_on else None), caption=out["best"], width="stretch")
-    _download(out["output"], "Download the best view (GeoTIFF)", f"{key}_bv_dl")
+    if not full_table:
+        st.success(one_sentence(out["ranking"], width))
+        view = st.segmented_control("Show", ["After: best view", "Before: original"], default="After: best view",
+                                    key=f"{key}_ba") or "After: best view"
+        contrast_on = st.toggle("Stronger contrast (display only)", value=False, key=f"{key}_bv_disp",
+                                help="Adaptive histogram equalization: easier to see, but values are no longer elevations.")
+        if view.startswith("Before") and before is not None:
+            st.image(_png(before, enhance="clahe" if contrast_on else None), caption="Original terrain (hillshade)", width="stretch")
+        else:
+            st.image(_png(_read(out["output"]), enhance="clahe" if contrast_on else None), caption=out["best"], width="stretch")
+        _download(out["output"], "Download the best view (GeoTIFF)", f"{key}_bv_dl")
     if full_table:
         table = pd.DataFrame([{"rank": i + 1, "view": x["name"], "visibility": round(x["score"], 2),
                                **({"AUC at your sites": None if x.get("auc") is None else round(x["auc"], 2)} if sites else {})}
@@ -160,16 +187,12 @@ def render_terrain_enhance(dem, res, profile, crs, label="DTM", on_apply=None, k
         st.info("Load a georeferenced terrain model first.")
         return
     dem, n_zero = metrics.zero_nodata(dem)
-    if n_zero:
-        st.caption(f"{n_zero} pixels with elevation exactly 0 are treated as no data (fill outside the survey).")
     tag = f"{key}_{abs(hash((dem.shape, float(np.nanmean(dem)) if np.isfinite(dem).any() else 0))) % 10**8}"
     src_path = st.session_state.get(f"{tag}_src")
     if not src_path or not Path(src_path).exists():
         src_path = str(_write_input(np.asarray(dem, dtype=np.float32), profile, crs, f"{label}_{tag}"))
         st.session_state[f"{tag}_src"] = src_path
 
-    st.caption("AIrchGIS cleans the terrain, compares many relief views and shows the one that makes features of "
-               "your size easiest to see. Your original data are not changed.")
     width = st.number_input("Width of the features you are looking for (m)", 0.1, 1000.0, float(max(2.0 * res, 4.0)),
                             key=f"{key}_width", help="For example 3 m for a ditch, 10 m for a road, 30 m for an enclosure.")
     with st.expander("Known sites (optional)"):
@@ -194,9 +217,25 @@ def render_terrain_enhance(dem, res, profile, crs, label="DTM", on_apply=None, k
     cleaned = st.session_state.get(f"{tag}_clean")
     bv = st.session_state.get(f"{tag}_bv")
     if bv:
-        _show_best(bv, sites, key, st.session_state.get(f"{key}_width_used", width))
-    if cleaned:
-        _show_cleaning(cleaned, dem, res, key, on_apply)
+        _show_best(bv, sites, key, st.session_state.get(f"{key}_width_used", width), before=_hillshade(dem, res))
+        if bv["status"] != "refused":
+            try:
+                render_save_candidate(extent_geometry(profile["transform"], crs, dem.shape),
+                                      {"screen": "Terrain", "best_view": bv["outputs"]["best"],
+                                       "width_m": st.session_state.get(f"{key}_width_used", width),
+                                       "file": bv["outputs"]["output"]}, f"{label} – {bv['outputs']['best']}", key)
+            except Exception as exc:
+                st.caption(f"Saving as candidate is not available for this raster ({exc}).")
+    if cleaned or bv:
+        with st.expander("Details"):
+            if n_zero:
+                st.caption(f"{n_zero} pixels with elevation exactly 0 were treated as no data (fill outside the survey).")
+            if cleaned:
+                _show_cleaning(cleaned, dem, res, key, on_apply)
+            if bv and bv["status"] != "refused":
+                st.markdown("All views, best first")
+                _show_best(bv, sites, f"{key}_det", st.session_state.get(f"{key}_width_used", width), full_table=True)
+            render_provenance_download(f"{key}_prov")
 
     with st.expander("Advanced"):
         st.markdown("**Cleaning steps**")
@@ -211,10 +250,7 @@ def render_terrain_enhance(dem, res, profile, crs, label="DTM", on_apply=None, k
                 st.error(str(exc))
         current_path = cleaned["output"] if cleaned and st.checkbox("Work on the cleaned terrain", value=True, key=f"{key}_use_clean") else src_path
 
-        st.markdown("**All views**")
-        if bv and bv["status"] != "refused":
-            _show_best(bv, sites, f"{key}_adv", st.session_state.get(f"{key}_width_used", width), full_table=True)
-        elif st.button("Rank the views without cleaning", key=f"{key}_bv_go"):
+        if not bv and st.button("Rank the views without cleaning", key=f"{key}_bv_go"):
             try:
                 st.session_state[f"{key}_width_used"] = float(width)
                 st.session_state[f"{tag}_bv"] = run_tool("best_view", log=session_log(), input=current_path,
@@ -265,13 +301,11 @@ def render_terrain_enhance(dem, res, profile, crs, label="DTM", on_apply=None, k
             st.caption(pco["note"])
             _download(pco["output"], "Download the cleaned point cloud", f"{key}_pc_dl")
 
-    render_provenance_download(f"{key}_prov")
-
 
 # ---------------------------------------------------------------- Field marks
 def render_scene_quality(load_scenes, key="as_enh_q"):
-    """Quality of the loaded dates on request; returns True when clouds and shadows should be masked."""
-    with st.expander("Image quality · clouds, shadows, haze and band problems, per date"):
+    """Quality of each date on request (clouds, shadows, haze, band problems)."""
+    with st.expander("Image quality per date"):
         if st.button("Check image quality", key=f"{key}_go"):
             try:
                 st.session_state[f"{key}_rows"] = multispectral.quality_table(load_scenes())
@@ -280,8 +314,7 @@ def render_scene_quality(load_scenes, key="as_enh_q"):
         rows = st.session_state.get(f"{key}_rows")
         if rows:
             st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-            st.caption("Spectral screening rules (or the Sentinel-2 SCL band when present), not a cloud model.")
-    return st.checkbox("Mask clouds, shadows and no-data before the analysis", value=True, key=f"{key}_mask")
+            st.caption("Simple brightness and haze rules, not a cloud model.")
 
 
 def render_field_marks_enhance(result, sites=None, key="as_enh_fm"):

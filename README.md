@@ -63,11 +63,11 @@ Every screen opens on **Upload your files**; you can also point to files already
 
 # Enhance & best view
 
-On the Terrain screen, type the width of the features you are looking for and press **Improve and find the best view**. AIrchGIS then:
+On the Terrain screen, load your terrain model (step 1), keep the recommended tool **Improve and find the best view** (step 2), type the width of the features you are looking for and press the button. The other relief views (hillshade, slope, sky-view factor, openness, local relief model…) are in the same tool list, each with its main setting; everything else is under **Advanced**. AIrchGIS then:
 
 1. **Cleans the terrain**: removes periodic banding (flight lines), isolated spikes and pits, fills small holes inside the survey, and reduces noise while keeping edges. A table shows each measure before and after; the original is not changed.
 2. **Ranks the relief views**: computes up to 19 views (hillshades, slope, sky-view factor, openness, local relief model and multi-scale relief model, with radii matched to your width) and ranks them by a visibility score: how much features of that width stand out from the noise and from the broad landscape. With a list of known sites it also shows the AUC of each view.
-3. **Shows the best one** with a one-line explanation, ready to download as GeoTIFF.
+3. **Shows the best one** with a one-line explanation and a before/after switch, ready to download as GeoTIFF or to save as a candidate. Measures and the re-runnable script are under **Details**.
 
 Under **Advanced** you can run single steps, see all views, build a **fused view** (a blend of the four best views; if it is not clearer than the best single view, AIrchGIS says so and keeps the best view), and remove isolated points from a LAS/LAZ point cloud. Display contrast (adaptive histogram equalization) is labelled as display only; there is no super-resolution.
 
@@ -88,7 +88,7 @@ log.save_scripts("outputs/")
 
 # 3D export for research
 
-From the 3D view tab, **Export 3D for research** writes a georeferenced point cloud (LAZ/LAS and PLY), a terrain mesh (glTF `.glb`) and a JSON sidecar (source, CRS, bounds, resolution, date, relief visualization, vertical exaggeration), zipped for archiving on Zenodo. The files open in QGIS 3D, CloudCompare and Blender. LAZ needs `pip install lazrs`; without it the cloud is written as LAS.
+On the Terrain screen, under **3D view and 3D export**, **Export 3D for research** writes a georeferenced point cloud (LAZ/LAS and PLY), a terrain mesh (glTF `.glb`) and a JSON sidecar (source, CRS, bounds, resolution, date, relief visualization, vertical exaggeration), zipped for archiving on Zenodo. The files open in QGIS 3D, CloudCompare and Blender. LAZ needs `pip install lazrs`; without it the cloud is written as LAS.
 
 # Quick start
 

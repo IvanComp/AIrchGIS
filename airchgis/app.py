@@ -112,27 +112,12 @@ def render_cropmarks(standalone=False):
         init_state()
         render_header()
 
-    ui.section_title(
-        "Multispectral screening",
-        eyebrow="Crop marks and soil marks",
-        hint=(
-            "Load your own images, or use a public archive. The engine ranks every acquisition by "
-            "local contrast and crop state, then combines only the dates that can actually show something."
-        ),
-    )
-
-    image_source = st.radio(
-        "Images",
-        ["upload", "archive"],
-        format_func={"upload": "Upload your files", "archive": "Download from a public source"}.get,
-        horizontal=True,
-        key="as_crop_image_source",
-    )
-    if image_source == "upload":
+    with st.expander("Other source: public archives (Sentinel-2, Landsat) through Google Earth Engine"):
+        use_archive = st.toggle("Use a public archive instead of my files", key="as_crop_use_archive")
+    if not use_archive:
         from .spectral.screen import render_field_marks_upload
 
         render_field_marks_upload()
-        render_crop_candidate_archive()
         return
 
     from .spectral.screen import render_provider_table
@@ -583,17 +568,9 @@ def render_crop_candidate_archive():
 
 
 def render_candidates():
-    ui.section_title(
-        "Candidates and verification dossiers",
-        eyebrow="Working archive",
-        hint=(
-            "Anomalies to compare with sources, historical imagery, LiDAR and field survey. "
-            "The status is a working decision, not an archaeological certification."
-        ),
-    )
     candidates = candidate_store.load_candidates()
     if not candidates:
-        st.info("No candidate saved yet. Run a Crop Marks analysis and use «Save as candidate».")
+        st.info("No candidate yet. On the Terrain or Field marks screen, use «Save as candidate» on a result.")
         return
 
     status_filter = st.multiselect(
@@ -603,11 +580,7 @@ def render_candidates():
         key="as_candidate_status_filter",
     )
     filtered = [item for item in candidates if item.get("status") in status_filter]
-    metric_cols = st.columns(4)
-    metric_cols[0].metric("Total", len(candidates))
-    metric_cols[1].metric("Shown", len(filtered))
-    metric_cols[2].metric("Promising", sum(item.get("status") == "Promising" for item in candidates))
-    metric_cols[3].metric("Verified", sum(item.get("status") == "Verified" for item in candidates))
+    st.caption(f"{len(filtered)} of {len(candidates)} candidates shown. The status is a working decision, not a certification.")
 
     if filtered:
         candidate_map = folium.Map(location=[43.2, 13.3], zoom_start=8, tiles=None, control_scale=True)
@@ -648,7 +621,7 @@ def render_candidates():
     if not labels:
         st.info("No candidate matches the filters.")
         return
-    selected_id = st.selectbox("Dossier", list(labels), format_func=labels.get, key="as_candidate_selected")
+    selected_id = st.selectbox("Candidate", list(labels), format_func=labels.get, key="as_candidate_selected")
     selected = next(item for item in filtered if item.get("id") == selected_id)
 
     detail_col, action_col = st.columns([0.62, 0.38], gap="large")
@@ -671,7 +644,7 @@ def render_candidates():
             st.dataframe(ranking, hide_index=True, width="stretch")
     with action_col:
         status = st.selectbox(
-            "Dossier status",
+            "Status",
             candidate_store.CANDIDATE_STATUSES,
             index=candidate_store.CANDIDATE_STATUSES.index(selected.get("status", "To verify")),
             key=f"as_candidate_status_{selected_id}",
@@ -681,33 +654,24 @@ def render_candidates():
             value=selected.get("notes") or "",
             key=f"as_candidate_notes_{selected_id}",
         )
-        if st.button("Update dossier", type="primary", width="stretch"):
+        if st.button("Save changes", type="primary", width="stretch"):
             candidate_store.update_candidate(selected_id, {"status": status, "notes": notes})
-            st.success("Dossier updated.")
-            st.rerun()
-        if st.button("Reopen in Crop Marks", width="stretch"):
-            st.session_state.as_crop_geometry = selected.get("geometry")
-            st.session_state.as_crop_source_record = selected.get("source_record")
-            st.session_state.as_crop_result = None
-            st.session_state.as_crop_active_layer = None
-            st.session_state.as_active_tool = "Crop Marks"
+            st.success("Saved.")
             st.rerun()
 
-    download_cols = st.columns(2)
-    download_cols[0].download_button(
-        "Export archive as JSON",
-        candidate_store.candidates_json(candidates),
-        file_name="airchgis_candidates.json",
-        mime="application/json",
-        width="stretch",
-    )
-    download_cols[1].download_button(
-        "Export areas as GeoJSON",
+    st.download_button(
+        "Download all candidates (GeoJSON)",
         candidate_store.candidates_geojson(candidates),
         file_name="airchgis_candidates.geojson",
         mime="application/geo+json",
-        width="stretch",
     )
+    with st.expander("Details"):
+        st.download_button(
+            "Download the full archive (JSON)",
+            candidate_store.candidates_json(candidates),
+            file_name="airchgis_candidates.json",
+            mime="application/json",
+        )
 
 
 def compact_source_record(record):

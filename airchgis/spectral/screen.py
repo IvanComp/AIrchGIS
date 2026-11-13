@@ -15,7 +15,7 @@ from streamlit_folium import st_folium
 from airchgis import data_input as di
 from airchgis import sources
 from airchgis.enhance.multispectral import mask_scene
-from airchgis.enhance.screen import render_field_marks_enhance, render_scene_quality
+from airchgis.enhance.screen import render_scene_quality
 from airchgis.gis.guardrails import check_resolvability
 from airchgis.input_ui import render_file_input
 from airchgis.spectral import local_engine as le
@@ -76,15 +76,25 @@ def _overlay(layer, transform, crs, cmap="magma", diverging=False):
     return buf.getvalue(), [[south, west], [north, east]]
 
 
+FM_KEYS = ("as_fm_images_paths", "as_fm_preset", "as_fm_target", "as_fm_width", "as_fm_scale", "as_fm_offset",
+           "as_fm_radius", "as_fm_threshold", "as_enh_q_mask", "as_fm_sites_paths")
+
+
 def render_field_marks_upload(show_example_sites=None):
-    st.markdown(
-        "Load your own images: satellite (Sentinel-2, Landsat, PlanetScope, commercial), drone or orthophotos, "
-        "from any country. Several dates of the same area give much stronger results than one."
-    )
-    paths = render_file_input("Images (GeoTIFF, JP2; one multiband file per date, or one file per band)",
+    from airchgis.rvt_web import keep_settings, save_settings
+
+    keep_settings(FM_KEYS)
+    try:
+        _render_field_marks_upload(show_example_sites)
+    finally:
+        save_settings(FM_KEYS)
+
+
+def _render_field_marks_upload(show_example_sites=None):
+    st.markdown("**1 · Load images**")
+    paths = render_file_input("Images of the same area: satellite, drone or aerial (GeoTIFF, JP2). Several dates work better than one.",
                               {".tif", ".tiff", ".jp2", ".vrt"}, "as_fm_images", "field_marks")
     if not paths:
-        st.info("Waiting for images. You can also download them from a public source in the other tab.")
         return
 
     infos = []
@@ -96,48 +106,55 @@ def render_field_marks_upload(show_example_sites=None):
     if not infos:
         return
     first = next((i for i in infos if i["bands"] > 1), infos[0])
-    st.caption(f"First image: {di.plain_description(first)}")
+    st.caption(f"{len(infos)} image(s). First: {di.plain_description(first)}")
     if any(i.get("crs") is None for i in infos):
         st.warning("Some files have no coordinate system: they cannot be placed on the map.")
+    preset_name = st.selectbox("Sensor", list(di.BAND_PRESETS), key="as_fm_preset",
+                               help="Tells AIrchGIS which band is red, near infrared and so on.")
 
-    c1, c2, c3 = st.columns([0.5, 0.25, 0.25])
-    preset_name = c1.selectbox("Sensor / band order", list(di.BAND_PRESETS), key="as_fm_preset")
-    scale = c2.number_input("Value scale", value=1.0, format="%.6f", key="as_fm_scale",
-                            help="Reflectance = value × scale + offset. Ratio indices barely change; set it for Landsat Collection 2 (0.0000275, offset -0.2).")
-    offset = c3.number_input("Offset", value=0.0, format="%.4f", key="as_fm_offset")
-    positions = _band_editor(preset_name, first if first["bands"] > 1 else None)
+    st.markdown("**2 · Choose what to look for**")
+    gsd = first["pixel_size_m"] or di.BAND_PRESETS[preset_name]["gsd_m"] or 10.0
+    c1, c2 = st.columns(2)
+    target = c1.selectbox("Marks", TARGETS, key="as_fm_target",
+                          help="Crop marks need a growing crop; soil marks need bare, ploughed fields. Automatic picks per date.")
+    width = c2.number_input("Width of the features you are looking for (m)", 0.5, 500.0, float(max(20.0, 2 * gsd)), key="as_fm_width")
 
-    dates_df = pd.DataFrame([{"file": Path(i["path"]).name, "date": di.parse_date(Path(i["path"]).name), "path": i["path"]} for i in infos])
-    edited = st.data_editor(dates_df, column_config={"path": None, "date": st.column_config.DateColumn("date (from file name; edit if wrong)")},
-                            disabled=["file"], hide_index=True, key="as_fm_dates", width="stretch")
+    with st.expander("Advanced: bands, scale, dates, thresholds"):
+        a1, a2 = st.columns(2)
+        scale = a1.number_input("Value scale", value=1.0, format="%.6f", key="as_fm_scale",
+                                help="Reflectance = value × scale + offset (e.g. Landsat Collection 2: 0.0000275 and -0.2).")
+        offset = a2.number_input("Offset", value=0.0, format="%.4f", key="as_fm_offset")
+        positions = _band_editor(preset_name, first if first["bands"] > 1 else None)
+        dates_df = pd.DataFrame([{"file": Path(i["path"]).name, "date": di.parse_date(Path(i["path"]).name), "path": i["path"]} for i in infos])
+        edited = st.data_editor(dates_df, column_config={"path": None, "date": st.column_config.DateColumn("date (from file name; edit if wrong)")},
+                                disabled=["file"], hide_index=True, key="as_fm_dates", width="stretch")
+        b1, b2 = st.columns(2)
+        radius = b1.number_input("Neighbourhood (m)", float(max(gsd * 2, 1.0)), 2000.0, float(max(60.0, 4 * gsd)), key="as_fm_radius",
+                                 help="Area each pixel is compared with.")
+        threshold = b2.number_input("Anomaly threshold", 0.8, 3.0, 1.5, 0.05, key="as_fm_threshold",
+                                    help="How much a pixel must differ from its neighbourhood to count.")
+        mask_clouds = st.checkbox("Mask clouds, shadows and no data before the analysis", value=True, key="as_enh_q_mask")
     dates = {r["path"]: (r["date"] if isinstance(r["date"], date) else None) for r in edited.to_dict("records")}
 
-    gsd = first["pixel_size_m"] or di.BAND_PRESETS[preset_name]["gsd_m"] or 10.0
-    c1, c2, c3, c4 = st.columns(4)
-    target = c1.selectbox("Target mark", TARGETS, key="as_fm_target")
-    width = c2.number_input("Width of the features sought (m)", 0.5, 500.0, float(max(20.0, 2 * gsd)), key="as_fm_width")
-    radius = c3.number_input("Neighbourhood (m)", float(max(gsd * 2, 1.0)), 2000.0, float(max(60.0, 4 * gsd)), key="as_fm_radius")
-    threshold = c4.number_input("Persistence threshold", 0.8, 3.0, 1.5, 0.05, key="as_fm_threshold")
-
-    verdict = check_resolvability(width, sensor="sentinel-2" if gsd >= 2 else "lidar", gsd_m=gsd, n_dates=max(1, len(infos)))
-    {"ok": st.success, "warn": st.warning, "refuse": st.error}[verdict.verdict](
-        f"Pixel size of your images: {gsd:.2f} m. {verdict.message}")
-
-    st.markdown("**Known sites (optional)** · your own list, used to check each layer against ground truth")
-    site_paths = render_file_input("Sites (CSV with lon/lat, GeoJSON, GeoPackage, zipped Shapefile, KML)", di.SITE_EXTS,
-                                   "as_fm_sites", "sites", multiple=False)
+    with st.expander("Known sites (optional)"):
+        site_paths = render_file_input("Known sites (CSV with lon/lat, GeoJSON, GeoPackage, zipped Shapefile, KML)", di.SITE_EXTS,
+                                       "as_fm_sites", "sites", multiple=False)
     sites = []
     if site_paths:
         try:
             sites = di.read_sites(site_paths[0])
-            st.caption(f"{len(sites)} sites loaded.")
         except Exception as exc:
             st.error(f"Site list not readable: {exc}")
 
-    mask_clouds = render_scene_quality(lambda: _load_scenes([Path(i["path"]) for i in infos], preset_name, positions,
-                                                            scale, offset, dates))
+    render_scene_quality(lambda: _load_scenes([Path(i["path"]) for i in infos], preset_name, positions, scale, offset, dates))
 
-    if st.button("Run analysis on my images", type="primary", disabled=verdict.verdict == "refuse", key="as_fm_run"):
+    verdict = check_resolvability(width, sensor="sentinel-2" if gsd >= 2 else "lidar", gsd_m=gsd, n_dates=max(1, len(infos)))
+    if verdict.verdict == "refuse":
+        st.error(f"These images ({gsd:.1f} m pixels) cannot show features {width:g} m wide. {verdict.message}")
+    elif verdict.verdict == "warn":
+        st.warning(verdict.message)
+
+    if st.button("Find the marks", type="primary", disabled=verdict.verdict == "refuse", key="as_fm_run"):
         with st.spinner("Computing indices and anomalies..."):
             try:
                 scenes = _load_scenes([Path(i["path"]) for i in infos], preset_name, positions, scale, offset, dates)
@@ -146,24 +163,30 @@ def render_field_marks_upload(show_example_sites=None):
                         mask_scene(sc)
                 st.session_state.as_fm_result = le.run_local_analysis(scenes, radius_m=radius, threshold=threshold, target=target)
                 st.session_state.as_fm_sites_loaded = sites
+                st.session_state.as_fm_width_used = float(width)
+                st.session_state.pop("as_fm_layer", None)
             except Exception as exc:
                 st.session_state.as_fm_result = None
                 st.error(f"Analysis not completed: {exc}")
-    if verdict.verdict == "refuse":
-        st.caption("The analysis is disabled because these images cannot show features of that width.")
 
     result = st.session_state.get("as_fm_result")
     if result is not None:
-        render_local_result(result, st.session_state.get("as_fm_sites_loaded") or [], show_example_sites)
+        render_local_result(result, st.session_state.get("as_fm_sites_loaded") or [], show_example_sites,
+                            width=st.session_state.get("as_fm_width_used", width))
 
 
-def render_local_result(result, sites, show_example_sites=None):
-    for note in result.notes:
-        st.info(note)
-    st.dataframe(pd.DataFrame(result.table), hide_index=True, width="stretch")
-    st.caption("Dates ranked by local contrast. Scores are investigation priorities, not archaeological probabilities.")
+def render_local_result(result, sites, show_example_sites=None, width=20.0):
+    from airchgis.enhance import bestview
+    from airchgis.enhance.screen import one_sentence
+
+    st.markdown("**3 · Result**")
     names = list(result.layers)
-    layer = st.selectbox("Layer", names, index=names.index("Persistence") if "Persistence" in names else 0, key="as_fm_layer")
+    ranked = bestview.rank_layers({k: v for k, v in result.layers.items() if k != "Field boundaries"}, result.gsd_m, width)
+    order = [r["name"] for r in ranked["ranking"]]
+    if order:
+        st.success(one_sentence(ranked["ranking"], width) + " Scores are priorities to check, not probabilities.")
+    default = order[0] if order else ("Persistence" if "Persistence" in names else names[0])
+    layer = st.selectbox("Layer", names, index=names.index(default), key="as_fm_layer")
     cmap = "viridis" if layer.startswith(("NDVI", "SAVI", "VARI")) else ("Greys" if layer == "Field boundaries" else "magma")
     png, bounds = _overlay(result.layers[layer], result.transform, result.crs, cmap)
     center = [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2]
@@ -179,30 +202,52 @@ def render_local_result(result, sites, show_example_sites=None):
     if show_example_sites:
         show_example_sites(fmap, [bounds[0][1], bounds[0][0], bounds[1][1], bounds[1][0]])
     fmap.fit_bounds(bounds)
-    folium.LayerControl(collapsed=False).add_to(fmap)
-    st_folium(fmap, width=1200, height=640, key=f"as_fm_map_{layer}", returned_objects=[])
-
-    if sites and result.crs is not None:
-        rows = []
-        for n in names:
-            if n == "Field boundaries":
-                continue
-            r = le.sample_sites_auc(result.layers[n], result.transform, result.crs, sites)
-            rows.append({"layer": n, "sites inside": r["sites_inside"], "AUC": None if r["auc"] is None else round(r["auc"], 2)})
-        st.markdown("**Check against your known sites** (AUC 0.5 = chance)")
-        st.dataframe(pd.DataFrame(rows), hide_index=True)
-        st.caption("A sanity check on a small, non-random sample, not a statistical validation.")
-
-    render_field_marks_enhance(result, sites)
+    folium.LayerControl(collapsed=True).add_to(fmap)
+    st_folium(fmap, width=1200, height=600, key=f"as_fm_map_{layer}", returned_objects=[])
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / f"field_marks_{date.today():%Y%m%d}.tif"
-    if st.button("Prepare GeoTIFF of all layers", key="as_fm_export"):
+    if st.button("Prepare download (GeoTIFF, all layers)", key="as_fm_export"):
         le.write_layers(result, out)
         st.session_state.as_fm_export_path = str(out)
     p = st.session_state.get("as_fm_export_path")
     if p and Path(p).exists():
         st.download_button("Download GeoTIFF", Path(p).read_bytes(), file_name=Path(p).name, key="as_fm_dl")
+
+    from airchgis.enhance.screen import extent_geometry, render_save_candidate
+
+    first_layer = next(iter(result.layers.values()))
+    if result.crs is not None:
+        render_save_candidate(extent_geometry(result.transform, result.crs, first_layer.shape),
+                              {"screen": "Field marks", "layer": layer, "dates": len(result.table), "ranking": result.table},
+                              f"Field marks – {layer}", "as_fm")
+
+    with st.expander("Details"):
+        for note in result.notes:
+            st.caption("· " + note)
+        st.markdown("Dates, ranked by local contrast")
+        st.dataframe(pd.DataFrame(result.table), hide_index=True, width="stretch")
+        st.markdown("Layers, ranked by visibility")
+        st.dataframe(pd.DataFrame([{"layer": x["name"], "visibility": round(x["score"], 2)} for x in ranked["ranking"]]),
+                     hide_index=True, width="stretch")
+        if sites and result.crs is not None:
+            rows = []
+            for n in names:
+                if n == "Field boundaries":
+                    continue
+                r = le.sample_sites_auc(result.layers[n], result.transform, result.crs, sites)
+                rows.append({"layer": n, "sites inside": r["sites_inside"], "AUC": None if r["auc"] is None else round(r["auc"], 2)})
+            st.markdown("Check against your known sites (AUC 0.5 = chance; a small, non-random sample)")
+            st.dataframe(pd.DataFrame(rows), hide_index=True)
+        c1, c2 = st.columns(2)
+        c1.image(_png_layer(result.layers[layer]), caption=layer, width="stretch")
+        c2.image(_png_layer(result.layers[layer], enhance="clahe"), caption=f"{layer}, stronger contrast (display only)", width="stretch")
+
+
+def _png_layer(arr, enhance=None):
+    from airchgis.enhance.screen import _png
+
+    return _png(arr, "magma", enhance=enhance)
 
 
 def render_provider_table(kind):
