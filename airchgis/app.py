@@ -1,5 +1,6 @@
 import logging
 from datetime import date
+from uuid import uuid4
 
 import folium
 import streamlit as st
@@ -50,12 +51,27 @@ def init_state():
 
 def render_navbar():
     ui.inject_styles()
+    tool = render_tool_switch()
+    if st.session_state.get("as_wb") is not None and tool != "Help":
+        with st.container(key="nav_workbench"):
+            left_col, analysis_col = st.columns([0.75, 0.25], gap="large", vertical_alignment="center")
+            with left_col:
+                with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+                    with st.container(key="nav_home", width="content"):
+                        if st.button("Home", key="as_wb_load_another", icon=":material/home:", help="Return to file upload"):
+                            st.session_state.as_wb_nav_event = {"action": "load_another", "nonce": uuid4().hex}
+                    st.markdown(ui.brand_markup(), unsafe_allow_html=True, width="content")
+            with analysis_col:
+                with st.container(key="nav_workbench_view", horizontal=True, horizontal_alignment="right"):
+                    if st.button("3D Analysis", key="as_wb_view3d", icon=":material/view_in_ar:"):
+                        st.session_state.as_wb_nav_event = {"action": "view3d", "nonce": uuid4().hex}
+        st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
+        return tool
     brand_col, links_col, cases_col = st.columns(
         [0.30, 0.28, 0.42], gap="large", vertical_alignment="center",
     )
     with brand_col:
         st.markdown(ui.brand_markup(), unsafe_allow_html=True)
-    tool = render_tool_switch()
     with links_col:
         help_col, source_col = st.columns([0.43, 0.57], gap="small", vertical_alignment="center")
         with help_col:

@@ -638,7 +638,7 @@ div[data-testid="stAlert"] {
 
 
 .st-key-terrain_upload { max-width: 960px; margin: .3rem auto 0; }
-.st-key-terrain_upload [data-testid="stFileUploader"] { width: 76%; margin-inline: auto; }
+.st-key-terrain_upload [data-testid="stFileUploader"] { width: 64%; margin-inline: auto; }
 .st-key-terrain_upload [data-testid="stFileUploader"] > label { justify-content: center; padding: .55rem 0 .65rem; margin-bottom: .4rem; }
 .st-key-terrain_upload [data-testid="stFileUploader"] > label p { color: var(--as-gold-400); font-weight: 700; font-size: 1.05rem; line-height: 1.5; text-align: center; }
 .st-key-terrain_upload [data-testid="stFileUploaderDropzone"] {
@@ -714,4 +714,12 @@ div[data-testid="stButton"] > button:disabled::after { display: none; }
 .stApp a.as-source-link svg { width: 17px; height: 17px; flex: 0 0 17px; }
 .stApp a.as-source-link:hover { color: var(--as-gold-300); background: rgba(212,175,55,.1); border-color: var(--as-gold-300); box-shadow: 0 8px 18px -16px #ffe9a8; }
 .stApp a.as-source-link:focus-visible { outline: 2px solid var(--as-gold-300); outline-offset: 3px; }
+.st-key-nav_workbench_view button[kind] { min-height: 46px; padding-inline: .65rem; background: rgba(212,175,55,.04); border: 0; border-bottom: 2px solid #a77935; border-radius: 7px 7px 0 0; color: var(--as-gold-300); font-weight: 500; box-shadow: none; }
+.st-key-nav_workbench_view button[kind] p { font-size: .8rem; }
+.st-key-nav_workbench_view button[kind]:hover { background: rgba(212,175,55,.1); border-color: var(--as-gold-300); transform: none; }
+.st-key-nav_workbench_view button[kind]::after { display: none; }
+.st-key-nav_home{position:relative;top:6px}
+.st-key-nav_home button[kind]{width:44px;min-height:42px;padding:.5rem;justify-content:center}
+.st-key-nav_home button p{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.st-key-nav_home button[kind] [data-testid="stIconMaterial"]{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);margin:0;line-height:1}
 """

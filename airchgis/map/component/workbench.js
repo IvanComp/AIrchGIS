@@ -5,6 +5,7 @@ function setValue(value){post('streamlit:setComponentValue',{value,dataType:'jso
 function setHeight(h){post('streamlit:setFrameHeight',{height:h});}
 
 let ARGS=null,map=null,initialized=false,pendingNonce=null,lastDownload=null,last3d=null,nonceCounter=0;
+let rvtWorkspace=null;
 const shownLayers=new Map();
 const toast=document.querySelector('.toast');
 const busy=document.querySelector('.wb-busy');
@@ -17,6 +18,10 @@ function send(event){
   event.nonce=`${Date.now()}-${nonceCounter}`;
   pendingNonce=event.nonce;
   busy.hidden=false;
+  rvtWorkspace?.setBusy(true);
+  document.querySelector('.wb-3d-busy').hidden=document.querySelector('.wb-modal').hidden;
+  document.querySelector('.wb-3d-busy').textContent=event.action==='view3d'?'Preparing 3D view…':'Preparing export…';
+  document.querySelector('.wb-cloud').disabled=true;
   document.querySelectorAll('.wb-run').forEach(b=>b.disabled=true);
   setValue(event);
 }
@@ -74,6 +79,7 @@ function addLabels(){
   map.addLayer({id:'locality-cities',type:'symbol',source:'openmaptiles','source-layer':'place',minzoom:3,filter:['==',['get','class'],'city'],layout:{...layout,'text-font':['Noto Sans Bold'],'text-size':14},paint});
   map.addLayer({id:'locality-towns',type:'symbol',source:'openmaptiles','source-layer':'place',minzoom:6,filter:['==',['get','class'],'town'],layout:{...layout,'text-size':12},paint});
   map.addLayer({id:'locality-villages',type:'symbol',source:'openmaptiles','source-layer':'place',minzoom:8.5,filter:['match',['get','class'],['village','hamlet'],true,false],layout:{...layout,'text-size':11},paint});
+  labelIds.forEach(id=>{map.setLayoutProperty(id,'visibility',fixedState.labels.visible?'visible':'none');map.setPaintProperty(id,'text-opacity',fixedState.labels.opacity);});
 }
 function mapReady(){return map&&map.getLayer&&map.getLayer('measurement-line');}
 
@@ -105,29 +111,38 @@ function syncLayers(){
 }
 function renderLayerCards(){
   const box=document.querySelector('.layer-cards');box.innerHTML='';
+  const lab=card('⌖','Place','OpenStreetMap place names.',true,1);
+  wireFixed(lab,v=>labelIds.forEach(id=>map.getLayer(id)&&map.setLayoutProperty(id,'visibility',v?'visible':'none')),o=>labelIds.forEach(id=>map.getLayer(id)&&map.setPaintProperty(id,'text-opacity',o)),'labels');
+  box.appendChild(lab);
+  const sat=card('▦','Base map','Satellite imagery.',true,1);
+  wireFixed(sat,setBaseMapVisible,o=>map.getLayer('satellite')&&map.setPaintProperty('satellite','raster-opacity',o),'satellite');
+  box.appendChild(sat);
   (ARGS.layers||[]).forEach(l=>{
     const st=shownLayers.get(l.id)||{visible:l.visible,opacity:l.opacity};
     const el=card('◉',l.name,l.description,st.visible,st.opacity);
+    if(l.id==='rvt_current'||/^view\d+(?:_clahe)*$/.test(l.id))el.querySelector('b').textContent='Relief view';
     const t=el.querySelector('input[type=checkbox]'),r=el.querySelector('.exact-range'),o=el.querySelector('output');
     t.addEventListener('change',()=>{st.visible=t.checked;shownLayers.set(l.id,st);map.setLayoutProperty('wb-'+l.id,'visibility',t.checked?'visible':'none');el.classList.toggle('active',t.checked);});
     r.addEventListener('input',()=>{st.opacity=Number(r.value)/100;shownLayers.set(l.id,st);o.textContent=`${r.value}%`;map.setPaintProperty('wb-'+l.id,'raster-opacity',st.opacity);});
     const tools=document.createElement('div');tools.className='layer-tools';
-    tools.innerHTML='<button type="button" data-a="contrast" title="Adaptive histogram equalization, display only">Stronger contrast</button><button type="button" data-a="download">GeoTIFF</button><button type="button" data-a="remove">Remove</button>';
-    tools.querySelector('[data-a=contrast]').addEventListener('click',()=>send({action:'contrast',layer:l.id}));
+    tools.innerHTML='<button type="button" data-a="contrast" title="Adaptive histogram equalization, display only">Contrast</button><button type="button" data-a="download">GeoTIFF</button>';
+    tools.querySelector('[data-a=contrast]').addEventListener('click',()=>send({action:'contrast',layer:l.id,replace:true}));
     tools.querySelector('[data-a=download]').addEventListener('click',()=>send({action:'download',layer:l.id}));
-    tools.querySelector('[data-a=remove]').addEventListener('click',()=>send({action:'remove',layer:l.id}));
     el.querySelector('.card-expand-content').appendChild(tools);
     box.appendChild(el);
   });
 
-  const lab=card('⌖','Place names','OpenStreetMap place names.',true,1);
-  wireFixed(lab,v=>labelIds.forEach(id=>map.getLayer(id)&&map.setLayoutProperty(id,'visibility',v?'visible':'none')),o=>labelIds.forEach(id=>map.getLayer(id)&&map.setPaintProperty(id,'text-opacity',o)),'labels');
-  box.appendChild(lab);
-  const sat=card('▦','Satellite','Base map: satellite imagery.',true,1);
-  wireFixed(sat,v=>map.setLayoutProperty('satellite','visibility',v?'visible':'none'),o=>map.setPaintProperty('satellite','raster-opacity',o),'satellite');
-  box.appendChild(sat);
+
 }
 const fixedState={labels:{visible:true,opacity:1},satellite:{visible:true,opacity:1}};
+function setBaseMapVisible(visible){
+  if(map.getLayer('satellite'))map.setLayoutProperty('satellite','visibility',visible?'visible':'none');
+  if(!visible){
+    fixedState.labels.visible=false;
+    labelIds.forEach(id=>map.getLayer(id)&&map.setLayoutProperty(id,'visibility','none'));
+    renderLayerCards();
+  }
+}
 function wireFixed(el,onToggle,onOpacity,key){
   const st=fixedState[key],t=el.querySelector('input[type=checkbox]'),r=el.querySelector('.exact-range'),o=el.querySelector('output');
   t.checked=st.visible;r.value=Math.round(st.opacity*100);o.textContent=`${r.value}%`;el.classList.toggle('active',st.visible);
@@ -136,10 +151,13 @@ function wireFixed(el,onToggle,onOpacity,key){
 }
 function card(icon,name,desc,checked,opacity){
   const el=document.createElement('div');
-  el.className='exact-layer-card'+(checked?' active':'');
-  el.innerHTML=`<div class="exact-layer-top"><span>${icon} <b></b></span><button class="card-expand" type="button" aria-expanded="false" title="Opacity and options">›</button><label class="exact-switch"><input type="checkbox" ${checked?'checked':''}><em></em></label></div><p class="card-layer-desc"></p><div class="card-expand-content"><div class="exact-opacity"><span>Opacity</span><output>${Math.round(opacity*100)}%</output></div><input class="exact-range" type="range" min="0" max="100" value="${Math.round(opacity*100)}"></div>`;
-  el.querySelector('b').textContent=name;el.querySelector('.card-layer-desc').textContent=desc||'';
-  el.querySelector('.card-expand').addEventListener('click',ev=>{const open=el.classList.toggle('expanded');ev.currentTarget.textContent=open?'⌄':'›';});
+  el.className='exact-layer-card expanded'+(checked?' active':'');
+  el.innerHTML=`<div class="exact-layer-top"><span class="wb-layer-name">${icon} <b></b></span><label class="exact-switch"><input type="checkbox" ${checked?'checked':''}><em></em></label><input class="exact-range" type="range" min="0" max="100" value="${Math.round(opacity*100)}"><output>${Math.round(opacity*100)}%</output></div><p class="card-layer-desc"></p><div class="card-expand-content"></div>`;
+  el.querySelector('b').textContent=name;
+  el.querySelector('.wb-layer-name').title=desc?`${name}: ${desc}`:name;
+  el.querySelector('.card-layer-desc').textContent=desc||'';
+  el.querySelector('input[type=checkbox]').setAttribute('aria-label',`Toggle ${name}`);
+  el.querySelector('.exact-range').setAttribute('aria-label',`Opacity of ${name}`);
   return el;
 }
 
@@ -147,9 +165,12 @@ function el(html){const t=document.createElement('template');t.innerHTML=html.tr
 function buildTools(){
   const box=document.querySelector('.wb-tools');box.innerHTML='';
   const tools=ARGS.tools||{};
+  const launch=el('<button type="button" class="wb-run wb-api-open">Open RVT workspace</button>');
+  launch.addEventListener('click',()=>rvtWorkspace.open());
+  box.appendChild(launch);
 
   const views=tools.views||[];
-  const rel=el(`<div class="wb-card"><h4>Relief views</h4><p class="wb-view-help"></p>
+  const rel=el(`<div class="wb-card"><h4>Relief types</h4><p class="wb-view-help"></p>
     <div class="wb-row"><select class="wide wb-view">${views.map(v=>`<option value="${v.id}">${v.name}</option>`).join('')}</select></div>
     <div class="wb-row wb-param" hidden><label class="wb-param-label" for="wb-relief-param"></label><input id="wb-relief-param" type="number" class="wb-param-value"><output class="wb-param-output" for="wb-relief-param" hidden></output></div>
     <button type="button" class="wb-run secondary" data-act="relief">Add to the map</button></div>`);
@@ -169,17 +190,17 @@ function buildTools(){
     }
   };
   sel.addEventListener('change',syncView);syncView();
-  rel.querySelector('[data-act=relief]').addEventListener('click',()=>{const v=views.find(x=>x.id===sel.value)||{};send({action:'relief',method:sel.value,value:v.param?Number(rel.querySelector('.wb-param-value').value):null});});
+  rel.querySelector('[data-act=relief]').addEventListener('click',()=>{const v=views.find(x=>x.id===sel.value)||{};send({action:'relief',replace:true,method:sel.value,value:v.param?Number(rel.querySelector('.wb-param-value').value):null});});
   box.appendChild(rel);
 
-  const fu=el(`<div class="wb-card"><h4>Fused view</h4><p>Blends the relief views you added to the map, with weights that make features of this width stand out most. If the blend is not clearer than the best of your views, nothing is added.</p>
-    <div class="wb-row"><label>Width of the features (m)</label><input type="number" class="wb-width" min="0.1" step="0.5" value="${tools.width||4}"></div>
-    <button type="button" class="wb-run secondary" data-act="fused">Build the fused view</button></div>`);
-  fu.querySelector('[data-act=fused]').addEventListener('click',()=>send({action:'fused',width:Number(fu.querySelector('.wb-width').value)}));
-  box.appendChild(fu);
+  const profiles=tools.cloud_profiles||[];
+  const rendering=el(`<div class="wb-card"><h4>Terrain rendering</h4>
+    <div class="wb-row"><label for="wb-cloud-mode">Mode</label><select id="wb-cloud-mode" class="wb-cloud">${profiles.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
+    <p class="wb-cloud-help"></p><p>Rendering modes affect the interactive view. Exports use the source terrain.</p></div>`);
+  rendering.querySelector('.wb-cloud').addEventListener('change',ev=>send({action:'view3d',cloud_key:ev.target.value}));
+  document.querySelector('.wb-3d-tools').appendChild(rendering);
 
-  const td=el(`<div class="wb-card"><h4>3D</h4><p>Look at your terrain in 3D, save a high-quality image for a paper, or export open 3D data.</p>
-    <button type="button" class="wb-run secondary" data-act="view3d">Open the 3D view of my terrain</button>
+  const td=el(`<div class="wb-card"><h4>Export</h4><p>Save a terrain figure or download georeferenced 3D data.</p>
     <div class="wb-row"><label>High-quality image</label><select class="wb-fmt"><option value="pdf">PDF</option><option value="png">PNG</option></select></div>
     <details><summary>Image options</summary>
       <div class="wb-row"><label>Resolution (dpi)</label><select class="wb-dpi"><option>300</option><option>600</option><option>150</option></select></div>
@@ -191,28 +212,30 @@ function buildTools(){
     </details>
     <button type="button" class="wb-run secondary" data-act="figure">Download high-quality image</button>
     <button type="button" class="wb-run secondary" data-act="research">Download open 3D data (LAZ, PLY, glTF)</button></div>`);
-  td.querySelector('[data-act=view3d]').addEventListener('click',()=>send({action:'view3d'}));
   td.querySelector('[data-act=figure]').addEventListener('click',()=>{
     const top=(ARGS.layers||[]).find(l=>(shownLayers.get(l.id)||l).visible);
     send({action:'figure',fmt:td.querySelector('.wb-fmt').value,dpi:Number(td.querySelector('.wb-dpi').value),width_mm:Number(td.querySelector('.wb-wmm').value),
       azimuth:Number(td.querySelector('.wb-az').value),elevation:Number(td.querySelector('.wb-el').value),ve:Number(td.querySelector('.wb-ve').value),
       scale_bar:td.querySelector('.wb-sb').checked,north_arrow:td.querySelector('.wb-na').checked,drape:top?top.id:null});});
   td.querySelector('[data-act=research]').addEventListener('click',()=>send({action:'research'}));
-  box.appendChild(td);
-  document.querySelector('[data-act=load_another]').addEventListener('click',()=>send({action:'load_another'}));
+  document.querySelector('.wb-3d-tools').appendChild(td);
 }
 
 function update(){
-  document.querySelector('.wb-file-name').textContent=ARGS.name||'';
-  if(ARGS.message){messageBox.hidden=false;messageBox.textContent=ARGS.message;messageBox.classList.toggle('error',/^Not completed|cannot|refused/i.test(ARGS.message));}else messageBox.hidden=true;
-  if(pendingNonce&&ARGS.done_nonce===pendingNonce){pendingNonce=null;busy.hidden=true;document.querySelectorAll('.wb-run').forEach(b=>b.disabled=false);}
+  for(const box of [messageBox,document.querySelector('.wb-3d-message')]){box.hidden=!ARGS.message;box.textContent=ARGS.message||'';box.classList.toggle('error',ARGS.message_level==='error');}
+  if(pendingNonce&&ARGS.done_nonce===pendingNonce){pendingNonce=null;busy.hidden=true;document.querySelector('.wb-3d-busy').hidden=true;document.querySelectorAll('.wb-run').forEach(b=>b.disabled=false);document.querySelector('.wb-cloud').disabled=false;rvtWorkspace?.setBusy(false);}
   syncLayers();
+  rvtWorkspace?.update(ARGS.rvt_api,ARGS.message);
+  const cloud=document.querySelector('.wb-cloud');
+  cloud.value=ARGS.cloud_key||'original';
+  const profile=(ARGS.tools.cloud_profiles||[]).find(p=>p.id===cloud.value);
+  document.querySelector('.wb-cloud-help').textContent=profile?profile.description:'';
   const dl=ARGS.download;
   if(dl&&dl.id!==lastDownload){lastDownload=dl.id;const bytes=Uint8Array.from(atob(dl.b64),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:dl.mime}));const a=document.createElement('a');a.href=url;a.download=dl.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);showToast(`Saved: ${dl.filename}`);}
   const v3=ARGS.view3d;
   if(v3&&v3.id!==last3d){last3d=v3.id;const m=document.querySelector('.wb-modal');m.querySelector('iframe').srcdoc=v3.html;m.hidden=false;}
 }
-function init(){initMap();buildTools();wireControls();renderLayerCards();}
+function init(){rvtWorkspace=new window.RVTWorkspace(send);initMap();buildTools();wireControls();renderLayerCards();}
 
 function distanceBetween(a,b){const r=x=>x*Math.PI/180,R=6371000,dLat=r(b[1]-a[1]),dLng=r(b[0]-a[0]);const q=Math.sin(dLat/2)**2+Math.cos(r(a[1]))*Math.cos(r(b[1]))*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));}
 function formatDistance(m){return m<1000?`${m<10?m.toFixed(1):Math.round(m)} m`:`${(m/1000).toFixed(2)} km`;}

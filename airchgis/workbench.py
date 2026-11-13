@@ -34,9 +34,12 @@ class Workbench:
         self.layers = []
         self.arrays = {}
         self.message = ""
+        self.message_level = "info"
         self.details = {}
         self.download = None
         self.view3d = None
+        self.cloud_key = "original"
+        self.rvt_workspace = None
         self.done_nonce = None
         self.counter = 0
         self.log = ProvenanceLog(f"AIrchGIS · {name}")
@@ -80,9 +83,10 @@ class Workbench:
                          "b64": base64.b64encode(p.read_bytes()).decode("ascii")}
 
     def map_args(self, tools):
-        return {"layers": self.layers, "message": self.message, "details": self.details, "download": self.download,
-                "view3d": self.view3d, "done_nonce": self.done_nonce, "tools": tools, "name": self.name,
-                "elevation": self.elevation(), "sites": bool(self.sites)}
+        return {"layers": self.layers, "message": self.message if self.message_level in {"warning", "error"} else "", "message_level": self.message_level, "details": self.details, "download": self.download,
+                "view3d": self.view3d, "cloud_key": self.cloud_key, "done_nonce": self.done_nonce, "tools": tools, "name": self.name,
+                "elevation": self.elevation(), "sites": bool(self.sites),
+                "rvt_api": self.rvt_workspace.snapshot() if self.rvt_workspace is not None else None}
 
     def elevation(self):
         if not hasattr(self, "_elev"):
@@ -168,7 +172,7 @@ def hillshade(dem, res):
     return h
 
 
-def run_relief(wb, core, method, value, compute=None):
+def run_relief(wb, core, method, value, compute=None, replace=False):
 
     from airchgis.gis.tools import run_tool
     from airchgis.rvt_web import RADIUS_TOOLS, TOOL_HELP
@@ -199,7 +203,15 @@ def run_relief(wb, core, method, value, compute=None):
         rgb = np.clip((rgb - lo) / max(hi - lo, 1e-9), 0, 1)
         wb.add_layer(lid, label, TOOL_HELP.get(method, ""), rgb, raw=rgb)
     wb.paths[lid] = out["output"]
+    if replace:
+        retain_layer(wb, lid)
     wb.message = f"{label} added to the map. {TOOL_HELP.get(method, '')}"
+
+
+def retain_layer(wb, layer_id):
+    wb.layers = [layer for layer in wb.layers if layer["id"] == layer_id]
+    wb.arrays = {key: value for key, value in wb.arrays.items() if key == layer_id}
+    wb.paths = {key: value for key, value in wb.paths.items() if key == layer_id}
 
 
 def run_best_view(wb, width):
@@ -212,6 +224,7 @@ def run_best_view(wb, width):
                  target_feature_width_m=float(width), sites=wb.sites, quick=wb.dem.size > 4_000_000)
     if r["status"] == "refused":
         wb.message = r["message"]
+        wb.message_level = "warning"
         return
     out = r["outputs"]
     before = hillshade(wb.dem, wb.res)
@@ -240,12 +253,14 @@ def run_fused(wb, width=None):
     ids = [l["id"] for l in wb.layers if l["id"] in wb.paths and np.ndim(wb.arrays.get(l["id"])) == 2]
     if len(ids) < 2:
         wb.message = "Add at least two relief views to the map first; the fused view blends them."
+        wb.message_level = "warning"
         return
     names = {l["id"]: l["name"] for l in wb.layers}
     r = run_tool("fuse_layers", log=wb.log, input=wb.input_path(), layers=[wb.paths[i] for i in ids],
                  output=str(OUT_DIR / f"{wb.name}_fused.tif"), target_feature_width_m=width)
     if r["status"] == "refused":
         wb.message = r["message"]
+        wb.message_level = "warning"
         return
     out = r["outputs"]
     best = out["best_single"]["name"]
@@ -253,6 +268,7 @@ def run_fused(wb, width=None):
     if out["gain_over_best_single"] < 1.005:
         wb.message = (f"The blend of your {len(ids)} views does not show features {width:g} m wide more clearly than "
                       f"{best_name} alone, so nothing was added.")
+        wb.message_level = "warning"
         return
     weights = ", ".join(f"{names.get(i, i)} {100 * w:.0f}%" for i, w in zip(ids, out["weights"] or []) if w >= 0.01)
     wb.add_layer("fused", "Fused view", f"Blend of your relief views: {weights}.", read_raster(out["output"]))
@@ -296,14 +312,19 @@ def offer_layer(wb, layer_id):
         raise ValueError("This layer cannot be downloaded.")
     name = next((l["name"] for l in wb.layers if l["id"] == layer_id), layer_id)
     safe = "".join(ch if ch.isalnum() else "_" for ch in name).strip("_")
+    path = OUT_DIR / f"{wb.name}__{safe}.tif"
     if np.ndim(arr) == 3:
-        raise ValueError("Colour layers are saved as PNG from the map; GeoTIFF is for single-band layers.")
-    path = write_raster(arr, wb.profile, wb.crs, OUT_DIR / f"{wb.name}__{safe}.tif")
+        from airchgis.rvt_api import RVTWorkspace
+        if wb.rvt_workspace is None:
+            wb.rvt_workspace = RVTWorkspace(wb)
+        wb.rvt_workspace._write_raster(path, arr)
+    else:
+        path = write_raster(arr, wb.profile, wb.crs, path)
     wb.offer(path, mime="image/tiff")
     wb.message = f"{name} saved as GeoTIFF."
 
 
-def run_contrast(wb, layer_id):
+def run_contrast(wb, layer_id, replace=False):
     from airchgis.enhance import contrast
 
     arr = wb.arrays.get(layer_id)
@@ -313,6 +334,8 @@ def run_contrast(wb, layer_id):
     out, rep = contrast.enhance(arr, "clahe")
     wb.add_layer(f"{layer_id}_clahe", f"{name} · stronger contrast", "Adaptive histogram equalization: display only, "
                  "values are no longer elevations.", out)
+    if replace:
+        retain_layer(wb, f"{layer_id}_clahe")
     wb.message = rep["note"]
 
 
@@ -336,14 +359,46 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
     action = event.get("action")
     wb.download = None
     wb.view3d = None
+    wb.message_level = "info"
     try:
-        if action == "view3d":
+        if str(action).startswith("rvt_"):
+            from airchgis.rvt_api import RVTWorkspace
+
+            if wb.rvt_workspace is None:
+                wb.rvt_workspace = RVTWorkspace(wb)
+            workspace = wb.rvt_workspace
+            if action == "rvt_run":
+                keys = workspace.execute(event["operation"], event.get("parameters"), event.get("instance"))
+                if event.get("show", True):
+                    for key in keys:
+                        if workspace._mapable(workspace.items[key]["value"]):
+                            workspace.show(key, rgb=np.ndim(workspace.items[key]["value"]) == 3 and 3 in workspace.items[key]["value"].shape)
+                            break
+            elif action == "rvt_show":
+                workspace.show(event["artifact"], event.get("band"), event.get("rgb", False))
+            elif action == "rvt_download":
+                wb.offer(workspace.download(event["artifact"], event.get("format", "native")))
+            elif action == "rvt_package":
+                wb.offer(workspace.package(), mime="application/zip")
+            elif action == "rvt_settings":
+                workspace.update_object(event["artifact"], event["fields"])
+            elif action == "rvt_upload":
+                workspace.upload(event["filename"], event["b64"])
+            elif action == "rvt_preset":
+                keys = workspace.preset(event["preset"], event.get("terrain", "general"), event.get("opacity", 50))
+                if keys:
+                    workspace.show(keys[0], rgb=True)
+            elif action == "rvt_batch":
+                workspace.batch(event["operation"], event["files"], event.get("parameters"), event.get("instance"))
+            elif action != "rvt_open":
+                raise ValueError("Unknown RVT workspace action.")
+        elif action == "view3d":
             if view3d is None:
                 raise ValueError("The 3D view is not available here.")
             wb.view3d = {"id": event.get("nonce"), "html": view3d()}
             wb.message = "3D view of your terrain: drag to rotate, scroll to zoom. Close it with ×."
         elif action == "relief":
-            run_relief(wb, core, event["method"], event.get("value"), compute)
+            run_relief(wb, core, event["method"], event.get("value"), compute, replace=event.get("replace", False))
         elif action == "best_view":
             run_best_view(wb, float(event.get("width") or 4.0))
         elif action == "fused":
@@ -356,7 +411,7 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
         elif action == "download":
             offer_layer(wb, event["layer"])
         elif action == "contrast":
-            run_contrast(wb, event["layer"])
+            run_contrast(wb, event["layer"], replace=event.get("replace", False))
         elif action == "script":
             offer_script(wb)
         elif action == "sites":
@@ -370,7 +425,9 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
             return "reload"
         else:
             wb.message = f"Unknown action: {action}"
+            wb.message_level = "error"
     except Exception as exc:
         wb.message = f"Not completed: {exc}"
+        wb.message_level = "error"
     wb.done_nonce = event.get("nonce")
     return None

@@ -69,11 +69,11 @@ def render_start_page(core):
             st.markdown(
                 '<ol class="as-upload-steps" aria-label="Research workflow">'
                 '<li><span class="as-step-number" aria-hidden="true">01</span>'
-                '<h3>Upload your digital terrain model</h3><p>Load a terrain raster or a LiDAR point cloud to open the map.</p></li>'
+                '<h3>Upload a digital terrain model</h3><p>Load a terrain raster or a LiDAR point cloud to open the map.</p></li>'
                 '<li><span class="as-step-number" aria-hidden="true">02</span>'
                 '<h3>Preprocessing and visualization</h3><p>Set the processing parameters, generate relief views and combine layers.</p></li>'
                 '<li><span class="as-step-number" aria-hidden="true">03</span>'
-                '<h3>Export and compare</h3><p>Compare layers on the map and export GeoTIFFs, figures or 3D data.</p></li></ol>',
+                '<h3>Export, compare and<br>discover</h3><p>Compare layers on the map and export GeoTIFFs, figures or 3D data.</p></li></ol>',
                 unsafe_allow_html=True,
             )
         payload = {"uploads": uploads}
@@ -91,9 +91,12 @@ def render_start_page(core):
             st.warning("This file has no coordinate system or georeference, so it cannot be placed on the map.")
             return
         name = Path((uploads.get("DTM") or [payload.get("generated_dtm") or "terrain"])[0]).stem
-        from airchgis.workbench import Workbench
+        from airchgis.workbench import Workbench, handle_event
 
-        st.session_state.as_wb = Workbench(data.dtm, data.profile["transform"], data.crs, data.profile, name=clean_name(name))
+        wb = Workbench(data.dtm, data.profile["transform"], data.crs, data.profile, name=clean_name(name))
+        with st.spinner("Preparing hillshade..."):
+            handle_event(wb, {"action": "relief", "method": "Hillshade", "value": 315, "nonce": "initial-hillshade", "replace": True}, core=core)
+        st.session_state.as_wb = wb
         st.session_state.as_wb_data = data
         st.rerun()
 
@@ -109,7 +112,15 @@ def workbench_tools(core):
         elif m in RADIUS_TOOLS:
             param = {"key": "radius", "label": "Search radius (pixels)", "min": 1, "max": 200, "step": 1, "value": 10}
         views.append({"id": m, "name": m, "help": TOOL_HELP.get(m, ""), "param": param})
-    return {"views": views}
+    descriptions = {
+        "original": "Terrain surface without additional relief enhancement.",
+        "cloud1": "Terrain samples rendered as points.",
+        "cloud2": "Continuous surface with wireframe and point overlays.",
+        "cloud3": "Enhanced local relief. Displayed elevations are modified to emphasize small terrain forms.",
+    }
+    profiles = [{"id": key, "name": core.CLOUD_PREPROCESS_PROFILES[key]["label"], "description": description}
+                for key, description in descriptions.items() if key in core.CLOUD_PREPROCESS_PROFILES]
+    return {"views": views, "cloud_profiles": profiles}
 
 
 def relief_params(method, value):
@@ -132,6 +143,7 @@ def render_workbench(core, wb):
     args = wb.map_args(workbench_tools(core))
     args["basemap"] = satellite_template(core, "Current")
     event = map_workbench(args, key="as_map_workbench", height=780)
+    event = st.session_state.pop("as_wb_nav_event", None) or event
     if not event or event.get("nonce") == st.session_state.get("as_wb_last_nonce"):
         return
     st.session_state.as_wb_last_nonce = event.get("nonce")
@@ -145,9 +157,12 @@ def render_workbench(core, wb):
         return raw, None
 
     def view3d():
-        html_path, _las, _meta = build_3d_cloud(core, data, {"source_mode": "Upload", "source_payload": {}}, 
-                                                list(core.CLOUD_PREPROCESS_PROFILES.keys())[0])
+        cloud_key = event.get("cloud_key", wb.cloud_key)
+        if cloud_key not in core.CLOUD_PREPROCESS_PROFILES:
+            raise ValueError("Unknown terrain rendering mode.")
+        html_path, _las, _meta = build_3d_cloud(core, data, {"source_mode": "Upload", "source_payload": {}}, cloud_key)
         html = Path(html_path).read_text(encoding="utf-8")
+        wb.cloud_key = cloud_key
 
 
         hide = "<style>a.toolbar-btn[download],.analysis-mode-btn{display:none!important}</style>"
@@ -341,7 +356,7 @@ def render_upload_controls(core):
                 st.error(f"{p.name}: cannot be read ({exc}).")
         uploads[key] = out
 
-    load_group("DTM", "Upload your terrain model or LiDAR point cloud")
+    load_group("DTM", "Upload a terrain model or LiDAR point cloud")
     if uploads.get("DTM"):
         keep, notes, error = usable_rasters(uploads["DTM"])
         for n in notes:

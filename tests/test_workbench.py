@@ -64,6 +64,33 @@ class WorkbenchTests(unittest.TestCase):
         self.assertNotIn(top, [l["id"] for l in self.wb.layers])
         self.assertEqual(self.wb.done_nonce, "x1")
 
+    def test_ui_replaces_previous_relief_and_contrast_layers(self):
+        self.ev(action="relief", method="Hillshade", value=315, replace=True, nonce="first")
+        old = self.wb.layers[0]["id"]
+        self.ev(action="relief", method="Slope", value=None, replace=True, nonce="second")
+        self.assertEqual([layer["name"] for layer in self.wb.layers], ["Slope"])
+        self.assertNotIn(old, self.wb.arrays)
+        self.assertNotIn(old, self.wb.paths)
+        current = self.wb.layers[0]["id"]
+        self.ev(action="contrast", layer=current, replace=True, nonce="contrast")
+        self.assertEqual(len(self.wb.layers), 1)
+        self.assertTrue(self.wb.layers[0]["id"].endswith("_clahe"))
+        self.ev(action="relief", method="Sky-View Factor", value=8, replace=True, nonce="third")
+        self.assertEqual(len(self.wb.layers), 1)
+        self.assertEqual(self.wb.layers[0]["name"], "Sky-View Factor (8)")
+        self.assertTrue(self.wb.layers[0]["visible"])
+        self.assertEqual(len(self.wb.arrays), 1)
+
+    def test_map_messages_only_report_warnings_and_errors(self):
+        self.ev(action="relief", method="Hillshade", value=315, nonce="initial")
+        self.assertEqual(self.wb.map_args({})["message"], "")
+        self.ev(action="fused", width=4, nonce="insufficient")
+        self.assertIn("at least two", self.wb.map_args({})["message"])
+        self.ev(action="download", layer="missing", nonce="invalid")
+        self.assertEqual(self.wb.map_args({})["message_level"], "error")
+        self.ev(action="relief", method="Slope", value=None, nonce="success")
+        self.assertEqual(self.wb.map_args({})["message"], "")
+
     def test_errors_are_messages_and_reload(self):
         self.ev(action="download", layer="nope", nonce="x")
         self.assertTrue(self.wb.message.startswith("Not completed"))

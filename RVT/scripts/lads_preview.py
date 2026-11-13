@@ -1349,8 +1349,31 @@ def _encode_u8_base64(arr):
     return base64.b64encode(np.asarray(arr, dtype=np.uint8).tobytes(order="C")).decode("ascii")
 
 
+def _browser_terrain_surface(dtm, profile):
+    from scipy import ndimage
+
+    arr = np.ma.asarray(dtm, dtype=np.float32).filled(np.nan).copy()
+    nodata = profile.get("nodata")
+    if nodata is not None and np.isfinite(nodata):
+        arr[arr == nodata] = np.nan
+    finite = np.isfinite(arr)
+    zeros = finite & (arr == 0)
+    rest = arr[finite & ~zeros]
+    if rest.size < 16 or np.mean(rest > 0) < 0.95 or np.percentile(rest, 95) < 0.5:
+        return arr
+    boundary = np.zeros(arr.shape, dtype=bool)
+    boundary[[0, -1], :] = True
+    boundary[:, [0, -1]] = True
+    outside = ndimage.binary_propagation(boundary & ~finite, mask=~finite)
+    seeds = zeros & (boundary | ndimage.binary_dilation(outside))
+    padding = ndimage.binary_propagation(seeds, mask=zeros)
+    if padding.sum() >= max(16, int(np.ceil(arr.size * 0.01))):
+        arr[padding] = np.nan
+    return arr
+
+
 def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS, max_side=LADS_BROWSER_MAX_SIDE, cloud_preprocess_key="cloud1"):
-    source = np.asarray(dtm)
+    source = np.ma.asarray(dtm)
     cfg = CLOUD_PREPROCESS_PROFILES.get(cloud_preprocess_key, CLOUD_PREPROCESS_PROFILES["cloud1"])
     if source.ndim != 2:
         raise RuntimeError("The browser DTM must be single-band.")
@@ -1371,7 +1394,8 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
         cols = np.append(cols, w - 1)
 
     rr, cc = np.meshgrid(rows, cols, indexing="ij")
-    z_source = apply_cloud_preprocessing(source[np.ix_(rows, cols)], cloud_preprocess_key=cloud_preprocess_key)
+    surface = _browser_terrain_surface(source[np.ix_(rows, cols)], profile)
+    z_source = apply_cloud_preprocessing(surface, cloud_preprocess_key=cloud_preprocess_key)
     if cfg.get("render_mode") == "relief_mesh":
         z_render, _residual = _enhance_local_relief(
             z_source,
@@ -1381,7 +1405,7 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
     else:
         z_render = z_source.copy()
 
-    valid = np.isfinite(z_render)
+    valid = np.isfinite(surface) & np.isfinite(z_render)
     if not valid.any():
         raise RuntimeError("No valid cell for the 3D viewer.")
 
@@ -1506,10 +1530,13 @@ def write_browser_cloud_viewer(
         }
     ]
 
-    x_span = max(1.0, float(np.nanmax(x) - np.nanmin(x)))
-    y_span = max(1.0, float(np.nanmax(y) - np.nanmin(y)))
+    visible = valid.astype(bool)
+    if not visible.any():
+        raise RuntimeError("No valid terrain for the 3D viewer.")
+    x_span = max(1.0, float(np.nanmax(x[visible]) - np.nanmin(x[visible])))
+    y_span = max(1.0, float(np.nanmax(y[visible]) - np.nanmin(y[visible])))
     z_scale = float(terrain.get("z_scale", LADS_Z_EXAGGERATION))
-    z_span = max(1.0, float(np.nanmax(z) - np.nanmin(z)))
+    z_span = max(1.0, float(np.nanmax(z[visible]) - np.nanmin(z[visible])))
     radius = max(x_span, y_span, z_span * z_scale) * 0.8
 
     pos_b64 = _encode_f32_triplets_base64(x.reshape(-1), y.reshape(-1), z.reshape(-1))

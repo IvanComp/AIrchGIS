@@ -7,6 +7,7 @@
 <link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet">
 <link href="detectorlab_map.css" rel="stylesheet">
 <link href="workbench.css" rel="stylesheet">
+<link href="rvt_workspace.css" rel="stylesheet">
 </head>
 <body>
 <div class="detector-map">
@@ -20,22 +21,38 @@
       <button type="button" class="coordinate-tool" data-map-action="coordinates" title="UTM coordinates and elevation">⌾</button>
       <button type="button" class="earth-tool" data-map-action="earth" title="Open the point in Google Earth" disabled>◉</button>
     </div>
-    <div class="map-compass"><span>◈</span><button type="button" class="terrain-toggle" aria-pressed="true"><b>3D</b><small>Relief on</small></button></div>
+    <div class="map-compass"><button type="button" class="terrain-toggle" aria-pressed="true"><b>3D</b><small>Relief on</small></button></div>
     <aside id="workbench-tools" class="exact-layer-panel" aria-label="Tools and layers">
-      <div class="wb-file"><span class="wb-file-name"></span><button type="button" class="wb-link" data-act="load_another">Load another file</button></div>
       <div class="wb-message" hidden></div>
-      <div class="exact-panel-title"><span>◌</span><h3>TOOLS</h3></div>
-      <div class="wb-tools"></div>
-      <div class="exact-panel-title"><span>◌</span><h3>LAYERS</h3></div>
-      <div class="layer-cards"></div>
+      <details class="wb-layers" open>
+        <summary><span>Layers</span><span class="wb-layers-chevron" aria-hidden="true">›</span></summary>
+        <div class="layer-cards"></div>
+      </details>
+      <details class="wb-toolbox" open>
+        <summary><span>Visualization tools</span><span class="wb-layers-chevron" aria-hidden="true">›</span></summary>
+        <div class="wb-tools"></div>
+      </details>
       <div class="wb-busy" hidden><i></i><span>Working…</span></div>
     </aside>
     <button class="panel-handle" type="button" title="Hide tools" aria-label="Toggle tools panel" aria-controls="workbench-tools" aria-expanded="true">›</button>
   </div>
 </div>
-<div class="wb-modal" hidden><div class="wb-modal-box"><button type="button" class="wb-modal-close" title="Close">×</button><iframe title="3D view"></iframe></div></div>
+<div class="wb-modal" role="dialog" aria-modal="true" aria-labelledby="wb-3d-title" hidden>
+  <div class="wb-modal-box">
+    <div class="wb-modal-header"><h3 id="wb-3d-title">3D Analysis</h3><button type="button" class="wb-modal-close" title="Close 3D Analysis" aria-label="Close 3D Analysis">×</button></div>
+    <div class="wb-modal-content">
+      <iframe title="3D terrain viewer"></iframe>
+      <aside class="wb-3d-sidebar" aria-label="3D export options">
+        <div class="wb-3d-message wb-message" hidden></div>
+        <div class="wb-3d-tools"></div>
+        <div class="wb-3d-busy" role="status" hidden>Preparing export…</div>
+      </aside>
+    </div>
+  </div>
+</div>
 <div class="toast" role="status"></div>
 <script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+<script src="rvt_workspace.js"></script>
 <script src="workbench.js"></script>
 </body>
 </html>
