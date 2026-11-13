@@ -695,6 +695,37 @@ register(Tool("fused_view", "Blend the best visualizations into one image whose 
               _native_fused_view, None, ("input",), tags=("lidar", "enhance")))
 
 
+# ---------------------------------------------------------------- 3D figure
+def _native_export_3d_figure(input, output, drape=None, azimuth=-44.0, elevation=29.0, vertical_exaggeration=None, dpi=300,
+                             width_mm=190.0, scale_bar=True, north_arrow=True, caption=None):
+    from airchgis.terrain.figure3d import render_3d_figure
+
+    arr, prof = _read(input)
+    d = _read(drape)[0] if drape else None
+    if caption is None:
+        crs = prof.get("crs")
+        caption = f"Source: {Path(input).name}; CRS: {crs.to_string() if crs else 'unknown'}; vertical exaggeration {{ve}}x"
+    rep = render_3d_figure(arr, _res(prof), output, drape=d, azimuth=azimuth, elevation=elevation,
+                           vertical_exaggeration=vertical_exaggeration, dpi=dpi, width_mm=width_mm,
+                           scale_bar=scale_bar, north_arrow=north_arrow, caption=caption or None)
+    return rep
+
+
+register(Tool("export_3d_figure", "Save a high-quality 3D image of a terrain model (PDF for papers, or PNG), with the chosen relief visualization draped on it, an optional scale bar, north arrow and caption.",
+              _schema(["input", "output"], input=_IN,
+                      output={"type": "string", "description": "Output file ending in .pdf or .png."},
+                      drape={"type": "string", "description": "Optional raster (same grid) draped on the terrain, e.g. a relief visualization."},
+                      azimuth={"type": "number", "default": -44.0, "description": "Camera direction in degrees (matplotlib convention; -44 = from the south-east, as in the 3D viewer)."},
+                      elevation={"type": "number", "minimum": 0, "maximum": 90, "default": 29.0, "description": "Camera height above the horizon in degrees."},
+                      vertical_exaggeration={"type": "number", "minimum": 0.1, "description": "Vertical exaggeration; automatic (as in the 3D viewer) when omitted."},
+                      dpi={"type": "integer", "minimum": 72, "maximum": 1200, "default": 300, "description": "Resolution in dots per inch."},
+                      width_mm={"type": "number", "minimum": 40, "maximum": 500, "default": 190.0, "description": "Figure width in millimetres (190 = full journal page width)."},
+                      scale_bar={"type": "boolean", "default": True, "description": "Draw a scale bar."},
+                      north_arrow={"type": "boolean", "default": True, "description": "Draw a north arrow."},
+                      caption={"type": "string", "description": "Caption under the figure; source file and CRS by default, empty string for none."}),
+              _native_export_3d_figure, None, ("input", "drape"), tags=("lidar", "3d")))
+
+
 # ---------------------------------------------------------------- execution
 def _guard(tool, params):
     width = params.get("target_feature_width_m")

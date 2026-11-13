@@ -76,8 +76,8 @@ def _overlay(layer, transform, crs, cmap="magma", diverging=False):
     return buf.getvalue(), [[south, west], [north, east]]
 
 
-FM_KEYS = ("as_fm_images_paths", "as_fm_preset", "as_fm_target", "as_fm_width", "as_fm_scale", "as_fm_offset",
-           "as_fm_radius", "as_fm_threshold", "as_enh_q_mask", "as_fm_sites_paths")
+FM_KEYS = ("as_fm_preset", "as_fm_target", "as_fm_width", "as_fm_scale", "as_fm_offset",
+           "as_fm_radius", "as_fm_threshold", "as_enh_q_mask")
 
 
 def render_field_marks_upload(show_example_sites=None):
@@ -213,14 +213,6 @@ def render_local_result(result, sites, show_example_sites=None, width=20.0):
     p = st.session_state.get("as_fm_export_path")
     if p and Path(p).exists():
         st.download_button("Download GeoTIFF", Path(p).read_bytes(), file_name=Path(p).name, key="as_fm_dl")
-
-    from airchgis.enhance.screen import extent_geometry, render_save_candidate
-
-    first_layer = next(iter(result.layers.values()))
-    if result.crs is not None:
-        render_save_candidate(extent_geometry(result.transform, result.crs, first_layer.shape),
-                              {"screen": "Field marks", "layer": layer, "dates": len(result.table), "ranking": result.table},
-                              f"Field marks – {layer}", "as_fm")
 
     with st.expander("Details"):
         for note in result.notes:

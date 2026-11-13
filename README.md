@@ -37,7 +37,6 @@ AIrchGIS brings LiDAR relief visualization, 3D terrain exploration and multi-dat
 |---|---|---|
 | **Terrain (LiDAR)** | Earthworks, mounds, ditches, terraces under vegetation | Relief visualizations (hillshade, sky-view factor, openness, local relief model, MSRM…), **Enhance & best view** (cleaning, automatic best view, fused view), interactive 3D view, GeoTIFF/PNG and 3D export |
 | **Field marks** | Crop and soil marks of buried features | Image quality per date (clouds, shadows, haze, band problems) with masking, date ranking by local contrast and crop phase, per-date anomaly maps, persistence across dates, field-boundary mask, layers ranked by visibility, check against your known sites |
-| **Candidates** | Keeping track of what you found | Verification dossiers that link each anomaly to its evidence, area and status; GeoJSON export |
 
 - **Resolution check**: warns when a target is smaller than the data can resolve.
 
@@ -45,7 +44,7 @@ Scores are investigation priorities, not archaeological probabilities.
 
 # Bring your own data
 
-Every screen opens on **Upload your files**; you can also point to files already on your computer (no copy, useful for multi-GB tiles). Uploads up to 4 GB.
+Every screen starts with **Upload your files** (up to 4 GB per file). Example data and public sources are under **Other sources**.
 
 - **Terrain**: DTM/DSM as GeoTIFF, ASCII grid or zip; LAS/LAZ point clouds, gridded to a DTM from their ground points.
 - **Images**: one multiband file per date, or one file per band (`…_B04.jp2`, `…_SR_B4.TIF`). Presets for Sentinel-2, Landsat 4–9, PlanetScope 4/8-band, drone multispectral and RGB orthophotos, plus a band editor. Dates are read from file names and can be edited.
@@ -67,7 +66,7 @@ On the Terrain screen, load your terrain model (step 1), keep the recommended to
 
 1. **Cleans the terrain**: removes periodic banding (flight lines), isolated spikes and pits, fills small holes inside the survey, and reduces noise while keeping edges. A table shows each measure before and after; the original is not changed.
 2. **Ranks the relief views**: computes up to 19 views (hillshades, slope, sky-view factor, openness, local relief model and multi-scale relief model, with radii matched to your width) and ranks them by a visibility score: how much features of that width stand out from the noise and from the broad landscape. With a list of known sites it also shows the AUC of each view.
-3. **Shows the best one** with a one-line explanation and a before/after switch, ready to download as GeoTIFF or to save as a candidate. Measures and the re-runnable script are under **Details**.
+3. **Shows the best one** with a one-line explanation and a before/after switch, ready to download as GeoTIFF. Measures and the re-runnable script are under **Details**.
 
 Under **Advanced** you can run single steps, see all views, build a **fused view** (a blend of the four best views; if it is not clearer than the best single view, AIrchGIS says so and keeps the best view), and remove isolated points from a LAS/LAZ point cloud. Display contrast (adaptive histogram equalization) is labelled as display only; there is no super-resolution.
 
@@ -88,7 +87,7 @@ log.save_scripts("outputs/")
 
 # 3D export for research
 
-On the Terrain screen, under **3D view and 3D export**, **Export 3D for research** writes a georeferenced point cloud (LAZ/LAS and PLY), a terrain mesh (glTF `.glb`) and a JSON sidecar (source, CRS, bounds, resolution, date, relief visualization, vertical exaggeration), zipped for archiving on Zenodo. The files open in QGIS 3D, CloudCompare and Blender. LAZ needs `pip install lazrs`; without it the cloud is written as LAS.
+On the Terrain screen, under **3D view and 3D export**, **Download high-quality image** saves the terrain in 3D as a PDF (default, 300 dpi, 190 mm wide, for a paper figure) or PNG, with the current relief view draped on it, a scale bar, a north arrow and a caption; camera, size and resolution are under Advanced. **Export 3D for research** writes a georeferenced point cloud (LAZ/LAS and PLY), a terrain mesh (glTF `.glb`) and a JSON sidecar (source, CRS, bounds, resolution, date, relief visualization, vertical exaggeration), zipped for archiving on Zenodo. The files open in QGIS 3D, CloudCompare and Blender. LAZ needs `pip install lazrs`; without it the cloud is written as LAS.
 
 # Quick start
 
@@ -133,14 +132,13 @@ Anomalies are computed date by date and aggregated afterwards (a median composit
 │   ├── app.py                 # shell and navigation
 │   ├── rvt_web.py             # Terrain screen, 3D Cloud, 3D research export
 │   ├── data_input.py          # loaders: rasters, LAS/LAZ, multispectral scenes, site lists
-│   ├── input_ui.py            # shared "upload or local path" input
+│   ├── input_ui.py            # shared upload input
 │   ├── sources.py             # public data sources and downloads
 │   ├── spectral/              # local field-marks engine and screen
 │   ├── cropmarks_engine.py    # Earth Engine engine (Sentinel-2, Landsat)
 │   ├── enhance/               # cleaning, display enhancement, best view, fused view
 │   ├── gis/                   # tool registry, QGIS backend, guardrails, provenance, workflows
 │   ├── terrain/export3d.py    # LAZ/LAS, PLY, glTF export with metadata
-│   ├── candidate_store.py     # verification dossiers
 │   ├── benchmark.py           # metrics against known sites
 │   └── data/                  # example catalogue, gazetteer, calibration regions
 ├── RVT/                       # RVT engine, 3D viewer, legacy desktop GUI

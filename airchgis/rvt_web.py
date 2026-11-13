@@ -30,8 +30,7 @@ WEB_3D_BROWSER_MAX_SIDE = 950
 
 PERSISTENT_KEYS = ("as_rvt_source_mode", "as_rvt_place", "as_rvt_tool", "as_rvt_azimuth", "as_rvt_radius", "as_rvt_dataset",
                    "as_rvt_altitude", "as_rvt_z_factor", "as_rvt_n_dir", "as_rvt_p_low", "as_rvt_p_high", "as_rvt_invert",
-                   "as_rvt_base_mode", "as_rvt_basemap_year", "as_rvt_overlay_opacity", "as_enh_t_width",
-                   "as_rvt_in_DTM_paths", "as_rvt_in_DSM_First_paths", "as_rvt_in_DSM_Last_paths")
+                   "as_rvt_base_mode", "as_rvt_basemap_year", "as_rvt_overlay_opacity", "as_enh_t_width")
 
 
 def keep_settings(keys):
@@ -1035,7 +1034,62 @@ def render_3d_cloud(core, data, params):
                 st.caption(f"Sampled .LAS: {exported_points:,} points of {total_points:,}.")
             st.download_button("Download .LAS", Path(las_path).read_bytes(), file_name=Path(las_path).name)
 
+    render_3d_figure_export(data, params)
     render_research_export(data, params)
+
+
+def render_3d_figure_export(data, params):
+    """High-quality image (PDF or PNG) of the terrain in 3D, with the current view draped on it."""
+    from airchgis.enhance.screen import OUT_DIR, _write_input, session_log
+    from airchgis.gis.tools import ToolError, run_tool
+
+    st.markdown("**High-quality image for a paper (PDF or PNG)**")
+    c1, c2 = st.columns([0.4, 0.6], vertical_alignment="bottom")
+    fmt = c1.radio("Format", ["PDF", "PNG"], horizontal=True, key="as_rvt_fig_fmt")
+    with st.expander("Advanced: camera, size, scale bar"):
+        a1, a2, a3 = st.columns(3)
+        azimuth = a1.slider("Camera direction (degrees)", -180.0, 180.0, -44.0, key="as_rvt_fig_az",
+                            help="-44 = from the south-east, as in the 3D viewer at start.")
+        elevation = a2.slider("Camera height (degrees)", 5.0, 90.0, 29.0, key="as_rvt_fig_el")
+        ve = a3.number_input("Vertical exaggeration (0 = as in the 3D viewer)", 0.0, 20.0, 0.0, 0.1, key="as_rvt_fig_ve")
+        b1, b2 = st.columns(2)
+        dpi = b1.selectbox("Resolution (dpi)", [300, 600, 150], key="as_rvt_fig_dpi")
+        width_mm = b2.number_input("Width (mm; 190 = full page, 90 = one column)", 40.0, 500.0, 190.0, 5.0, key="as_rvt_fig_w")
+        d1, d2 = st.columns(2)
+        scale_bar = d1.checkbox("Scale bar", True, key="as_rvt_fig_sb")
+        north = d2.checkbox("North arrow", True, key="as_rvt_fig_na")
+        caption = st.text_input("Caption (empty = source file, CRS and vertical exaggeration)", "", key="as_rvt_fig_cap")
+    if c2.button("Download high-quality image", type="primary", key="as_rvt_fig_go"):
+        try:
+            from airchgis.enhance.metrics import zero_nodata
+
+            dtm, profile, crs = current_loaded_dtm_surface(data)
+            dtm, _ = zero_nodata(dtm)
+            label = current_place_label(params)
+            dem_path = _write_input(np.asarray(dtm, dtype=np.float32), profile, crs, f"{label}_figure_dtm")
+            drape_path = None
+            last = st.session_state.get("as_rvt_last_out")
+            if params.get("tool") != BEST_VIEW_TOOL and last is not None and np.ndim(last) == 2 and np.shape(last) == np.shape(dtm):
+                drape_path = str(_write_input(np.asarray(last, dtype=np.float32), profile, crs, f"{label}_figure_drape"))
+            out = OUT_DIR / f"{label}_3D_{datetime.now():%Y%m%d_%H%M%S}.{fmt.lower()}"
+            kw = dict(input=str(dem_path), output=str(out), azimuth=float(azimuth), elevation=float(elevation),
+                      dpi=int(dpi), width_mm=float(width_mm), scale_bar=bool(scale_bar), north_arrow=bool(north))
+            if drape_path:
+                kw["drape"] = drape_path
+            if ve > 0:
+                kw["vertical_exaggeration"] = float(ve)
+            if caption.strip():
+                kw["caption"] = caption.strip()
+            with st.spinner("Rendering the image..."):
+                r = run_tool("export_3d_figure", log=session_log(), **kw)
+            st.session_state.as_rvt_fig = r["outputs"]
+        except (ToolError, RuntimeError) as exc:
+            st.error(str(exc))
+    fig = st.session_state.get("as_rvt_fig")
+    if fig and Path(fig["output"]).exists():
+        st.download_button(f"Save {Path(fig['output']).name}", Path(fig["output"]).read_bytes(), file_name=Path(fig["output"]).name,
+                           mime="application/pdf" if fig["format"] == "pdf" else "image/png", key="as_rvt_fig_dl")
+        st.caption(fig["note"])
 
 
 def render_research_export(data, params):

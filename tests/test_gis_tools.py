@@ -203,3 +203,24 @@ class Export3DTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Figure3DTests(unittest.TestCase):
+    def test_pdf_and_png_figures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dtm = synthetic_dtm(tmp)
+            log = ProvenanceLog("figure")
+            r = tools.run_tool("export_3d_figure", log=log, input=str(dtm), output=str(Path(tmp) / "fig.pdf"))
+            self.assertEqual(r["status"], "ok")
+            data = Path(r["outputs"]["output"]).read_bytes()
+            self.assertTrue(data.startswith(b"%PDF"))
+            self.assertGreater(r["outputs"]["vertical_exaggeration"], 0)
+            r = tools.run_tool("export_3d_figure", log=log, input=str(dtm), output=str(Path(tmp) / "fig.png"),
+                               dpi=150, width_mm=100.0, scale_bar=False, north_arrow=False, caption="")
+            from PIL import Image
+
+            w, h = Image.open(r["outputs"]["output"]).size
+            self.assertAlmostEqual(w, round(100 / 25.4 * 150), delta=2)
+            self.assertEqual([s.tool for s in log.steps], ["export_3d_figure", "export_3d_figure"])
+            with self.assertRaises(tools.ToolError):
+                tools.run_tool("export_3d_figure", input=str(dtm), output=str(Path(tmp) / "fig.svg"))

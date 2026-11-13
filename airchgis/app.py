@@ -17,7 +17,7 @@ from .rvt_web import render_rvt_web
 LOGGER = logging.getLogger(__name__)
 
 
-PRIMARY_TOOLS = ("RVT", "Crop Marks", "Candidates")
+PRIMARY_TOOLS = ("RVT", "Crop Marks")
 
 
 def main():
@@ -27,12 +27,10 @@ def main():
         st.set_page_config(page_title="AIrchGIS", layout="wide")
     init_state()
     tool = render_navbar()
-    if tool == "RVT":
-        render_rvt_web()
-    elif tool == "Crop Marks":
+    if tool == "Crop Marks":
         render_cropmarks()
     else:
-        render_candidates()
+        render_rvt_web()
 
 
 def init_state():
@@ -69,11 +67,11 @@ def render_tool_switch():
         active = "RVT"
         st.session_state.as_active_tool = active
 
-    labels = {"RVT": "Terrain", "Crop Marks": "Field marks", "Candidates": "Candidates"}
+    labels = {"RVT": "Terrain", "Crop Marks": "Field marks"}
     for column, tool, key in zip(
         st.columns(len(PRIMARY_TOOLS), gap="small"),
         PRIMARY_TOOLS,
-        ("as_nav_rvt", "as_nav_crop", "as_nav_candidates"),
+        ("as_nav_rvt", "as_nav_crop"),
     ):
         with column:
             if st.button(

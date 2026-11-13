@@ -98,31 +98,6 @@ def render_provenance_download(key):
                        file_name=f"airchgis_steps_{datetime.now():%Y%m%d_%H%M}.py", key=key)
 
 
-def extent_geometry(transform, crs, shape):
-    """GeoJSON polygon (lon/lat) of a raster's extent."""
-    from rasterio.warp import transform_bounds
-
-    h, w = shape
-    west, north = transform.c, transform.f
-    east, south = west + w * transform.a, north + h * transform.e
-    if crs is not None:
-        west, south, east, north = transform_bounds(crs, "EPSG:4326", min(west, east), min(south, north),
-                                                    max(west, east), max(south, north))
-    return {"type": "Polygon", "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]]}
-
-
-def render_save_candidate(geometry, evidence, default_title, key):
-    """Save the analysed area as a candidate, with its evidence, for the Candidates screen."""
-    from airchgis import candidate_store
-
-    with st.popover("Save as candidate"):
-        title = st.text_input("Name", default_title, key=f"{key}_cand_title")
-        notes = st.text_area("Note (optional)", key=f"{key}_cand_notes")
-        if st.button("Save", type="primary", key=f"{key}_cand_save"):
-            candidate_store.save_candidate({"title": title, "notes": notes, "geometry": geometry, "evidence": evidence})
-            st.success("Saved. See the Candidates screen.")
-
-
 # ---------------------------------------------------------------- Terrain
 def one_sentence(ranking, width):
     """Short explanation of the winner, for the main result."""
@@ -218,14 +193,6 @@ def render_terrain_enhance(dem, res, profile, crs, label="DTM", on_apply=None, k
     bv = st.session_state.get(f"{tag}_bv")
     if bv:
         _show_best(bv, sites, key, st.session_state.get(f"{key}_width_used", width), before=_hillshade(dem, res))
-        if bv["status"] != "refused":
-            try:
-                render_save_candidate(extent_geometry(profile["transform"], crs, dem.shape),
-                                      {"screen": "Terrain", "best_view": bv["outputs"]["best"],
-                                       "width_m": st.session_state.get(f"{key}_width_used", width),
-                                       "file": bv["outputs"]["output"]}, f"{label} – {bv['outputs']['best']}", key)
-            except Exception as exc:
-                st.caption(f"Saving as candidate is not available for this raster ({exc}).")
     if cleaned or bv:
         with st.expander("Details"):
             if n_zero:
