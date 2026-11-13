@@ -2,7 +2,7 @@
   <img src="docs/assets/airchgis-logo.svg" alt="AIrchGIS" width="620">
 </p>
 
-<p align="center"><b>An AI-assisted archaeological GIS for LiDAR terrain data (DTM, DSM, point clouds), on your own data, anywhere in the world.</b></p>
+<p align="center"><b>An AI-assisted archaeological GIS for LiDAR terrain data (DTM, point clouds), on your own data, anywhere in the world.</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
@@ -44,9 +44,9 @@ Scores are investigation priorities, not archaeological probabilities.
 
 # Bring your own data
 
-The app starts with **Upload your files** (up to 4 GB per file). Example data and public sources are under **Other sources**.
+The app starts with **Upload your files** (up to 4 GB per file). Public elevation models are under **Other source**.
 
-- **Terrain**: DTM/DSM as GeoTIFF, ASCII grid or zip; LAS/LAZ point clouds, gridded to a DTM from their ground points.
+- **Terrain**: DTM as GeoTIFF, ASCII grid or zip; LAS/LAZ point clouds, gridded to a DTM from their ground points.
 - **Known sites**: your own list (CSV with lon/lat or x/y, GeoJSON, GeoPackage, zipped Shapefile, KML), used in **Improve and find the best view** to report how well each view separates them from random places (AUC).
 
 **Download from a public source** is the second option:

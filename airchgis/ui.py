@@ -78,6 +78,11 @@ def inject_styles():
 
 
 STYLESHEET = """
+/* hand pointer on dropdowns, like on buttons */
+[data-baseweb="select"], [data-baseweb="select"] *, [data-baseweb="popover"] li, [role="option"],
+[data-testid="stSelectbox"] div, [data-testid="stMultiSelect"] div, [data-testid="stExpander"] summary {
+    cursor: pointer !important;
+}
 :root {
     --as-brown-950: #0f0c08;
     --as-brown-900: #15100b;

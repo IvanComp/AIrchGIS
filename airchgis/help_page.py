@@ -28,7 +28,7 @@ def render_help():
         st.rerun()
     st.markdown("## What is AIrchGIS?")
     st.markdown(
-        "AIrchGIS helps archaeologists look for traces of the past in **LiDAR terrain models** (DTM, DSM and point "
+        "AIrchGIS helps archaeologists look for traces of the past in **LiDAR terrain models** (DTM and point "
         "clouds), without writing code. It runs on your computer, in the web browser, and works with your own files "
         "from any country, sensor and coordinate system. Your data stay on your computer."
     )
@@ -40,7 +40,7 @@ def render_help():
 
     st.markdown("## How it works")
     c1, c2, c3 = st.columns(3)
-    c1.markdown("**1 · Load data**\n\nUpload your file. Example data and public sources are under *Other sources*.")
+    c1.markdown("**1 · Load data**\n\nUpload your file. Public elevation models are under *Other source*.")
     c2.markdown("**2 · Choose a tool**\n\nPick a tool from the list. Each has a one-line description and at most one setting; "
                 "the rest is under *Advanced*.")
     c3.markdown("**3 · See and download**\n\nThe result on a map, one sentence that explains it, one download. "
@@ -58,8 +58,8 @@ def render_help():
 
     st.markdown("## What you can do")
     st.markdown(
-        "- **Input:** terrain model (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ); optional surface models "
-        "(first and last return). Example data and public sources are under *Other sources*.\n"
+        "- **Input:** terrain model (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ). Public elevation models are "
+        "under *Other source*.\n"
         "- **Improve and find the best view** *(recommended)*: cleans the terrain, compares up to 19 relief views "
         "with sizes matched to your features, and shows the clearest one with a before/after switch.\n"
         "- **Relief views:** hillshade, multi-direction hillshade, slope, sky-view factor, openness, local relief "

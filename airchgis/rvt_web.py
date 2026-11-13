@@ -67,7 +67,7 @@ def render_rvt_web():
 
         data = current_rvt_data(core, params)
         if params["source_mode"] == "Upload" and not (params["source_payload"].get("uploads") or {}).get("DTM"):
-            st.info("Load a terrain model in step 1, or open the example data under Other sources.")
+            st.info("Load a terrain model in step 1, or download one under Other source.")
             return
         if data is None or not data.loaded:
             msg = getattr(data, "error", None) if data is not None else None
@@ -150,7 +150,7 @@ TOOL_HELP = {
 }
 RADIUS_TOOLS = {"Sky-View Factor", "Anisotropic Sky-View Factor", "Positive Openness", "Simple Local Relief Model",
                 "Multi-Scale Relief Model", "Local Dominance"}
-SOURCE_LABELS = {"Upload": "Your files", "Database": "Example data", "DTM from map": "Public source (download)"}
+SOURCE_LABELS = {"Upload": "Your files", "DTM from map": "Public source (download)"}
 
 
 def _slider(label, lo, hi, state_key, **kw):
@@ -163,20 +163,13 @@ def _slider(label, lo, hi, state_key, **kw):
 def render_rvt_controls(core):
     st.markdown("**1 · Load data**")
     current = st.session_state.get("as_rvt_source_mode", "Upload")
-    with st.expander("Other sources: example data or public download", expanded=current != "Upload"):
-        source_mode = st.radio("Data from", ["Upload", "Database", "DTM from map"], format_func=SOURCE_LABELS.get,
+    if current not in ("Upload", "DTM from map"):
+        st.session_state.as_rvt_source_mode = current = "Upload"
+    with st.expander("Other source: public download", expanded=current != "Upload"):
+        source_mode = st.radio("Data from", ["Upload", "DTM from map"], format_func=SOURCE_LABELS.get,
                                key="as_rvt_source_mode")
         source_payload = {}
-        if source_mode == "Database":
-            places = core.list_database_places(RVT_DIR)
-            if places:
-                if st.session_state.as_rvt_place not in places:
-                    st.session_state.as_rvt_place = places[0]
-                source_payload["place"] = st.selectbox("Example area", places, key="as_rvt_place")
-            else:
-                st.warning("No example data on this computer.")
-                source_payload["place"] = ""
-        elif source_mode == "DTM from map":
+        if source_mode == "DTM from map":
             generated = st.session_state.as_rvt_generated_dtm
             source_payload["generated_dtm"] = generated
             if generated:
@@ -206,11 +199,7 @@ def render_rvt_controls(core):
                 help="About the size of the features you are looking for, in pixels.")
 
     with st.expander("Advanced"):
-        dataset_values = ["DTM", "DSM_First", "DSM_Last", "nDSM", "First-Last", "Original"]
-        if waiting_for_map_dtm:
-            st.session_state.as_rvt_dataset = "DTM"
-        st.selectbox("Surface", dataset_values, key="as_rvt_dataset",
-                     help="DTM = bare ground. DSM = surface with trees and buildings (if loaded). Original = satellite only.")
+        st.session_state.as_rvt_dataset = "DTM"  # surface models (DSM) are not offered in the interface for now
         st.slider("Sun height (degrees)", 0.0, 90.0, key="as_rvt_altitude")
         st.slider("Vertical exaggeration", 0.1, 10.0, key="as_rvt_z_factor")
         st.slider("Search directions", 4, 64, key="as_rvt_n_dir")
@@ -281,9 +270,8 @@ def render_upload_controls(core):
         uploads[key] = out
 
     load_group("DTM", "Terrain model (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ), any country and coordinate system")
-    with st.expander("Surface models with trees and buildings (optional)"):
-        load_group("DSM_First", "First-return surface (DSM first)")
-        load_group("DSM_Last", "Last-return surface (DSM last)")
+    uploads.setdefault("DSM_First", [])
+    uploads.setdefault("DSM_Last", [])
     return uploads
 
 
