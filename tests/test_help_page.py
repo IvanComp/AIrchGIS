@@ -12,7 +12,7 @@ class HelpPageTests(unittest.TestCase):
         at.button(key="as_nav_help").click().run()
         self.assertFalse(at.exception)
         headings = [m.value for m in at.markdown if m.value.startswith("##")]
-        for h in ("## What is AIrchGIS?", "## How it works", "## What you can do", "## Tips", "## Limits"):
+        for h in ("## What is AIrchGIS?", "## How it works", "## What you can do", "## The map", "## Tips", "## Limits"):
             self.assertIn(h, headings)
         at.button(key="as_help_back").click().run()
         self.assertEqual(at.session_state["as_active_tool"], "RVT")

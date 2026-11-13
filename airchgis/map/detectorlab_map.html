@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+/*__CSS__*/
+html,body{margin:0;padding:0;background:transparent;font-family:Inter,system-ui,sans-serif}
+.detector-map{max-width:none}
+.map-stage{height:__HEIGHT__px}
+.exact-layer-card.expanded .card-expand-content{display:block}
+.layer-meta{margin:6px 0 0;color:#bba78c;font-size:10px}
+.coordinate-utm-popup code{font-size:11px}
+</style>
+</head>
+<body>
+<div class="detector-map">
+  <div class="map-stage">
+    <div id="detectorMap" aria-label="Map"></div>
+    <div class="map-controls exact-controls">
+      <button type="button" class="map-fullscreen" title="Full screen">⛶</button>
+      <button type="button" data-map-action="zoom-in" title="Zoom in">＋</button>
+      <button type="button" data-map-action="zoom-out" title="Zoom out">−</button>
+      <button type="button" class="measure-tool" data-map-action="measure" title="Measure distance" aria-pressed="false">╱</button>
+      <button type="button" class="coordinate-tool" data-map-action="coordinates" title="UTM coordinates and elevation" aria-pressed="false">⌾</button>
+      <button type="button" class="earth-tool" data-map-action="earth" title="Open the point in Google Earth" disabled>◉</button>
+    </div>
+    <div class="map-compass"><span>◈</span><button type="button" class="terrain-toggle" aria-pressed="true"><b>3D</b><small>Relief on</small></button></div>
+    <aside class="exact-layer-panel">
+      <div class="exact-panel-title"><span>◌</span><h3>LAYERS</h3></div>
+      <div class="layer-cards"></div>
+    </aside>
+    <button class="panel-handle" type="button" title="Hide panel">›</button>
+  </div>
+</div>
+<div class="toast" role="status"></div>
+<script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+<script>window.AIRCHGIS_MAP=__CONFIG__;</script>
+<script>
+/*__JS__*/
+</script>
+</body>
+</html>

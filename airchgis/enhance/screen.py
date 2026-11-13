@@ -128,7 +128,7 @@ def _show_cleaning(cleaned, dem, res, key, on_apply):
         st.rerun()
 
 
-def _show_best(bv, sites, key, width, full_table=False, before=None):
+def _show_best(bv, sites, key, width, full_table=False, before=None, geo=None):
     if bv["status"] == "refused":
         st.error(bv["message"])
         return
@@ -137,14 +137,33 @@ def _show_best(bv, sites, key, width, full_table=False, before=None):
     out = bv["outputs"]
     if not full_table:
         st.success(one_sentence(out["ranking"], width))
-        view = st.segmented_control("Show", ["After: best view", "Before: original"], default="After: best view",
-                                    key=f"{key}_ba") or "After: best view"
         contrast_on = st.toggle("Stronger contrast (display only)", value=False, key=f"{key}_bv_disp",
                                 help="Adaptive histogram equalization: easier to see, but values are no longer elevations.")
-        if view.startswith("Before") and before is not None:
-            st.image(_png(before, enhance="clahe" if contrast_on else None), caption="Original terrain (hillshade)", width="stretch")
-        else:
-            st.image(_png(_read(out["output"]), enhance="clahe" if contrast_on else None), caption=out["best"], width="stretch")
+        best = _read(out["output"])
+        if contrast_on:
+            best, _ = contrast.enhance(best, "clahe")
+        shown = False
+        if geo is not None:
+            try:
+                from airchgis.map.view import georeference, render_map
+
+                transform, crs, elevation = geo
+                layers = [georeference(best, transform, crs, "best", f"After: {out['best']}",
+                                       "Best view for the width you typed. Switch it off to see the original.")]
+                if before is not None:
+                    layers.append(georeference(before, transform, crs, "before", "Before: original (hillshade)",
+                                               "The terrain as loaded, before cleaning.", visible=False))
+                render_map(layers, elevation=elevation, height=600)
+                shown = True
+            except Exception as exc:
+                st.caption(f"Map not available ({exc}); showing the image.")
+        if not shown:
+            view = st.segmented_control("Show", ["After: best view", "Before: original"], default="After: best view",
+                                        key=f"{key}_ba") or "After: best view"
+            if view.startswith("Before") and before is not None:
+                st.image(_png(before), caption="Original terrain (hillshade)", width="stretch")
+            else:
+                st.image(_png(best), caption=out["best"], width="stretch")
         _download(out["output"], "Download the best view (GeoTIFF)", f"{key}_bv_dl")
     if full_table:
         table = pd.DataFrame([{"rank": i + 1, "view": x["name"], "visibility": round(x["score"], 2),
@@ -192,7 +211,12 @@ def render_terrain_enhance(dem, res, profile, crs, label="DTM", on_apply=None, k
     cleaned = st.session_state.get(f"{tag}_clean")
     bv = st.session_state.get(f"{tag}_bv")
     if bv:
-        _show_best(bv, sites, key, st.session_state.get(f"{key}_width_used", width), before=_hillshade(dem, res))
+        geo = None
+        if profile.get("transform") is not None and crs is not None:
+            from airchgis.map.view import elevation_grid
+
+            geo = (profile["transform"], crs, elevation_grid(dem, profile["transform"], crs))
+        _show_best(bv, sites, key, st.session_state.get(f"{key}_width_used", width), before=_hillshade(dem, res), geo=geo)
     if cleaned or bv:
         with st.expander("Details"):
             if n_zero:
@@ -250,7 +274,17 @@ def render_terrain_enhance(dem, res, profile, crs, label="DTM", on_apply=None, k
                         st.image(_png(_read(bv["outputs"]["output"])), caption=bv["outputs"]["best"], width="stretch")
                 else:
                     st.success(out["note"] + (f" AUC at your sites: {out['auc']:.2f}." if out.get("auc") is not None else ""))
-                    st.image(_png(_read(out["output"])), caption="Fused view", width="stretch")
+                    try:
+                        from airchgis.map.view import elevation_grid, georeference, render_map
+
+                        layers = [georeference(_read(out["output"]), profile["transform"], crs, "fused", "Fused view",
+                                               "Blend of the best views.")]
+                        if bv and bv["status"] != "refused":
+                            layers.append(georeference(_read(bv["outputs"]["output"]), profile["transform"], crs, "best",
+                                                       bv["outputs"]["best"], "Best single view.", visible=False))
+                        render_map(layers, elevation=elevation_grid(dem, profile["transform"], crs), height=520)
+                    except Exception:
+                        st.image(_png(_read(out["output"])), caption="Fused view", width="stretch")
                     _download(out["output"], "Download the fused view (GeoTIFF)", f"{key}_fuse_dl")
 
         st.markdown("**Point cloud**")

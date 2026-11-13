@@ -605,101 +605,51 @@ def render_enhance(data, params):
 
 
 def render_view_toolbar(core, data, rgb, params):
-    with st.expander("Map tools: coordinates, measure, satellite overlay"):
-        tool_cols = st.columns([0.15, 0.15, 0.7], vertical_alignment="center")
-        with tool_cols[0]:
-            if st.button("📍", key="as_rvt_coordinate_tool_button", help="Click the map to read coordinates and elevation",
-                         type="primary" if st.session_state.as_rvt_image_tool == "coordinate" else "secondary", width="stretch"):
-                st.session_state.as_rvt_image_tool = "coordinate"
-                st.rerun()
-        with tool_cols[1]:
-            if st.button("📏", key="as_rvt_measure_tool_button", help="Measure distances",
-                         type="primary" if st.session_state.as_rvt_image_tool == "measure" else "secondary", width="stretch"):
-                st.session_state.as_rvt_image_tool = "measure"
-                st.rerun()
-        with tool_cols[2]:
-            _slider("View over satellite", 0.0, 1.0, "as_rvt_overlay_opacity",
-                    help="1 shows only the relief view, 0 only the satellite image.")
-
     render_view_map(core, data, rgb, params)
 
-    info = st.session_state.get("as_rvt_last_click_info")
-    if info:
-        elevation = info.get("elevation")
-        elevation_text = "" if elevation is None else f" | quota {elevation:.2f} m"
-        st.code(
-            f"{info['dms']} | lat {info['lat']:.8f}, lon {info['lon']:.8f}"
-            f" | riga {info['row']}, colonna {info['col']}{elevation_text}",
-            language=None,
-        )
+
+def terrain_map_layers(data, rgb, name, description):
+    """Map layers for the current relief view and an elevation grid for the coordinate tool."""
+    from airchgis.map.view import elevation_grid, georeference
+
+    transform = (data.profile or {}).get("transform")
+    if transform is None or data.crs is None:
+        return [], None
+    from airchgis.enhance.metrics import zero_nodata
+
+    layers = []
+    dem = zero_nodata(data.dtm)[0] if data.dtm is not None else None
+    if rgb is not None:
+        rgb = np.array(rgb, dtype=np.float32)
+        if dem is not None and rgb.shape[:2] == dem.shape:
+            rgb[~np.isfinite(dem)] = np.nan  # outside the survey: transparent on the map
+        layers.append(georeference(rgb, transform, data.crs, "relief", name, description,
+                                   opacity=float(st.session_state.get("as_rvt_overlay_opacity", 1.0))))
+    elevation = None
+    if dem is not None:
+        try:
+            elevation = elevation_grid(dem, transform, data.crs)
+        except Exception:
+            elevation = None
+    return layers, elevation
 
 
 def render_view_map(core, data, rgb, params):
-    bounds = bounds_lonlat(core, data)
-    if bounds is None:
-        if rgb is None:
-            st.warning("Original map not available for this area.")
-        else:
-            st.image(rgb_to_image(rgb), width="stretch")
+    from airchgis.map.view import render_map
+
+    overlay = st.session_state.get("as_rvt_last_rvt_rgb") if params["dataset"] == "Original" else rgb
+    try:
+        layers, elevation = terrain_map_layers(data, overlay, f"{params['method']} ({params['dataset']})",
+                                               TOOL_HELP.get(params["method"], ""))
+    except Exception as exc:
+        st.warning(f"The map could not place this raster ({exc}); showing the image instead.")
+        if overlay is not None:
+            st.image(rgb_to_image(overlay), width="stretch")
         return
-
-    left, bottom, right, top = bounds
-    center = [(bottom + top) / 2.0, (left + right) / 2.0]
-    fmap = folium.Map(location=center, zoom_start=16, tiles=None, control_scale=True)
-    folium.TileLayer(
-        tiles=satellite_template(core, params["basemap_year"]),
-        attr="Esri",
-        name=f"Original {params['basemap_year']}",
-        show=True,
-    ).add_to(fmap)
-    overlay_rgb = st.session_state.get("as_rvt_last_rvt_rgb") if params["dataset"] == "Original" else rgb
-    overlay_opacity = max(0.0, min(1.0, float(params["overlay_opacity"])))
-    if overlay_rgb is not None and overlay_opacity > 0.0:
-        folium.raster_layers.ImageOverlay(
-            image=image_data_url(rgb_to_image(overlay_rgb)),
-            bounds=[[bottom, left], [top, right]],
-            name="RVT",
-            opacity=overlay_opacity,
-            interactive=False,
-        ).add_to(fmap)
-    folium.FitBounds([[bottom, left], [top, right]]).add_to(fmap)
-
-    info = st.session_state.get("as_rvt_last_click_info")
-    if info:
-        folium.CircleMarker(
-            location=[info["lat"], info["lon"]],
-            radius=6,
-            color="#ff3030",
-            fill=True,
-            fill_color="#ff3030",
-            fill_opacity=0.9,
-            tooltip=info["dms"],
-        ).add_to(fmap)
-
-    if st.session_state.as_rvt_image_tool == "measure":
-        MeasureControl(
-            position="topleft",
-            primary_length_unit="meters",
-            secondary_length_unit="kilometers",
-            primary_area_unit="sqmeters",
-            secondary_area_unit="hectares",
-            active_color="#ffdf4d",
-            completed_color="#ff3030",
-        ).add_to(fmap)
-
-    folium.LayerControl(collapsed=True).add_to(fmap)
-    result = st_folium(
-        fmap,
-        width=1200,
-        height=720,
-        key=f"as_rvt_view_map_{st.session_state.as_rvt_image_tool}_{params['dataset']}_{params['basemap_year']}_{int(overlay_opacity * 100)}",
-        returned_objects=["last_clicked"],
-    )
-    click = result.get("last_clicked") if result else None
-    if click:
-        info = click_info(core, data, click)
-        if info:
-            st.session_state.as_rvt_last_click_info = info
+    if not layers and overlay is not None:
+        st.image(rgb_to_image(overlay), width="stretch")
+        return
+    render_map(layers, basemap_tiles=satellite_template(core, params["basemap_year"]), elevation=elevation, height=640)
 
 
 def image_data_url(image):

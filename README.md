@@ -37,6 +37,7 @@ AIrchGIS brings LiDAR relief visualization, terrain cleaning and 3D terrain expl
 | **Terrain (LiDAR)** | Earthworks, mounds, ditches, terraces under vegetation | Relief visualizations (hillshade, sky-view factor, openness, local relief model, MSRM…), **Enhance & best view** (cleaning, automatic best view, fused view), interactive 3D view, GeoTIFF/PNG and 3D export |
 
 - **Resolution check**: warns when a target is smaller than the data can resolve.
+- **Map**: results are shown on a MapLibre map in the style of DetectorLab (satellite base, 3D relief, layer panel with on/off and opacity, distance measure, UTM coordinates with the elevation of your terrain, Google Earth link).
 - **Help**: the **?** button at the top right explains the tool and each feature.
 
 Scores are investigation priorities, not archaeological probabilities.
@@ -113,6 +114,7 @@ The app opens at http://localhost:8501. QGIS is optional.
 │   ├── app.py                 # shell and navigation
 │   ├── rvt_web.py             # Terrain screen, 3D view, 3D figure and research export
 │   ├── help_page.py           # the ? help page
+│   ├── map/                   # MapLibre map (interface adapted from DetectorLab, Apache-2.0)
 │   ├── data_input.py          # loaders: rasters, LAS/LAZ, site lists
 │   ├── input_ui.py            # shared upload input
 │   ├── sources.py             # public data sources and downloads

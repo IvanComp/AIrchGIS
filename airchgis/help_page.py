@@ -43,8 +43,18 @@ def render_help():
     c1.markdown("**1 · Load data**\n\nUpload your file. Example data and public sources are under *Other sources*.")
     c2.markdown("**2 · Choose a tool**\n\nPick a tool from the list. Each has a one-line description and at most one setting; "
                 "the rest is under *Advanced*.")
-    c3.markdown("**3 · See and download**\n\nOne image, one sentence that explains it, one download. Measures and "
-                "scripts are under *Details*.")
+    c3.markdown("**3 · See and download**\n\nThe result on a map, one sentence that explains it, one download. "
+                "Measures and scripts are under *Details*.")
+    st.markdown("## The map")
+    st.markdown(
+        "- **Layers panel (right):** switch each layer on or off and set its opacity: the relief view, the best view "
+        "(*After*), the original hillshade (*Before*), place names and the satellite base map.\n"
+        "- **Tools (left):** full screen, zoom, **measure** a distance between two points, and **coordinates**: click a "
+        "point to read its UTM coordinates, latitude/longitude and the elevation of your terrain model (copied to the "
+        "clipboard), then open it in Google Earth.\n"
+        "- **3D button (bottom left):** tilts the map over a global terrain model; press it again for a flat view.\n"
+        "- The map needs an internet connection for the satellite images; your own layers never leave your computer."
+    )
 
     st.markdown("## What you can do")
     st.markdown(
