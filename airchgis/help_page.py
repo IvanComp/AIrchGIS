@@ -33,26 +33,26 @@ def render_help():
         "from any country, sensor and coordinate system. Your data stay on your computer."
     )
     st.markdown(
-        "Its AI support makes your data **easier to read**: it cleans them, picks the view that shows features of the size "
-        "you are looking for most clearly, and tells you what each step changed. It does not find sites by itself, and its "
-        "scores are priorities to check, not probabilities."
+        "It makes your terrain **easier to read**: it computes relief views, puts them on a map where you can compare "
+        "them, blends them into a fused view, and exports them as GeoTIFF, open 3D data and figures for papers. It does not "
+        "find sites by itself, and its scores are priorities to check, not probabilities."
     )
 
     st.markdown("## How it works")
     c1, c2, c3 = st.columns(3)
     c1.markdown("**1 · Load your file**\n\nThe start page only asks for your terrain model or point cloud. Public "
                 "elevation models are under *Other source: public download*.")
-    c2.markdown("**2 · Use the tools on the map**\n\nThe map opens with the **Tools** panel on the right. Start with "
-                "*Improve and find the best view*, or add any relief view.")
+    c2.markdown("**2 · Use the tools on the map**\n\nThe map opens with the **Tools** panel on the right. Add a "
+                "relief view, a fused view or a 3D image.")
     c3.markdown("**3 · Compare and download**\n\nEach result becomes a layer you can switch on and off and fade. A "
                 "short sentence explains it; each layer has its own download.")
     st.markdown("## The map")
     st.markdown(
-        "- **Tools panel (right):** *Improve and find the best view*, *Relief views* (choose a view and its main setting, "
+        "- **Tools panel (right):** *Relief views* (choose a view and its main setting, "
         "then *Add to the map*), *Fused view*, *3D* (3D view of your terrain, high-quality PDF/PNG image, open 3D data) "
-        "and *Details* (cleaning measures, all views ranked, the steps as a Python script). *Load another file* is at the top.\n"
+        "and *Details* (the steps as a Python script). *Load another file* is at the top.\n"
         "- **Layers (right, below the tools):** switch each layer on or off; open it (›) to set its opacity, add a version with "
-        "*stronger contrast* (display only), download it as GeoTIFF or remove it. *After* is the best view, *Before* the original hillshade.\n"
+        "*stronger contrast* (display only), download it as GeoTIFF or remove it.\n"
         "- **Map controls (left):** full screen, zoom, **measure** a distance between two points, and **coordinates**: "
         "click a point to read its UTM coordinates, latitude/longitude and the elevation of your terrain (copied to the "
         "clipboard), then open it in Google Earth.\n"
@@ -64,10 +64,9 @@ def render_help():
     st.markdown(
         "- **Input:** terrain model (GeoTIFF, ASCII grid, zip) or point cloud (LAS/LAZ). Public elevation models are "
         "under *Other source*.\n"
-        "- **Improve and find the best view** *(recommended)*: cleans the terrain, compares up to 19 relief views "
-        "with sizes matched to your features, and adds the clearest one to the map, with the original as *Before*.\n"
         "- **Relief views:** hillshade, multi-direction hillshade, slope, sky-view factor, openness, local relief "
         "model, multi-scale relief model, local dominance and others (see the table below).\n"
+        "- **Fused view:** a blend of the relief views you added, weighted for features of a given width.\n"
         "- **3D view:** look at the terrain in 3D, save a **high-quality image (PDF or PNG)** for a paper, or export "
         "the terrain and point cloud as open 3D data (LAZ, PLY, glTF) for QGIS, CloudCompare or Blender."
     )
@@ -75,37 +74,20 @@ def render_help():
     st.markdown("## Features in detail")
     with st.expander("Relief views: what they show and when to use them"):
         st.table([{"View": n, "What it shows": w, "Use it for": u} for n, w, u in VIEWS])
-    with st.expander("Cleaning the terrain"):
+    with st.expander("Fused view and display contrast"):
         st.markdown(
-            "- **Remove banding:** removes regular stripes from flight lines, while keeping roads and other long features.\n"
-            "- **Remove spikes and pits:** replaces isolated wrong points with their neighbours.\n"
-            "- **Fill small voids:** fills holes inside the survey smoothly; areas outside the survey stay empty.\n"
-            "- **Reduce noise:** smooths noise while keeping the edges of banks and ditches.\n"
-            "- **Point clouds:** removes isolated points (birds, wrong returns) from LAS/LAZ files.\n\n"
-            "Each step shows a measure before and after. Your original file is never changed."
-        )
-    with st.expander("Best view and fused view"):
-        st.markdown(
-            "You type the width of the features you are looking for (e.g. 3 m for a ditch, 10 m for a road). AIrchGIS "
-            "computes many relief views and gives each a **visibility score**: how much features of that width stand out "
-            "from the noise and from the broad landscape. The best one is shown with a one-line explanation.\n\n"
-            "The **fused view** (under *Advanced*) blends the four best views. If the blend is not clearer than the best "
-            "single view, AIrchGIS says so and keeps the best view.\n\n"
-            "*Stronger contrast* makes faint features easier to see; it is for display only. There is no "
+            "Add two or more relief views to the map, then in *Fused view* type the width of the features you are looking "
+            "for (e.g. 3 m for a ditch, 10 m for a road). AIrchGIS blends your views with weights that make features of "
+            "that width stand out most from the noise and from the broad landscape. If the blend is not clearer than the "
+            "best of your views, it says so and adds nothing.\n\n"
+            "*Stronger contrast* (in each layer) makes faint features easier to see; it is for display only. There is no "
             "\"super-resolution\": AIrchGIS never invents detail."
         )
     with st.expander("Resolution check"):
         st.markdown(
-            "Before an analysis, AIrchGIS checks whether features of the width you typed can be seen at the pixel size "
+            "Before a fused view, AIrchGIS checks whether features of the width you typed can be seen at the pixel size "
             "of your data. If not, it tells you, and blocks the analysis when it is impossible: for example, a 0.5 m "
             "feature cannot be seen in a 1 m terrain model."
-        )
-    with st.expander("Known sites"):
-        st.markdown(
-            "In *Improve and find the best view* you can upload a list of known sites (CSV with longitude/latitude, "
-            "GeoJSON, GeoPackage, zipped Shapefile, KML). AIrchGIS reports, for each view, how well it separates the sites "
-            "from random places (AUC; 0.5 = chance). Known sites are a small, non-random sample: use this as a check, "
-            "not as proof."
         )
     with st.expander("Repeatable work"):
         st.markdown(
@@ -121,9 +103,9 @@ def render_help():
 
     st.markdown("## Tips")
     st.markdown(
-        "- Start with **Improve and find the best view** and the width of the features you expect.\n"
+        "- Start with a hillshade, then compare views without a light direction; switch layers on and off to compare.\n"
         "- If features may run in any direction, prefer views without a light direction (sky-view factor, openness, local relief model).\n"
-        "- Compare the result with the *Before* view and with the measures under *Details*.\n"
+
         "- For a paper figure, use the *3D* card in the tools panel → *Download high-quality image* (PDF, 300 dpi). The "
         "layer on top of the map is draped on the terrain."
     )

@@ -726,6 +726,80 @@ register(Tool("export_3d_figure", "Save a high-quality 3D image of a terrain mod
               _native_export_3d_figure, None, ("input", "drape"), tags=("lidar", "3d")))
 
 
+# ---------------------------------------------------------------- map workbench: any relief view, fusion of views
+RELIEF_METHODS = ("Hillshade", "Multi-Hillshade", "Slope", "Sky-View Factor", "Anisotropic Sky-View Factor",
+                  "Positive Openness", "Simple Local Relief Model", "Multi-Scale Relief Model",
+                  "Multi-Scale Topographic Position", "Sky Illumination", "Local Dominance", "e3MSTP (RGB)", "Raw")
+
+
+def _rvt_core():
+    import importlib.util
+    import sys
+
+    from airchgis.paths import RVT_DIR
+
+    if "airchgis_rvt_core" in sys.modules:
+        return sys.modules["airchgis_rvt_core"]
+    if str(RVT_DIR) not in sys.path:
+        sys.path.insert(0, str(RVT_DIR))
+    spec = importlib.util.spec_from_file_location("airchgis_rvt_core", RVT_DIR / "core.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _native_relief_view(input, output, method, azimuth=315.0, altitude=35.0, radius_px=10.0, directions=16,
+                        vertical_exaggeration=1.0):
+    import rasterio
+
+    core = _rvt_core()
+    arr, prof = _read(input)
+    out = np.asarray(core.compute_method(method, arr, _res(prof), float(azimuth), float(altitude),
+                                         float(vertical_exaggeration), float(radius_px), int(directions)), dtype=np.float32)
+    if out.ndim == 3:  # colour views: one band per channel
+        if out.shape[0] != 3 and out.shape[-1] == 3:
+            out = np.moveaxis(out, -1, 0)
+        p = prof.copy()
+        p.update(driver="GTiff", count=out.shape[0], dtype="float32", nodata=None, compress="deflate")
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        with rasterio.open(output, "w", **p) as dst:
+            dst.write(out)
+        return {"output": str(output), "bands": int(out.shape[0])}
+    out[~np.isfinite(arr)] = np.nan
+    return {"output": _write(output, out, prof), "bands": 1}
+
+
+def _native_fuse_layers(input, layers, output, target_feature_width_m, method="optimized"):
+    from airchgis.enhance import fuse
+    from airchgis.enhance import metrics as em
+
+    dem, prof = _read(input)
+    arrays = {Path(p).stem: _read(p)[0] for p in layers}
+    if len(arrays) < 2:
+        raise ToolError("Add at least two relief views to the map first.")
+    fused, rep = fuse.fuse(arrays, _res(prof), target_feature_width_m, method=method, flat=em.flat_mask(dem, _res(prof)))
+    fused[~np.isfinite(dem)] = np.nan
+    return {"output": _write(output, fused, prof), **_json_safe(rep)}
+
+
+register(Tool("relief_view", "Compute one relief visualization of a terrain model (hillshade, slope, sky-view factor, openness, local relief model, multi-scale relief model and others) with the Relief Visualization Toolbox.",
+              _schema(["input", "output", "method"], input=_IN, output=_OUT,
+                      method={"type": "string", "enum": list(RELIEF_METHODS), "description": "Visualization."},
+                      azimuth={"type": "number", "minimum": 0, "maximum": 360, "default": 315.0, "description": "Light direction in degrees from north."},
+                      altitude={"type": "number", "minimum": 0, "maximum": 90, "default": 35.0, "description": "Sun height in degrees."},
+                      radius_px={"type": "number", "minimum": 1, "maximum": 200, "default": 10.0, "description": "Search radius in pixels."},
+                      directions={"type": "integer", "minimum": 4, "maximum": 64, "default": 16, "description": "Search directions."},
+                      vertical_exaggeration={"type": "number", "minimum": 0.1, "default": 1.0, "description": "Vertical exaggeration."}),
+              _native_relief_view, None, ("input",), tags=("lidar",)))
+register(Tool("fuse_layers", "Blend relief views of the same terrain into one image, with weights that make features of the given width stand out most (or their first principal component).",
+              _schema(["input", "layers", "output", "target_feature_width_m"], input=_IN,
+                      layers={"type": "array", "items": {"type": "string"}, "description": "GeoTIFFs of the relief views to blend (same grid as the terrain)."},
+                      output=_OUT, target_feature_width_m=_WIDTH_REQ,
+                      method={"type": "string", "enum": ["optimized", "pca"], "default": "optimized", "description": "Optimized weights or first principal component."}),
+              _native_fuse_layers, None, ("input",), tags=("lidar",)))
+
+
 # ---------------------------------------------------------------- execution
 def _guard(tool, params):
     width = params.get("target_feature_width_m")

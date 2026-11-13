@@ -49,6 +49,7 @@ class Workbench:
         self.src_path = None
         self.clean_path = None
         self.sites = None
+        self.paths = {}           # layer id -> GeoTIFF written by the tool that made it
 
     # ------------------------------------------------------------ helpers
     def input_path(self):
@@ -174,16 +175,37 @@ def hillshade(dem, res):
 
 
 # ------------------------------------------------------------ event handlers
-def run_relief(wb, core, method, value, compute):
-    """Add one relief visualization as a layer; ``compute(method, value)`` returns (raw, rgb)."""
-    raw, rgb = compute(method, value)
+def run_relief(wb, core, method, value, compute=None):
+    """Add one relief visualization as a map layer (recorded in the session log as the ``relief_view`` tool)."""
+    from airchgis.gis.tools import run_tool
+    from airchgis.rvt_web import RADIUS_TOOLS, TOOL_HELP
+
+    params = {}
+    if value is not None:
+        if method in ("Hillshade", "Anisotropic Sky-View Factor"):
+            params["azimuth"] = float(value)
+        elif method in RADIUS_TOOLS:
+            params["radius_px"] = float(value)
     wb.counter += 1
     lid = f"view{wb.counter}"
-    label = method if value is None else f"{method} ({value:g})"
-    from airchgis.rvt_web import TOOL_HELP
+    safe = "".join(ch if ch.isalnum() else "_" for ch in method).strip("_")
+    out = run_tool("relief_view", log=wb.log, input=wb.input_path(), output=str(OUT_DIR / f"{wb.name}_{lid}_{safe}.tif"),
+                   method=method, **params)["outputs"]
+    import rasterio
 
-    two_d = np.ndim(raw) == 2
-    wb.add_layer(lid, label, TOOL_HELP.get(method, ""), raw if two_d else rgb, raw=raw if two_d else rgb)
+    with rasterio.open(out["output"]) as src:
+        arr = src.read().astype(np.float32)
+    label = method if value is None else f"{method} ({value:g})"
+    if out["bands"] == 1:
+        a = arr[0]
+        a[a == -9999.0] = np.nan
+        wb.add_layer(lid, label, TOOL_HELP.get(method, ""), a, raw=a)
+    else:
+        rgb = np.moveaxis(arr[:3], 0, -1)
+        lo, hi = np.nanpercentile(rgb, [1, 99]) if np.isfinite(rgb).any() else (0, 1)
+        rgb = np.clip((rgb - lo) / max(hi - lo, 1e-9), 0, 1)
+        wb.add_layer(lid, label, TOOL_HELP.get(method, ""), rgb, raw=rgb)
+    wb.paths[lid] = out["output"]
     wb.message = f"{label} added to the map. {TOOL_HELP.get(method, '')}"
 
 
@@ -218,21 +240,32 @@ def run_best_view(wb, width):
 
 
 def run_fused(wb, width=None):
+    """Blend the single-band relief views the user added to the map."""
     from airchgis.gis.tools import run_tool
 
-    width = float(width or getattr(wb, "last_width", max(2 * wb.res, 4.0)))
-    src = wb.clean_path or wb.input_path()
-    r = run_tool("fused_view", log=wb.log, input=src, output=str(OUT_DIR / f"{wb.name}_fused.tif"),
-                 target_feature_width_m=width, method="optimized", n_layers=4, sites=wb.sites)
+    width = float(width or max(2 * wb.res, 4.0))
+    ids = [l["id"] for l in wb.layers if l["id"] in wb.paths and np.ndim(wb.arrays.get(l["id"])) == 2]
+    if len(ids) < 2:
+        wb.message = "Add at least two relief views to the map first; the fused view blends them."
+        return
+    names = {l["id"]: l["name"] for l in wb.layers}
+    r = run_tool("fuse_layers", log=wb.log, input=wb.input_path(), layers=[wb.paths[i] for i in ids],
+                 output=str(OUT_DIR / f"{wb.name}_fused.tif"), target_feature_width_m=width)
     if r["status"] == "refused":
         wb.message = r["message"]
         return
     out = r["outputs"]
+    best = out["best_single"]["name"]
+    best_name = next((names[i] for i in ids if Path(wb.paths[i]).stem == best), best)
     if out["gain_over_best_single"] < 1.005:  # less than 0.5% clearer: not worth a new layer
-        wb.message = f"The blend does not show features more clearly than {out['best_single']['name']}, so the best single view is kept."
+        wb.message = (f"The blend of your {len(ids)} views does not show features {width:g} m wide more clearly than "
+                      f"{best_name} alone, so nothing was added.")
         return
-    wb.add_layer("fused", "Fused view", "Blend of the best views, weighted for visibility.", read_raster(out["output"]))
-    wb.message = out["note"]
+    weights = ", ".join(f"{names.get(i, i)} {100 * w:.0f}%" for i, w in zip(ids, out["weights"] or []) if w >= 0.01)
+    wb.add_layer("fused", "Fused view", f"Blend of your relief views: {weights}.", read_raster(out["output"]))
+    wb.paths["fused"] = out["output"]
+    wb.message = (f"Fused view of {len(ids)} relief views ({weights}): features {width:g} m wide stand out "
+                  f"{out['gain_over_best_single']:.2f} times more than in {best_name} alone.")
 
 
 def run_figure(wb, fmt="pdf", dpi=300, width_mm=190.0, azimuth=-44.0, elevation=29.0, ve=0.0, drape=None,
@@ -338,6 +371,7 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
         elif action == "remove":
             wb.layers = [l for l in wb.layers if l["id"] != event["layer"]]
             wb.arrays.pop(event["layer"], None)
+            wb.paths.pop(event["layer"], None)
             wb.message = ""
         elif action == "load_another":
             return "reload"

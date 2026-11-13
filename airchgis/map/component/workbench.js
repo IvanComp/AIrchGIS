@@ -154,14 +154,6 @@ function el(html){const t=document.createElement('template');t.innerHTML=html.tr
 function buildTools(){
   const box=document.querySelector('.wb-tools');box.innerHTML='';
   const tools=ARGS.tools||{};
-  // 1. recommended
-  const best=el(`<div class="wb-card primary"><h4>Improve and find the best view</h4><p>Recommended. Cleans the terrain, compares many relief views and shows the clearest one for the size of your features.</p>
-    <div class="wb-row"><label>Width of the features (m)</label><input type="number" class="wb-width" min="0.1" step="0.5" value="${tools.width||4}"></div>
-    <details><summary>Known sites (optional)</summary><p>CSV with lon/lat, GeoJSON, GeoPackage, zipped Shapefile or KML. Each view gets an AUC at your sites.</p><input type="file" class="wb-sites" accept=".csv,.txt,.geojson,.json,.gpkg,.zip,.kml"></details>
-    <button type="button" class="wb-run" data-act="best_view">Improve and find the best view</button></div>`);
-  best.querySelector('[data-act=best_view]').addEventListener('click',()=>send({action:'best_view',width:Number(best.querySelector('.wb-width').value)}));
-  best.querySelector('.wb-sites').addEventListener('change',ev=>{const f=ev.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>send({action:'sites',filename:f.name,b64:String(rd.result).split(',')[1]});rd.readAsDataURL(f);});
-  box.appendChild(best);
   // 2. relief views
   const views=tools.views||[];
   const rel=el(`<div class="wb-card"><h4>Relief views</h4><p class="wb-view-help"></p>
@@ -174,8 +166,10 @@ function buildTools(){
   rel.querySelector('[data-act=relief]').addEventListener('click',()=>{const v=views.find(x=>x.id===sel.value)||{};send({action:'relief',method:sel.value,value:v.param?Number(rel.querySelector('.wb-param-value').value):null});});
   box.appendChild(rel);
   // 3. fused view
-  const fu=el(`<div class="wb-card"><h4>Fused view</h4><p>Blends the four best views with weights that make features stand out most. If the blend is not clearer, the best view is kept.</p><button type="button" class="wb-run secondary" data-act="fused">Build the fused view</button></div>`);
-  fu.querySelector('[data-act=fused]').addEventListener('click',()=>send({action:'fused',width:Number(document.querySelector('.wb-width').value)}));
+  const fu=el(`<div class="wb-card"><h4>Fused view</h4><p>Blends the relief views you added to the map, with weights that make features of this width stand out most. If the blend is not clearer than the best of your views, nothing is added.</p>
+    <div class="wb-row"><label>Width of the features (m)</label><input type="number" class="wb-width" min="0.1" step="0.5" value="${tools.width||4}"></div>
+    <button type="button" class="wb-run secondary" data-act="fused">Build the fused view</button></div>`);
+  fu.querySelector('[data-act=fused]').addEventListener('click',()=>send({action:'fused',width:Number(fu.querySelector('.wb-width').value)}));
   box.appendChild(fu);
   // 4. 3D
   const td=el(`<div class="wb-card"><h4>3D</h4><p>Look at your terrain in 3D, save a high-quality image for a paper, or export open 3D data.</p>
@@ -200,7 +194,7 @@ function buildTools(){
   td.querySelector('[data-act=research]').addEventListener('click',()=>send({action:'research'}));
   box.appendChild(td);
   // 5. details
-  const de=el(`<div class="wb-card wb-details"><details><summary>Details: measures, all views, script</summary><div class="wb-details-body"><p>Run <b>Improve and find the best view</b> to see the measures.</p></div>
+  const de=el(`<div class="wb-card wb-details"><details><summary>Details: steps and script</summary><div class="wb-details-body"><p>Every step you run is recorded with its settings and files.</p></div>
     <button type="button" class="wb-run secondary" data-act="script">Download the steps as a Python script</button></details></div>`);
   de.querySelector('[data-act=script]').addEventListener('click',()=>send({action:'script'}));
   box.appendChild(de);

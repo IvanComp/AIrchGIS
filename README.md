@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/status-paper%20in%20preparation%20(DAACH)-orange" alt="Paper in preparation">
 </p>
 
-AIrchGIS brings LiDAR relief visualization, terrain cleaning and 3D terrain exploration into one browser app, built for archaeologists with little IT background. You start from your own files (any country, sensor or coordinate system); public elevation models are an optional download. AI helps you see your data better: it cleans the terrain, ranks relief views by how clearly they show features of your size, and blends the best ones. Every step shows what it changed, keeps your original and is saved as a re-runnable script. A resolution check tells you when the data cannot show what you are looking for.
+AIrchGIS brings LiDAR relief visualization, fused views and 3D terrain exploration into one browser app, built for archaeologists with little IT background. You start from your own files (any country, sensor or coordinate system); public elevation models are an optional download. Relief views go on an interactive map where you can compare them, blend them into a fused view and export them as GeoTIFF, open 3D data and figures for papers. Every step is saved as a re-runnable script, and a resolution check tells you when the data cannot show features of the width you are looking for.
 
 <p align="center">
   <img src="docs/assets/screenshot-terrain.jpg" alt="AIrchGIS terrain screen: LiDAR hillshade over satellite imagery" width="900">
@@ -24,7 +24,7 @@ AIrchGIS brings LiDAR relief visualization, terrain cleaning and 3D terrain expl
 
 - [What it does](#what-it-does)
 - [Bring your own data](#bring-your-own-data)
-- [Enhance & best view](#enhance--best-view)
+- [Tools on the map](#tools-on-the-map)
 - [Scripts and provenance](#scripts-and-provenance)
 - [3D export for research](#3d-export-for-research)
 - [Quick start](#quick-start)
@@ -34,7 +34,7 @@ AIrchGIS brings LiDAR relief visualization, terrain cleaning and 3D terrain expl
 
 | Screen | For | What you get |
 |---|---|---|
-| **Terrain (LiDAR)** | Earthworks, mounds, ditches, terraces under vegetation | Relief visualizations (hillshade, sky-view factor, openness, local relief model, MSRM…), **Enhance & best view** (cleaning, automatic best view, fused view), interactive 3D view, GeoTIFF/PNG and 3D export |
+| **Terrain (LiDAR)** | Earthworks, mounds, ditches, terraces under vegetation | Relief visualizations (hillshade, sky-view factor, openness, local relief model, MSRM…), fused view, layer comparison on a map, interactive 3D view, GeoTIFF/PNG and 3D export |
 
 - **Resolution check**: warns when a target is smaller than the data can resolve.
 - **Map**: after upload everything happens on a MapLibre map in the style of DetectorLab: tools and layers in the right panel, satellite base, 3D relief, distance measure, UTM coordinates with the elevation of your terrain, Google Earth link.
@@ -47,7 +47,6 @@ Scores are investigation priorities, not archaeological probabilities.
 The app starts with **Upload your files** (up to 4 GB per file). Public elevation models are under **Other source**.
 
 - **Terrain**: DTM as GeoTIFF, ASCII grid or zip; LAS/LAZ point clouds, gridded to a DTM from their ground points.
-- **Known sites**: your own list (CSV with lon/lat or x/y, GeoJSON, GeoPackage, zipped Shapefile, KML), used in **Improve and find the best view** to report how well each view separates them from random places (AUC).
 
 **Download from a public source** is the second option:
 
@@ -57,16 +56,18 @@ The app starts with **Upload your files** (up to 4 GB per file). Public elevatio
 | OpenTopography | Global DEMs, national LiDAR | Automatic with your API key (kept in `~/.airchgis/config.json`) |
 | National LiDAR: England, Netherlands, Denmark, France, Spain, Slovenia, Italy, USA… | National, 0.25–2 m | Link and expected format |
 
-# Enhance & best view
+# Tools on the map
 
 The start page only asks for your terrain model or point cloud. Once it is loaded, the map opens with every tool in the **Tools** panel on the right, in the style of the DetectorLab map:
 
-1. **Improve and find the best view** *(recommended)*: type the width of the features you are looking for. AIrchGIS cleans the terrain (periodic banding, isolated spikes and pits, small holes, noise while keeping edges), computes up to 19 relief views with radii matched to your width, ranks them by a visibility score (how much features of that width stand out from the noise and from the broad landscape) and adds the clearest one to the map as *After*, with the original hillshade as *Before*. A one-line explanation appears in the panel; measures, all views and the script are under **Details**. With a list of known sites it also reports the AUC of each view.
-2. **Relief views**: choose a view (hillshade, slope, sky-view factor, openness, local relief model, MSRM…) and its main setting, then **Add to the map**.
-3. **Fused view**: blends the four best views; if the blend is not clearer than the best single view, AIrchGIS says so and adds nothing.
-4. **3D**: the 3D view of your terrain, a high-quality image (PDF or PNG, 300 dpi by default) with the top layer draped on the terrain, and open 3D data (LAZ/LAS, PLY, glTF) for QGIS, CloudCompare or Blender.
+1. **Relief views**: choose a view (hillshade, slope, sky-view factor, openness, local relief model, MSRM…) and its main setting, then **Add to the map**.
+2. **Fused view**: after adding two or more relief views, type the width of the features you are looking for; AIrchGIS blends your views with weights that make features of that width stand out most from the noise and from the broad landscape. If the blend is not clearer than the best of your views, it says so and adds nothing.
+3. **3D**: the 3D view of your terrain, a high-quality image (PDF or PNG, 300 dpi by default) with the top layer draped on the terrain, and open 3D data (LAZ/LAS, PLY, glTF) for QGIS, CloudCompare or Blender.
+4. **Details**: the steps of the session as a Python script.
 
 Each layer can be switched on and off, faded, shown with stronger contrast (display only), downloaded as GeoTIFF or removed. **Load another file** (top of the panel) goes back to the start page. Terrain models in longitude/latitude are reprojected to their UTM zone, so that all sizes are in metres. There is no super-resolution.
+
+Terrain cleaning (banding, spikes and pits, voids, noise) and the automatic best view are available in scripts through `airchgis/gis/tools.py` (`clean_terrain`, `best_view`); they are not in the interface for now.
 
 # Scripts and provenance
 
@@ -76,8 +77,9 @@ Every step runs through `airchgis/gis/tools.py` and is logged with its parameter
 from airchgis.gis import ProvenanceLog, run_tool
 
 log = ProvenanceLog("My survey")
-run_tool("clean_terrain", log=log, input="dtm.tif", output="dtm_clean.tif")
-run_tool("best_view", log=log, input="dtm_clean.tif", output_dir="views/", target_feature_width_m=5)
+run_tool("relief_view", log=log, input="dtm.tif", output="svf.tif", method="Sky-View Factor", radius_px=10)
+run_tool("relief_view", log=log, input="dtm.tif", output="lrm.tif", method="Simple Local Relief Model", radius_px=20)
+run_tool("fuse_layers", log=log, input="dtm.tif", layers=["svf.tif", "lrm.tif"], output="fused.tif", target_feature_width_m=5)
 log.save_scripts("outputs/")
 ```
 
@@ -118,7 +120,7 @@ The app opens at http://localhost:8501. QGIS is optional.
 │   ├── data_input.py          # loaders: rasters, LAS/LAZ, site lists
 │   ├── input_ui.py            # shared upload input
 │   ├── sources.py             # public data sources and downloads
-│   ├── enhance/               # cleaning, display enhancement, best view, fused view
+│   ├── enhance/               # fused view and display contrast (cleaning and best view: scripts only)
 │   ├── gis/                   # tool registry, QGIS backend, guardrails, provenance, workflows
 │   ├── terrain/               # 3D research export (LAZ/LAS, PLY, glTF) and 3D figures (PDF/PNG)
 │   ├── benchmark.py           # metrics against known sites
