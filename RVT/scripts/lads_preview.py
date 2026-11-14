@@ -1386,6 +1386,23 @@ def _height_shaded_colors_u8(z_values, valid_mask, dx=1.0, dy=1.0, color_values=
     return np.round(rgb * 255.0).astype(np.uint8)
 
 
+def _elevation_relief_colors(z_values, height_values, valid_mask, dx, dy):
+    import rvt.vis
+
+    valid = np.asarray(valid_mask, dtype=bool)
+    z = np.asarray(z_values, dtype=np.float32)
+    fill = np.where(valid, z, np.nanmedian(z[valid])).astype(np.float32)
+    shade = rvt.vis.hillshade(fill, float(dx), float(dy), sun_azimuth=315, sun_elevation=45)
+    gray = np.repeat(np.clip(np.nan_to_num(shade), 0, 1)[..., None], 3, axis=-1)
+    height = np.asarray(height_values, dtype=np.float32)
+    low, high = np.nanpercentile(height[valid], [2, 98])
+    norm = np.clip((np.nan_to_num(height, nan=float(low)) - low) / max(1e-6, float(high - low)), 0, 1)
+    tint = np.round(colormaps["RdYlGn_r"](norm) * 255).astype(np.uint8)
+    gray[~valid] = 0
+    tint[~valid] = 0
+    return np.round(gray * 255).astype(np.uint8), tint
+
+
 def _adaptive_z_scale(x_span, y_span, z_span):
     xy_span = max(1.0, float(max(x_span, y_span)))
     z_span = max(1e-6, float(z_span))
@@ -1621,13 +1638,18 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
     ai_views, ai_outline, ai_ve = [], None, None
     if ai is not None:
         ai_score, ai_outline, ai_views, ai_ve = _ai_overlay(ai, rows, cols, x, y, z_fill, valid, step)
+    elevation_tint = None
     if cfg.get("needs_ai"):
         colors = _height_shaded_colors_u8(z_fill, valid, dx=dx, dy=dy, color_values=ai_score, cmap="magma",
                                           vrange=AI_SCORE_RANGE)
     else:
-        colors = _height_shaded_colors_u8(z_fill, valid, dx=dx, dy=dy)
+        shade_dx = max(1e-6, float(np.nanmedian(np.hypot(np.diff(x, axis=1), np.diff(y, axis=1)))))
+        shade_dy = max(1e-6, float(np.nanmedian(np.hypot(np.diff(x, axis=0), np.diff(y, axis=0)))))
+        colors, elevation_tint = _elevation_relief_colors(z_fill, z_source, valid, shade_dx, shade_dy)
     if ai_outline is not None and (cfg.get("needs_ai") or show_ai):
         colors[ai_outline & valid] = AI_OUTLINE_RGB
+        if elevation_tint is not None:
+            elevation_tint[ai_outline & valid, 3] = 0
     else:
         ai_views = []
     colors[~valid] = 0
@@ -1673,6 +1695,7 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
         "z": z_fill,
         "valid": valid.astype(np.uint8),
         "colors": colors.astype(np.uint8),
+        "elevation_tint": elevation_tint,
         "rows": int(z_render.shape[0]),
         "cols": int(z_render.shape[1]),
         "origin_x": origin_x,
@@ -1755,6 +1778,8 @@ def write_browser_cloud_viewer(
 
     pos_b64 = _encode_f32_triplets_base64(x.reshape(-1), y.reshape(-1), z.reshape(-1))
     color_b64 = _encode_u8_triplets_base64(colors.reshape(-1, 3))
+    elevation_tint = terrain.get("elevation_tint")
+    tint_b64 = _encode_u8_triplets_base64(elevation_tint.reshape(-1, 4)) if elevation_tint is not None else ""
     basemap_colors = terrain.get("basemap_colors")
     basemap_b64 = _encode_u8_triplets_base64(np.asarray(basemap_colors, dtype=np.uint8).reshape(-1, 3)) if basemap_colors is not None else ""
     valid_b64 = _encode_u8_base64(valid.reshape(-1))
@@ -2044,6 +2069,7 @@ def write_browser_cloud_viewer(
     }}
     const POS_B64 = "{pos_b64}";
     const COLOR_B64 = "{color_b64}";
+    const ELEVATION_TINT_B64 = "{tint_b64}";
     const BASEMAP_COLOR_B64 = "{basemap_b64}";
     const BASEMAP_ATTRIBUTION = {json.dumps(str(terrain.get("basemap_attribution") or ""))};
     const VALID_B64 = "{valid_b64}";
@@ -2116,6 +2142,7 @@ def write_browser_cloud_viewer(
     const posBytes = base64ToUint8Array(POS_B64);
     const positions = new Float32Array(posBytes.buffer, posBytes.byteOffset, posBytes.byteLength / 4);
     const colorBytes = base64ToUint8Array(COLOR_B64);
+    const elevationTintBytes = ELEVATION_TINT_B64 ? base64ToUint8Array(ELEVATION_TINT_B64) : null;
     const validBytes = base64ToUint8Array(VALID_B64);
     const analysisPanel = document.getElementById('analysis-panel');
     const analysisTitle = document.getElementById('analysis-title');
@@ -2163,11 +2190,13 @@ def write_browser_cloud_viewer(
     function buildPointGeometry() {{
       const pointPositions = [];
       const pointColors = [];
+      const pointTints = [];
       for (let i = 0; i < validBytes.length; i += POINT_STRIDE) {{
         if (!validBytes[i]) continue;
         const posIdx = i * 3;
         pointPositions.push(positions[posIdx], positions[posIdx + 1], positions[posIdx + 2]);
         pointColors.push(colorBytes[posIdx], colorBytes[posIdx + 1], colorBytes[posIdx + 2]);
+        if (elevationTintBytes) pointTints.push(...elevationTintBytes.subarray(i * 4, i * 4 + 4));
       }}
       if (!pointPositions.length) {{
         return null;
@@ -2175,6 +2204,7 @@ def write_browser_cloud_viewer(
       const pointsGeometry = new THREE.BufferGeometry();
       pointsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(pointPositions, 3));
       pointsGeometry.setAttribute('color', new THREE.Uint8BufferAttribute(new Uint8Array(pointColors), 3, true));
+      if (elevationTintBytes) pointsGeometry.setAttribute('elevationTint', new THREE.Uint8BufferAttribute(new Uint8Array(pointTints), 4, true));
       pointsGeometry.computeBoundingSphere();
       return pointsGeometry;
     }}
@@ -2216,6 +2246,7 @@ def write_browser_cloud_viewer(
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
       geometry.setAttribute('color', new THREE.Uint8BufferAttribute(colorBytes, 3, true));
+      if (elevationTintBytes) geometry.setAttribute('elevationTint', new THREE.Uint8BufferAttribute(elevationTintBytes, 4, true));
       const indices = [];
       for (let r = 0; r < GRID_ROWS - 1; r++) {{
         for (let c = 0; c < GRID_COLS - 1; c++) {{

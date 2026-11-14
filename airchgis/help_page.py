@@ -96,6 +96,7 @@ SECTIONS = [
         <div class="ag-table-wrap"><table><thead><tr><th>Control</th><th>How to use it</th></tr></thead><tbody>
           <tr><th>View</th><td>Original; Cloud 1 (points); Cloud 2 (surface, wireframe and points); Cloud 3 (enhanced local relief); AI Relief (anomaly scores).</td></tr>
           <tr><th>Relief view</th><td>100% shows the relief; 0% reveals satellite imagery on the same cropped 3D surface. Intermediate values blend them.</td></tr>
+          <tr><th>Elevation color</th><td>Starts at <strong>35%</strong>. At 0% the terrain is grayscale. Increasing it adds elevation tint while preserving the grayscale luminance, so small relief variations remain legible. AI Relief keeps its separate anomaly-score palette.</td></tr>
           <tr><th>Contrast / Brightness</th><td>Both range from 0 to 100. Defaults are <strong>65%</strong> contrast and <strong>40%</strong> brightness. They affect display and images, not numerical terrain data.</td></tr>
           <tr><th>Vertical Boost</th><td>Starts at <strong>×1</strong>, preserving true proportions. Move toward <strong>Auto</strong> to emphasize relief. At ×2, a 1 m height difference is displayed as 2 m relative to horizontal distances.</td></tr>
         </tbody></table></div>

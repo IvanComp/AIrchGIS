@@ -1,4 +1,4 @@
-const viewerDisplay = {background: 'none', quality: 8192, contrast: 65, brightness: 40, verticalExaggeration: 1, reliefOpacity: 100};
+const viewerDisplay = {background: 'none', quality: 8192, contrast: 65, brightness: 40, verticalExaggeration: 1, reliefOpacity: 100, elevationColor: 35};
 const reliefObjects = scene.children.filter(object => object.isMesh || object.isPoints || object.isLine);
 const reliefMaterials = reliefObjects.map(object => ({object, opacity: object.material.opacity, visible: object.visible}));
 let satelliteMesh = null;
@@ -31,6 +31,7 @@ for (const object of terrainObjects) object.scale.z = 1 / Z_EXAGGERATION;
 fitTerrainView(1);
 const contrastUniform = {value: viewerDisplay.contrast / 50};
 const brightnessUniform = {value: viewerDisplay.brightness / 100};
+const elevationColorUniform = {value: viewerDisplay.elevationColor / 100};
 let viewerDirty = true;
 scene.background = null;
 renderer.setClearColor(0x000000, 0);
@@ -38,16 +39,41 @@ for (const element of [document.documentElement, document.body, root]) element.s
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = viewerDisplay.brightness / 100;
 scene.traverse(object => {
+  const hasElevationTint = Boolean(object.geometry?.getAttribute('elevationTint'));
   const materials = object.material ? (Array.isArray(object.material) ? object.material : [object.material]) : [];
   for (const material of materials) {
     material.onBeforeCompile = shader => {
       shader.uniforms.airchgisContrast = contrastUniform;
       shader.uniforms.airchgisBrightness = brightnessUniform;
+      if (hasElevationTint) {
+        shader.uniforms.airchgisElevationColor = elevationColorUniform;
+        shader.vertexShader = 'attribute vec4 elevationTint;\nvarying vec4 vElevationTint;\n' + shader.vertexShader.replace(
+          '#include <begin_vertex>', '#include <begin_vertex>\nvElevationTint = elevationTint;');
+        shader.fragmentShader = `uniform float airchgisElevationColor;
+varying vec4 vElevationTint;
+vec3 terrainLinear(vec3 c) {return mix(c / 12.92, pow((c + .055) / 1.055, vec3(2.4)), step(vec3(.04045), c));}
+vec3 terrainSRGB(vec3 c) {return mix(c * 12.92, 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - .055, step(vec3(.0031308), c));}
+vec3 tintTerrain(vec3 gray, vec3 tint) {
+  vec3 weights = vec3(.2126, .7152, .0722);
+  float luminance = dot(terrainLinear(gray), weights);
+  vec3 color = terrainLinear(tint);
+  vec3 chroma = color - dot(color, weights);
+  vec3 upper = (1.0 - luminance) / max(chroma, vec3(.000001));
+  vec3 lower = luminance / max(-chroma, vec3(.000001));
+  float gamut = min(min(upper.r, min(upper.g, upper.b)), min(lower.r, min(lower.g, lower.b)));
+  return terrainSRGB(clamp(vec3(luminance) + min(airchgisElevationColor, gamut) * chroma, 0.0, 1.0));
+}
+` + shader.fragmentShader;
+      }
       shader.fragmentShader = 'uniform float airchgisContrast;\nuniform float airchgisBrightness;\n' + shader.fragmentShader.replace(
         '#include <encodings_fragment>',
         '#include <encodings_fragment>\ngl_FragColor.rgb = airchgisBrightness <= 0.0 ? vec3(0.0) : clamp((gl_FragColor.rgb - 0.5) * airchgisContrast + 0.5, 0.0, 1.0);'
       );
+      if (hasElevationTint) shader.fragmentShader = shader.fragmentShader.replace(
+        'gl_FragColor.rgb = airchgisBrightness <= 0.0 ? vec3(0.0) : clamp((gl_FragColor.rgb - 0.5) * airchgisContrast + 0.5, 0.0, 1.0);',
+        'gl_FragColor.rgb = airchgisBrightness <= 0.0 ? vec3(0.0) : clamp((gl_FragColor.rgb - 0.5) * airchgisContrast + 0.5, 0.0, 1.0);\nif (vElevationTint.a > 0.5) gl_FragColor.rgb = tintTerrain(gl_FragColor.rgb, vElevationTint.rgb);');
     };
+    material.customProgramCacheKey = () => hasElevationTint ? 'airchgis-elevation-tint-v1' : 'airchgis-standard-v1';
     material.needsUpdate = true;
   }
 });
@@ -81,6 +107,9 @@ window.addEventListener('resize', () => {
 window.addEventListener('message', event => {
   if (event.source !== window.parent || event.data?.type !== 'airchgis:3d-options') return;
   const options = event.data;
+  const elevationColor = Number(options.elevationColor);
+  viewerDisplay.elevationColor = Number.isFinite(elevationColor) ? Math.min(100, Math.max(0, elevationColor)) : 35;
+  elevationColorUniform.value = viewerDisplay.elevationColor / 100;
   const infoPanel = document.getElementById('ai-hover-info');
   if (infoPanel) {
     const controlWidth = Math.max(0, Number(options.controlPanelWidth) || 0);
@@ -143,6 +172,7 @@ window.addEventListener('message', event => {
       render_mode: RENDER_MODE, vertical_exaggeration: viewerDisplay.verticalExaggeration,
       background: viewerDisplay.background, contrast: viewerDisplay.contrast,
       relief_opacity: viewerDisplay.reliefOpacity,
+      elevation_color: ELEVATION_TINT_B64 ? viewerDisplay.elevationColor : null,
       imagery_attribution: viewerDisplay.reliefOpacity < 100 ? BASEMAP_ATTRIBUTION : null,
       brightness: viewerDisplay.brightness, display_quality: viewerDisplay.quality,
       crs: typeof VIEW_CRS === 'undefined' ? null : VIEW_CRS,
@@ -170,4 +200,4 @@ window.addEventListener('message', event => {
     renderer.render(scene, camera);
   }
 });
-window.parent.postMessage({type: 'airchgis:3d-ready', verticalExaggeration: Z_EXAGGERATION, basemapAvailable: Boolean(satelliteMesh)}, '*');
+window.parent.postMessage({type: 'airchgis:3d-ready', verticalExaggeration: Z_EXAGGERATION, basemapAvailable: Boolean(satelliteMesh), elevationColorAvailable: Boolean(ELEVATION_TINT_B64)}, '*');

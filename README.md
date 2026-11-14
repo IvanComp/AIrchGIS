@@ -75,6 +75,7 @@ The docked **RVT workspace** keeps the map visible while changing parameters. Li
 |---|---|
 | **View** | Original, Cloud 1 (points), Cloud 2 (surface, wireframe and points), Cloud 3 (enhanced local relief), or AI Relief |
 | **Relief view** | Live opacity from 100% relief to 0% satellite imagery draped on the same terrain |
+| **Elevation color** | 0–100%, initially **35%**: adds height-based tint while preserving the grayscale relief luminance; 0% is grayscale. Available in the elevation views, separate from AI Relief scores. |
 | **Contrast** | 0–100%, initially **65%** |
 | **Brightness** | 0–100%, initially **40%** |
 | **Vertical Boost** | Initially **×1**, preserving true proportions; adjustable up to the terrain's **Auto** value |

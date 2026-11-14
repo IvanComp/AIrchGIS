@@ -140,12 +140,13 @@ select,select option{cursor:pointer}
 .wb-credit{margin:14px 2px 4px;color:#a99479;font-size:10px;line-height:1.4}
 .wb-credit a{color:#e4bf6b}
 
-.wb-3d-look,.wb-3d-display{display:flex;flex-direction:column;align-items:stretch;gap:12px}
+.wb-3d-look,.wb-3d-display{display:flex;flex-direction:column;align-items:stretch;gap:8px}
 .wb-3d-look>.wb-3d-mode{display:flex;flex-direction:column;align-items:stretch;gap:8px}
 .wb-3d-ai-legend{display:flex;align-items:center;gap:7px;color:#cbb58e;font-size:9px;line-height:1.5}
 .wb-3d-ai-legend[hidden]{display:none}
 .wb-3d-ai-legend i{flex:1;height:7px;border-radius:4px;background:linear-gradient(90deg,#000004,#51127c,#b73779,#fc8961,#fcfdbf)}
 .wb-3d-adjust{display:grid;grid-template-columns:1fr 35px;gap:7px;color:#cbb58e;font-size:11px;white-space:nowrap}
+.wb-elevation-color-row[hidden]{display:none}
 .wb-3d-adjust input[type=range]{grid-row:2;grid-column:1/-1;width:100%;margin:0;accent-color:#e4bf6b}
 .wb-3d-adjust output{grid-row:1;grid-column:2;min-width:31px;text-align:right;font-size:10px;font-variant-numeric:tabular-nums;color:#f3d68f}
 .wb-3d-elevation{position:relative;border-top:1px solid #765936;padding-top:14px;color:#cbb58e;font-size:11px}

@@ -35,6 +35,8 @@ def view_caption(view):
         if str(view.get("ve_source") or "").startswith("adaptive"):
             ve += " (adaptive)"
         parts.append(ve)
+    if view.get("elevation_color") is not None:
+        parts.append(f"elevation color {float(view['elevation_color']):g}%")
     if view.get("relief_opacity") is not None and float(view["relief_opacity"]) < 100:
         parts.append(f"relief opacity {float(view['relief_opacity']):g}% over satellite imagery")
         if view.get("imagery_attribution"):
