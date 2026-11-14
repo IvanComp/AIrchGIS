@@ -40,3 +40,7 @@ env/
 
 # User uploads, downloads and outputs
 /workspace/
+
+/.playwright-mcp/
+/.pytest_cache/
+/.ruff_cache/

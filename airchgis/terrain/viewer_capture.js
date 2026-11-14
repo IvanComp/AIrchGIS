@@ -28,6 +28,7 @@ imageryCredit.hidden = true;
 document.body.appendChild(imageryCredit);
 const terrainObjects = scene.children.filter(object => object.isMesh || object.isPoints || object.isLine || object.isGroup);
 for (const object of terrainObjects) object.scale.z = 1 / Z_EXAGGERATION;
+fitTerrainView(1);
 const contrastUniform = {value: viewerDisplay.contrast / 50};
 const brightnessUniform = {value: viewerDisplay.brightness / 100};
 let viewerDirty = true;

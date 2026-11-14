@@ -9,7 +9,7 @@ Date of the plan: 14 November 2026.
 2. Sensitivity = largest share of the area to check: low 0.5%, medium 1% (default), high 2%. A pixel also needs a score
    of at least 5.5, and an area a mean score of at least 8.0 / 7.5 / 7.0, so that natural terrain gives no priority area.
 3. NumPy/SciPy only; no scikit-learn. Isolation Forest stays as optional future work.
-4. 3D: "AI relief" mode after Cloud 3, "Show AI priorities" toggle in the other modes, adaptive vertical exaggeration
+4. 3D: "AI Relief" mode after Cloud 3, "Show AI priorities" toggle in the other modes, adaptive vertical exaggeration
    available but off by default, up to 5 "views worth looking at", PNG/PDF captions record them.
 5. Known features: upload (CSV/GeoJSON) under Advanced with the AUC / precision at k report; paper numbers are \todo.
 6. Data on disk (0.5/1/5 m set, the UK sample): internal checks only, never named in the paper.
@@ -39,7 +39,7 @@ Date of the plan: 14 November 2026.
 4. Test di fattibilità (preliminare) su un terreno sintetico con fossato, tumulo e strada sotto pendenza e rumore. L'AI ottiene AUC 0.99 contro 0.80 della migliore vista RVT singola, 0.76 di VAT e 0.59 di e3MSTP. I falsi positivi, a parità di feature trovate (80%), scendono dal 44–67% allo 0.7% dell'area.
 5. Su un DTM reale a 1 m l'indice di visibilità sale a 7.0 contro 5.1 (SLRM), 2.2 (VAT) e 2.4 (e3MSTP). Ma ho scoperto che quell'indice si può "ingannare": una fusione che lo ottimizza arriva a 18 e non trova le feature. Quindi nel paper l'indice di visibilità da solo non basta: servono AUC sui siti noti e il giudizio degli esperti.
 6. L'AI mette in evidenza anche cose moderne (edifici, scoli, bordi dei campi, aratura) e i bordi o le giunture delle tile. Per questo è sempre mostrata accanto alla vista RVT, mai al suo posto.
-7. Per il 3D propongo: un nuovo modo "AI relief" accanto a Original e Cloud 1–3 (la mappa drappeggiata sul rilievo), luce automatica scelta per ogni area prioritaria, e una lista di 3–5 "viste da guardare" catturabili in PNG/PDF.
+7. Per il 3D propongo: un nuovo modo "AI Relief" accanto a Original e Cloud 1–3 (la mappa drappeggiata sul rilievo), luce automatica scelta per ogni area prioritaria, e una lista di 3–5 "viste da guardare" catturabili in PNG/PDF.
 8. Dipendenze: solo NumPy e SciPy, già installati. Niente GPU e niente download. Tempo su 2000×2000 px: circa 10 s per l'AI, più circa 18 s per le viste RVT, picco di memoria circa 1.9 GB.
 9. Lavoro stimato: 2–3 sessioni (modulo, tool con provenance, interfaccia, 3D, test, help, README, paper).
 10. Prima di procedere mi servono le risposte alle domande della sezione 9.
@@ -224,7 +224,7 @@ Everything is deterministic for a given input and seed, and is recorded by the t
 
 The AI output joins the existing modes; it never replaces them.
 
-- **New mode "AI relief"**, after Cloud 3. It uses the Original geometry (true heights). The colour is the AI score: a dark-to-bright colormap multiplied by the existing hillshade, with the priority areas outlined. A second option drapes the AI score on Cloud 3 for small features. The caption says: "colour = unusual relief (AI), priorities to check, not site probability".
+- **New mode "AI Relief"**, after Cloud 3. It uses the Original geometry (true heights). The colour is the AI score: a dark-to-bright colormap multiplied by the existing hillshade, with the priority areas outlined. A second option drapes the AI score on Cloud 3 for small features. The caption says: "colour = unusual relief (AI), priorities to check, not site probability".
 - **Drape in the other modes.** A toggle "Show AI priorities" adds the outlined priority areas to Original and Cloud 1–3.
 - **Adaptive vertical exaggeration** (optional, default off; the current automatic exaggeration stays). It is chosen so that the typical height of the priority features (their SLRM amplitude) is visible against their width, clipped to 1–5. It is always printed in the caption.
 - **Automatic lighting per priority.** Hillshade contrast inside each priority area is computed for 16 sun azimuths. The azimuth with the highest contrast is used when the user jumps to that area. This uses the same RVT hillshade, so it is reproducible.
@@ -267,9 +267,9 @@ The AI output joins the existing modes; it never replaces them.
 - **In the paper** (not changed in this step), the plan is:
   - title and contributions: add one item, "an unsupervised, explainable 'unusual relief' layer computed from a multi-scale RVT stack, shown in 2D and 3D as priorities to check";
   - a new methods subsection with the formulas of section 4;
-  - the 3D Analysis subsection: the new AI relief mode and views worth looking at;
+  - the 3D Analysis subsection: the new AI Relief mode and views worth looking at;
   - an evaluation design with the baselines, metrics, stability and ablation above;
-  - figure placeholders: before/after, AI map next to VAT and e3MSTP, the 3D AI relief view;
+  - figure placeholders: before/after, AI map next to VAT and e3MSTP, the 3D AI Relief view;
   - `\todo` for all numbers that need real data;
   - the discussion: modern features and artefacts, and the visibility-index caveat.
 
@@ -278,7 +278,7 @@ The AI output joins the existing modes; it never replaces them.
 1. `airchgis/ai/unusual_relief.py`: the feature stack, the local standardization, the robust model, the score, priorities and explanations. `airchgis/ai/views3d.py`: lighting, cameras and the adaptive exaggeration. About 400 lines.
 2. Tools `unusual_relief` and `ai_priorities` in `gis/tools.py`, with provenance and fixed seeds, so the downloaded script reproduces them.
 3. Map panel entry, layer, before/after, result sentence and details table (`workbench.js`, `workbench.py`).
-4. 3D: the AI relief mode and drape in `lads_preview.py`, the priority list and camera jumps in the viewer, and caption fields in `viewer_capture.js` and `view_export.py`.
+4. 3D: the AI Relief mode and drape in `lads_preview.py`, the priority list and camera jumps in the viewer, and caption fields in `viewer_capture.js` and `view_export.py`.
 5. Tests on synthetic terrain:
    - the ditch, mound and road are recovered better than the best single RVT view and VAT (AUC and FPR@80);
    - no priority areas beyond the requested share on natural terrain, and none at all above a high threshold;
@@ -295,7 +295,7 @@ Estimate: 2–3 working sessions. No new dependencies.
 1. Is method A, "Unusual relief (AI)", unsupervised anomaly detection on the RVT stack, approved as the AI contribution? Is the name fine?
 2. Is sensitivity as "share of the area to review" (0.5 / 1 / 2%) acceptable, instead of an abstract threshold?
 3. May I install scikit-learn (about 40–45 MB) for an Isolation Forest ablation, or should I stay NumPy/SciPy only?
-4. 3D: is the new mode "AI relief" plus the "Show AI priorities" toggle in the other modes fine? Should adaptive exaggeration be on or off by default?
+4. 3D: is the new mode "AI Relief" plus the "Show AI priorities" toggle in the other modes fine? Should adaptive exaggeration be on or off by default?
 5. Do you have known features (CSV/GeoJSON of points or polygons) for at least one area, so that AUC and precision at k can be measured? Without them the paper can only report synthetic and label-free results.
 6. Stability across resolutions: may I use the 0.5/1/5 m dataset still on disk as an internal check, or do you prefer to provide your own dataset for the paper?
 7. Should the existing hidden `best_view` and `fused` code stay hidden, become baselines only, or be removed?

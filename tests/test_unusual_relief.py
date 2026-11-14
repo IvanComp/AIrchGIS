@@ -131,7 +131,7 @@ class WorkbenchTests(unittest.TestCase):
         def view3d():
             grids.append(lads_preview.build_browser_terrain_grid(
                 wb.dem, wb.profile, wb.crs, target_crs=None, cloud_preprocess_key="ai_relief", ai=wb.ai_result))
-            return "<html>AI relief</html>"
+            return "<html>AI Relief</html>"
 
         with patch("airchgis.workbench.run_unusual_relief", wraps=run_unusual_relief) as analyse:
             for nonce in ("first", "again"):
@@ -179,7 +179,7 @@ class ThreeDTests(unittest.TestCase):
 
     def test_ai_relief_mode_colours_by_score_and_lists_views(self):
         g = self.grid("ai_relief", ai=self.ai)
-        self.assertEqual(g["mode_label"], "AI relief")
+        self.assertEqual(g["mode_label"], "AI Relief")
         self.assertTrue(g["ai_shown"])
         self.assertTrue(1 <= len(g["ai_views"]) <= self.lp.AI_MAX_VIEWS)
         outline = np.all(g["colors"] == np.array(self.lp.AI_OUTLINE_RGB, dtype=np.uint8), axis=-1)
@@ -224,11 +224,11 @@ class ThreeDTests(unittest.TestCase):
         for view in g["ai_views"]:
             self.assertTrue(view["interpretation"])
             self.assertIn("relief_m", view)
-        self.assertIn('const MODE_LABEL = "AI relief"', html)
-        cap = view_caption({"mode_label": "AI relief", "render_mode": "mesh", "ai_shown": True, "ai_width_m": 5.0,
+        self.assertIn('const MODE_LABEL = "AI Relief"', html)
+        cap = view_caption({"mode_label": "AI Relief", "render_mode": "mesh", "ai_shown": True, "ai_width_m": 5.0,
                             "ai_view": {"label": "Area 1", "light_azimuth": 90}, "vertical_exaggeration": 2.0,
                             "ve_source": "adaptive (from the height and width of the priority features)"})
-        self.assertIn("AI relief mode", cap)
+        self.assertIn("AI Relief mode", cap)
         self.assertIn("Area 1", cap)
         self.assertIn("not sites", cap)
         self.assertIn("(adaptive)", cap)

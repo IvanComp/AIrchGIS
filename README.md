@@ -73,16 +73,16 @@ The docked **RVT workspace** keeps the map visible while changing parameters. Li
 
 | Control | Behavior |
 |---|---|
-| **View** | Original, Cloud 1 (points), Cloud 2 (surface, wireframe and points), Cloud 3 (enhanced local relief), or AI relief |
+| **View** | Original, Cloud 1 (points), Cloud 2 (surface, wireframe and points), Cloud 3 (enhanced local relief), or AI Relief |
 | **Relief view** | Live opacity from 100% relief to 0% satellite imagery draped on the same terrain |
 | **Contrast** | 0–100%, initially **65%** |
 | **Brightness** | 0–100%, initially **40%** |
-| **Vertical exaggeration** | Initially **×1**, preserving true proportions; adjustable up to the terrain's **Auto** value |
+| **Vertical Boost** | Initially **×1**, preserving true proportions; adjustable up to the terrain's **Auto** value |
 
 Satellite imagery follows the terrain grid and is clipped to its valid triangles. NoData areas are omitted, and the background stays transparent. Cloud 3 enhances local relief and therefore changes displayed elevations; original terrain elevations remain available for data export.
 
 <p align="center">
-  <img src="docs/assets/screenshot-3d.png" alt="AI relief in the 3D viewer, with anomaly labels beside their markers, settings on the right and export icons below" width="1000">
+  <img src="docs/assets/screenshot-3d.png" alt="AI Relief in the 3D viewer, with anomaly labels beside their markers, settings on the right and export icons below" width="1000">
 </p>
 
 <details>
@@ -106,7 +106,7 @@ Rendering and image capture use the highest supported resolution up to an 8192-p
 
 **Find hidden features (AI)** reads several RVT views together to identify terrain forms that differ from their surroundings. Feature width and sensitivity control the analysis; advanced settings include a random seed and known-feature inputs. The method uses local relief descriptors and a robust statistical model of usual terrain. It does not download a pretrained model or require a GPU for the analysis.
 
-The result adds a score layer and anomaly outlines alongside the relief view. Selecting **AI relief** in 3D runs the analysis automatically when needed and reuses existing results.
+The result adds a score layer and anomaly outlines alongside the relief view. Selecting **AI Relief** in 3D runs the analysis automatically when needed and reuses existing results.
 
 Anomaly labels sit near their terrain markers and follow camera rotation. Hover a label or marker to show its dimensions, local relief and a possible morphological interpretation. Click to focus the camera on it. Interpretations describe shapes compatible with the measured relief; they do not establish an archaeological origin. Modern earthworks, natural forms and data artifacts can also be anomalous.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from html import escape
 from pathlib import Path
 
@@ -23,109 +24,155 @@ VIEWS = [
     ("Local Dominance", "How much each point rises above its surroundings.", "Low mounds and barrows on flat ground."),
     ("CRIM", "Colour relief image map combining slope and openness.", "Terrain forms with slope and relative position in one image."),
     ("e4MSTP (RGB)", "Enhanced multi-scale topographic position.", "Colour interpretation of terrain at several scales."),
-    ("e3MSTP (RGB)", "Colour blend of several views.", "A rich all-in-one view for archaeology."),
+    ("e3MSTP (RGB)", "Colour blend of several views.", "Comparing several relief descriptors in one colour view."),
 ]
 
 
 SECTIONS = [
-    ("overview", "What is AIrchGIS?", """
-        <p>AIrchGIS is a research tool for examining digital terrain models and LiDAR point clouds.
-        It generates relief visualizations and displays the results on an interactive map.</p>
-        <p>Upload terrain data, set the visualization parameters and compare the resulting layers.
-        Outputs include GeoTIFF rasters, publication figures and open 3D data.</p>
-        <p class="ag-note">Terrain anomalies require interpretation. A visible feature is not, by itself, evidence of an archaeological site.</p>
-        <p>Relief visualizations are computed with <a href="https://github.com/EarthObservation/RVT_py" target="_blank" rel="noopener">RVT_py</a>, the Relief Visualization Toolbox in Python (ZRC SAZU and University of Ljubljana, Apache License 2.0). Please cite RVT_py and its publications when you use these visualizations.</p>"""),
-    ("input", "Upload a digital terrain model", """
-        <p>Load a <strong>GeoTIFF or ASCII grid</strong>, a ZIP archive of raster tiles, or a <strong>LAS/LAZ point cloud</strong>.
-        The upload accepts multiple files, up to 4 GB per file.</p>
-        <ul><li>Raster files need a coordinate system and georeferencing to appear on the map. Several tiles in the same coordinate system are joined; tiles in a different system, and smoothed copies (<code>*_prep*</code>), are left out with a note.</li>
-        <li>Point clouds are turned into a terrain model automatically (see <strong>Pre-processing</strong>).</li>
-        <li>Terrain in geographic coordinates (degrees) is reprojected to its UTM zone, so that all sizes are in metres.</li>
-        <li>Surface models (DSM) are not used: AIrchGIS works on the bare-earth terrain.</li></ul>
-        <p>Once the data are loaded, the map opens with a Hillshade layer at 315°. Use <strong>Home</strong> in the top bar to return to upload.</p>"""),
-    ("preprocessing", "Pre-processing: from your file to the terrain on the map", """
-        <p>The <strong>Pre-processing</strong> card at the top of the tools lists every step that was applied, with one line and a few measures each. All steps are recorded in the script.</p>
-        <ul><li><strong>Point clouds:</strong> the ground class (class 2) is used when the file has it, and the card reports the share of ground points; isolated points are removed (statistical outlier removal); the ground-point density gives a <em>suggested cell size</em> (about one ground point per cell); the terrain is interpolated with <em>TIN</em> (linear, the default), <em>IDW</em>, <em>mean per cell</em> or <em>lowest point</em>. Without a ground class, all points are used and the card says so: in vegetated areas a ground filter would be needed.</li>
-        <li><strong>Terrain rasters:</strong> joined tiles, coordinate system and cell size, zero fill treated as no data, check of the elevation values (a warning if the units look wrong), small voids inside the survey filled, optional resampling to a coarser cell, and an artifact check (banding, spikes) that measures but does not change the terrain.</li>
-        <li><strong>Change the pre-processing</strong> lets you choose another interpolation, cell size or option and run it again, to see how these choices change what the relief views show.</li></ul>
-        <p>The <strong>Resolution check</strong> card tells whether features of a given width can be seen at the cell size of your terrain.</p>"""),
-    ("workflow", "Preprocessing and visualization", """
-        <ol><li><strong>Load and prepare the terrain.</strong> Point clouds are converted to a terrain raster; geographic data are reprojected as needed.</li>
-        <li><strong>Create relief views.</strong> Select a method in the Tools panel, adjust its main parameter and choose <strong>Add to the map</strong>.</li>
-        <li><strong>Compare the results.</strong> Toggle layers or change their opacity.</li></ol>
-        <p>For hillshade and anisotropic sky-view factor, the light direction is set with a slider.
-        Other methods expose a search radius where applicable. Try more than one method: different visualizations emphasize different terrain forms.</p>"""),
-    ("relief", "Relief views", """
-        <p>Choose a method according to the terrain forms and feature sizes you want to examine.
-        Directional lighting can hide features aligned with the light; compare it with methods that do not depend on a single light direction.</p>
-        {views_table}"""),
-    ("ai", "How the AI works: Find hidden features", """
-        <p><strong>Find hidden features (AI)</strong> in Visualization tools reads several RVT views of your terrain together and marks the places whose relief does not look like the rest of the same terrain. It only re-analyses the measured terrain: it does not add detail, does not generate terrain and does not use data from other places.</p>
-        <ol class="ag-ai-flow">
-          <li><b>RVT views</b><span>sky-view factor, positive and negative openness, local relief model, slope, two band-pass filters, at the feature width you type</span></li>
-          <li><b>Compare with the neighbourhood</b><span>each view relative to the terrain around it</span></li>
-          <li><b>Learn the usual relief</b><span>a statistical model of what this terrain usually looks like, from a random sample of it</span></li>
-          <li><b>Score</b><span>how far each place is from the usual relief</span></li>
-          <li><b>Priorities to check</b><span>the most unusual places, numbered, with the views that drive each one</span></li>
-        </ol>
-        <ul><li><strong>Two settings:</strong> the <em>feature width</em> (the size of what you look for) and the <em>sensitivity</em>, the largest share of the area to check (low 0.5%, medium 1%, high 2%). A place is listed only if it is also clearly unusual, so a uniform natural terrain can give no priority at all. Under <em>Advanced</em>: the random seed and your known features.</li>
-        <li><strong>What it shows:</strong> a score layer (dark = usual, bright = unusual) and numbered outlines, always next to the relief view and never instead of it. <em>Before / after</em> switches the AI layers off and on. Each area has one sentence, for example “a linear, sunken form, about 60 m long and 4 m wide, below the local trend”, and the RVT views that contributed most.</li>
-        <li><strong>How much to trust it:</strong> the areas are <em>priorities to check, not sites</em>. Modern features (drains, banks, buildings, ploughing) and data artefacts (tile seams, interpolation facets) are unusual too and will show up. Without known features the app cannot tell how well it works on your terrain. Load known features (CSV or GeoJSON) under Advanced: the result then reports the AUC of the AI layer and of each RVT view, VAT and e3MSTP, and how many priority areas fall on known features. If the AI layer does not beat the RVT views, the app says so.</li>
-        <li><strong>Reproducible:</strong> the same terrain, settings and seed give the same result, and the step is in the downloaded script.</li>
-        <li><strong>In 3D:</strong> the <em>AI relief</em> mode colours the true terrain by the score with the areas outlined; Anomaly outlines also appear in the other modes once the analysis is available. Anomaly labels follow their terrain markers as the view rotates. Hover a label or marker to show its dimensions, local relief and a possible morphological interpretation on the right. Click to focus the camera on that area. PDF and PNG captures record these choices in their caption.</li></ul>"""),
-    ("rvt", "Full RVT workspace", """
-        <p>Open <strong>Visualization tools → Open RVT workspace</strong> on the map. The controls dock beside the map so the terrain remains visible and interactive. AIrchGIS exposes all 148 public operations in the pinned RVT_py version, including every operation parameter.</p>
-        <ul><li><strong>Operations:</strong> search visualizations, image transformations, composition objects, default settings, raster I/O and tiled processing. Select automatic inputs, library defaults, custom values, None or a previous result. Required inputs have an asterisk.</li>
-        <li><strong>Settings:</strong> edit the public fields on RVT settings and composition objects.</li>
-        <li><strong>Compositions:</strong> render VAT, Combined VAT, Prismatic openness and City with terrain profiles. For a custom composition, create a BlenderCombination, add layers and run Render all images.</li>
-        <li><strong>Inputs &amp; results:</strong> import rasters, configuration files or arrays, inspect results and download files or a session archive.</li>
-        <li><strong>Batch:</strong> process selected raster files with the operation and parameters chosen under Operations. Tiled processing operations calculate large rasters in blocks.</li></ul>
-        <p><strong>Live preview</strong> updates the map automatically after parameter changes, including the light-direction sliders. Calculations use the loaded terrain resolution; processing time depends on the method and data size. The latest change waits if a calculation is already running. Live previews replace one temporary result; <strong>Keep result</strong> retains outputs for later work. File and object actions require <strong>Run operation</strong>.</p>
-        <p>Results remain available as inputs to later operations. Show a band or RGB result on the map; applying it replaces the current Relief view. Arrays on another grid remain available for processing and download.</p>
-        <p>The session archive contains files, arrays, object fields, grid metadata and operation history. It does not automatically restore an interactive session. Processing uses local memory unless a tiled operation is selected. Browser downloads are limited to 200 MB; larger files remain at the local location reported by the app.</p>
-        <p>Algorithms and RVT configuration presets come from <a href="https://github.com/EarthObservation/RVT_py" target="_blank" rel="noopener noreferrer">RVT_py</a>, pinned to commit bab109c. Private helpers and the library’s notebook interfaces are outside this operation catalogue.</p>"""),
-    ("resolution", "Data quality and resolution", """
-        <p>The resolution and quality of the source terrain determine which features can be examined.
-        A finer grid created from sparse points does not recover missing terrain detail.</p>
-        <p>Compare several relief methods and light directions. Features may be obscured by directional shading, vegetation or artefacts in the source data.</p>
-        <p><strong>Stronger contrast</strong> changes the display of a layer. It does not increase spatial resolution.</p>"""),
-    ("map", "The map", """
+    ("overview", "Start with the terrain", """
+        <p>AIrchGIS helps examine digital terrain models and LiDAR point clouds through relief views, map comparison and interactive 3D analysis. Relief calculations use <a href="https://github.com/EarthObservation/RVT_py" target="_blank" rel="noopener noreferrer">RVT_py</a>.</p>
+        <div class="ag-workflow-grid">
+          <a href="#ag-input"><span>01</span><h3>Load</h3><p>Upload a terrain file or open a bundled use case.</p></a>
+          <a href="#ag-workflow"><span>02</span><h3>Inspect</h3><p>Compare relief methods, light directions and the satellite image.</p></a>
+          <a href="#ag-export"><span>03</span><h3>Export</h3><p>Save numerical layers, the current 3D view or full terrain data.</p></a>
+        </div>
+        <p class="ag-note">Start with a bundled use case to follow the examples below. Screenshots use Colle San Mauro; the same controls work with uploaded terrain.</p>"""),
+    ("input", "Load a terrain model", """
+        <p>Use <strong>Upload</strong> for GeoTIFF, ASCII grid, ZIP archives of raster tiles or LAS/LAZ point clouds. Multiple files are supported, up to 4 GB per file.</p>
+        {upload_image}
+        <ul><li><strong>Rasters:</strong> coordinates and a coordinate system are needed to place the terrain on the map. Compatible tiles are joined; excluded inputs are reported.</li>
+        <li><strong>Point clouds:</strong> ground-class points are used when available, then interpolated into a terrain model. Without a ground class, vegetation and buildings may remain in the result.</li>
+        <li><strong>Geographic coordinates:</strong> the app converts degrees to a metric UTM grid for terrain calculations.</li></ul>
+        <div class="ag-example"><span class="ag-example-label">Try it</span><h3>Open a use case</h3><p>Choose <strong>Colle San Mauro</strong> on the upload screen. The map opens with a hillshade already applied. Choose <strong>Home</strong> to return and try Montedoglio or Betterton.</p></div>"""),
+    ("preprocessing", "Check the prepared terrain", """
+        <p>In <strong>Visualization tools → Pre-processing</strong>, read the recorded steps before interpreting the terrain.</p>
+        <ul><li>Check the coordinate system, cell size and elevation range.</li>
+        <li>For point clouds, check ground classification, point density and the chosen interpolation. TIN is the default; IDW, mean-per-cell and lowest-point gridding are also available.</li>
+        <li>Small interior gaps may be filled. Large missing areas and the exterior of the survey remain outside the surface.</li>
+        <li>The artifact check measures banding and spikes. These can also produce apparent anomalies.</li></ul>
+        <p><strong>Change the pre-processing</strong> reruns preparation with different settings and records the changes in the session script.</p>
+        <div class="ag-example"><span class="ag-example-label">Resolution example</span><h3>A 5 m feature on two grids</h3><p>On a <strong>1 m grid</strong>, a feature 5 m wide spans about five cells. On a <strong>5 m grid</strong>, it spans only one cell. Enlarging the image or increasing contrast cannot recover its missing shape. Use <strong>Resolution check</strong> with the width you want to examine.</p></div>"""),
+    ("map", "Read the map and its layers", """
+        {map_image}
         <div class="ag-tool-grid">
-        <div><h3>Tools and layers</h3><p>Layers appear first in the right panel, followed by Visualization tools with quick relief views and the full RVT workspace. The arrow on its edge hides or restores the panel.</p></div>
-        <div><h3>Layer comparison</h3><p>Open or close Layers to access Place, Base map and the current Relief view. Each level has visibility and opacity controls; relief results also provide contrast and GeoTIFF download. Disabling Base map also disables Place.</p></div>
-        <div><h3>Distance and coordinates</h3><p>The left controls provide zoom, full screen and two-point distance measurement. Select a point to read UTM coordinates and terrain elevation, then open it in Google Earth.</p></div>
-        <div><h3>Terrain relief</h3><p>The 3D toggle tilts the basemap over global terrain. Use 3D Analysis at the top right to inspect the uploaded terrain.</p></div></div>"""),
-    ("export", "Export, compare and discover", """
-        <p><strong>3D Analysis</strong> includes Original, Cloud 1 (points), Cloud 2 (surface, wireframe and points), Cloud 3 (enhanced local relief) and AI relief (terrain coloured by the AI score). Selecting AI relief runs the analysis automatically if no result is available, using the feature width and sensitivity set in Visualization tools. Existing results are reused. The view starts at ×1 vertical exaggeration (true proportions). Display controls are grouped on the right; icon buttons at the bottom right download PDF, PNG, LAZ, PLY and glTF. Select the mode under Terrain rendering. Relief view opacity blends from 100% relief to 0% satellite imagery on the same terrain, clipped to its valid extent. Image exports preserve the current blend. Cloud 3 modifies displayed elevations; image downloads reproduce the selected rendering; 3D data downloads retain the current terrain grid.</p>
-        <ul><li><strong>GeoTIFF:</strong> download individual result layers from their layer options.</li>
-        <li><strong>PDF or PNG figure:</strong> position the terrain in 3D Analysis and press PDF or PNG in the toolbar. The image keeps the current rotation, zoom, pan and rendering mode, at high resolution. No camera or export-quality settings are required. No background gives PNG a transparent background and preserves an alpha mask in PDF. Contrast and Brightness beside View run from 0 to 100, with defaults of 50 and 40, without changing terrain data. Rendering quality is set automatically to the highest supported resolution; higher rendering resolution does not create additional terrain detail.</li>
-        <li><strong>Open 3D data:</strong> press LAZ, PLY or glTF in the 3D toolbar. Each download uses the full current terrain grid without point subsampling or mesh decimation.</li></ul>
-        <p>LAZ compression is included. glTF downloads as a binary .glb. Georeferencing metadata remains available in the generated files or their sidecars.</p>
-        <p>For a figure, position the terrain as needed before downloading: PDF and PNG capture the interactive scene itself. Images render up to an 8192-pixel longest side, subject to graphics-device limits and a 32-million-pixel budget; the viewer’s terrain grid still determines geometric detail.</p>"""),
-    ("questions", "Practical questions and limits", """
+          <div><h3>Layers</h3><p><strong>Place</strong>, <strong>Base map</strong> and <strong>Relief view</strong> have visibility switches and opacity sliders. Turning Base map off also turns Place off.</p></div>
+          <div><h3>Visualization tools</h3><p>Prepare terrain, run the resolution check, choose relief methods or open the full RVT workspace. The panel-edge arrow hides or restores these controls.</p></div>
+          <div><h3>Measurements</h3><p>The left controls provide zoom, full screen, distance measurement and coordinate/elevation queries.</p></div>
+          <div><h3>Two different 3D views</h3><p>The map's <strong>3D</strong> toggle tilts the global basemap terrain. <strong>3D Analysis</strong> opens the terrain loaded into AIrchGIS.</p></div>
+        </div>
+        <div class="ag-example"><span class="ag-example-label">Try it</span><h3>Compare a landform with the satellite image</h3><ol><li>Keep <strong>Base map</strong> enabled.</li><li>Lower <strong>Relief view</strong> opacity from 100% toward 0%.</li><li>Check whether the shape coincides with a present-day track, field edge or other visible feature.</li></ol></div>"""),
+    ("workflow", "Compare relief methods", """
+        <p>Open <strong>Visualization tools → Relief types</strong>, select a method, adjust its parameter and choose <strong>Add to the map</strong>. Applying a new type replaces the current Relief view. The initial hillshade uses light direction 315° and sun elevation 45°.</p>
+        <div class="ag-example"><span class="ag-example-label">Try it</span><h3>Check a suspected bank or ditch</h3><ol><li>Inspect it with Hillshade at <strong>315°</strong>.</li><li>Change the light direction to <strong>45°</strong> and compare its visibility.</li><li>Try <strong>Multi-Hillshade</strong> or <strong>Sky-View Factor</strong> to compare it with a view that does not rely on a single illumination direction.</li><li>Try a <strong>Simple Local Relief Model</strong> to separate smaller forms from the broad terrain trend.</li></ol><p>A feature becoming less visible under another light direction does not mean it has disappeared from the data.</p></div>
+        <p>For more detailed parameter control, use the <a href="#ag-rvt">RVT workspace</a> with live preview. Stronger contrast changes the display, not the terrain elevations or spatial resolution.</p>"""),
+    ("relief", "Relief method reference", """
+        <p>Use these descriptions to choose a starting method, then compare it with other views. A visualization emphasizes terrain geometry; it does not determine the origin or date of a feature.</p>
+        {views_table}"""),
+    ("ai", "Read an AI anomaly", """
+        <p><strong>Find hidden features (AI)</strong> combines RVT relief descriptors to find forms that differ from their surroundings. It analyzes the loaded terrain; it does not create extra terrain detail.</p>
+        <ol class="ag-ai-flow">
+          <li><b>Describe</b><span>Read relief at the chosen feature width using several RVT views.</span></li>
+          <li><b>Compare</b><span>Model the usual relief in the surrounding terrain.</span></li>
+          <li><b>Inspect</b><span>Rank unusual forms and outline the anomalies to examine.</span></li>
+        </ol>
+        <p>Set <strong>feature width</strong> and <strong>sensitivity</strong>. Low, medium and high sensitivity cap the flagged share at 0.5%, 1% and 2%; a terrain can still return no anomalies. Advanced settings include the random seed and known-feature inputs.</p>
+        <p>In the map, scores and outlines appear beside the relief view. In <strong>3D Analysis → View → AI Relief</strong>, the analysis runs automatically if needed and existing results are reused. Labels stay near their anomaly markers as the terrain rotates. Hover to read details; click to focus the camera.</p>
+        {ai_image}
+        <div class="ag-example"><span class="ag-example-label">Example from Colle San Mauro</span><h3>Anomaly 2: a raised form</h3><p>With feature width <strong>5 m</strong> and medium sensitivity, the example shows a form about <strong>17.3 × 6.4 m</strong>, with local relief of <strong>+0.27 m</strong>. Its shape is compatible with a mound or built-up platform; a natural rise or spoil heap can have similar relief.</p><p>The dimensions and relief are measurements from this analysis. The interpretation is a morphological hypothesis, not evidence that the form is archaeological. Anomaly numbers can change with data or settings.</p></div>
+        <p>Known features can be loaded as CSV or GeoJSON to compare the result with individual RVT views and VAT/e3MSTP. Without independent reference data, the app cannot establish detection accuracy for the survey. Settings and the random seed are recorded in the downloaded script.</p>"""),
+    ("rvt", "Use the full RVT workspace", """
+        <p>Choose <strong>Visualization tools → Open RVT workspace</strong>. The tools dock beside the map. The pinned RVT_py version exposes <strong>148 public operations</strong>, including their parameters.</p>
+        <div class="ag-tool-grid">
+          <div><h3>Operations and preview</h3><p>Search an operation, use the loaded terrain or a previous result, and change its parameters. <strong>Live preview</strong> updates supported calculations; <strong>Keep result</strong> retains an output.</p></div>
+          <div><h3>Settings and compositions</h3><p>Edit RVT settings or render compositions such as VAT, Combined VAT, Prismatic openness and City. File and object actions require an explicit run.</p></div>
+          <div><h3>Inputs and results</h3><p>Import rasters, configuration files or arrays. Inspect outputs, display a band or RGB result, download files or package a session.</p></div>
+          <div><h3>Batch and tiles</h3><p>Apply an operation to selected raster files. Tiled operations calculate large rasters in blocks.</p></div>
+        </div>
+        <div class="ag-example"><span class="ag-example-label">Try it</span><h3>Adjust the light while keeping the map visible</h3><p>Select the Hillshade operation, enable <strong>Live preview</strong> and change the light direction. Each preview replaces the temporary result. Choose <strong>Keep result</strong> when you want to retain it for further processing.</p></div>
+        <p>Calculations use the loaded grid; speed depends on the operation and terrain size. A session package contains managed files, arrays, settings and history, but does not automatically restore an interactive session.</p>"""),
+    ("export", "Inspect in 3D and export", """
+        <p>Open <strong>3D Analysis</strong>. Drag to rotate and scroll to zoom. The terrain has its own viewport; <strong>View settings</strong> and <strong>EXPORT AS</strong> occupy the separate right column.</p>
+        {terrain_image}
+        <div class="ag-table-wrap"><table><thead><tr><th>Control</th><th>How to use it</th></tr></thead><tbody>
+          <tr><th>View</th><td>Original; Cloud 1 (points); Cloud 2 (surface, wireframe and points); Cloud 3 (enhanced local relief); AI Relief (anomaly scores).</td></tr>
+          <tr><th>Relief view</th><td>100% shows the relief; 0% reveals satellite imagery on the same cropped 3D surface. Intermediate values blend them.</td></tr>
+          <tr><th>Contrast / Brightness</th><td>Both range from 0 to 100. Defaults are <strong>65%</strong> contrast and <strong>40%</strong> brightness. They affect display and images, not numerical terrain data.</td></tr>
+          <tr><th>Vertical Boost</th><td>Starts at <strong>×1</strong>, preserving true proportions. Move toward <strong>Auto</strong> to emphasize relief. At ×2, a 1 m height difference is displayed as 2 m relative to horizontal distances.</td></tr>
+        </tbody></table></div>
+        <details class="ag-visual-example"><summary>Try it: reveal the satellite surface</summary><div><ol><li>Keep the same camera position.</li><li>Move <strong>Relief view</strong> from 100% to 0%.</li><li>Compare the relief with the satellite image. Only the valid terrain surface is shown; the exterior remains transparent.</li></ol>{satellite_image}</div></details>
+        <p class="ag-note"><strong>Cloud 3</strong> enhances local relief and changes displayed elevations. Use <strong>Original</strong> at <strong>×1</strong> when assessing true terrain proportions. Higher image resolution cannot add elevations absent from the terrain grid.</p>
+        <div class="ag-table-wrap"><table><thead><tr><th>Export</th><th>Choose it for</th></tr></thead><tbody>
+          <tr><th>GeoTIFF</th><td>Numerical relief layers for GIS analysis, downloaded from the map's layer options.</td></tr>
+          <tr><th>PDF / PNG</th><td>The current 3D camera, zoom, rendering, opacity and exaggeration, with a transparent background. Maximum supported image quality is automatic.</td></tr>
+          <tr><th>LAZ / PLY / glTF</th><td>The full current terrain grid for other 3D tools, without point subsampling or mesh decimation. glTF downloads as a binary .glb.</td></tr>
+        </tbody></table></div>
+        <div class="ag-example"><span class="ag-example-label">Export example</span><h3>Save a figure</h3><p>Choose the rendering, position the terrain, set the relief opacity and press <strong>PNG</strong> or <strong>PDF</strong> under <strong>EXPORT AS</strong>. The image matches that view. Images render up to an 8192-pixel longest edge, within graphics-device and 32-million-pixel limits; PDF embeds a raster figure.</p></div>"""),
+    ("usecases", "Use cases and references", """
+        <p>The upload screen provides three datasets. <strong>Site &amp; references</strong> in the map gives context for the Italian sites.</p>
+        <div class="ag-case-list">
+          <div><h3>🇮🇹 Colle San Mauro, L'Aquila</h3><p>One original 1000 × 1000 DTM tile. The examples in this guide use this dataset.</p><p>Heinzelmann, M., Jordan, D. &amp; Murer, C. (2010). <em>Amiternum and the upper Aterno valley: a Sabine-Roman town and its territory.</em> Journal of Roman Archaeology 23, 55–83. <a href="https://doi.org/10.1017/S1047759400002300" target="_blank" rel="noopener noreferrer">Read reference</a>.</p></div>
+          <div><h3>🇮🇹 Castello di Montedoglio, Sansepolcro</h3><p>Two adjacent tiles mosaicked into 2000 × 1000 cells without resampling, for inspecting the castle's surrounding terrain.</p><p>Vigotti, L. (2021). <em>Il castello e i possedimenti dei conti di Montedoglio nel 1434.</em> Pagine Altotiberine 70, 181–202. <a href="https://www.researchgate.net/publication/389939665_Il_castello_di_Montedoglio_e_i_possedimenti_dei_Conti_di_Montdoglio_nel_1434" target="_blank" rel="noopener noreferrer">Read reference</a>.</p></div>
+          <div><h3>🇬🇧 Betterton, Oxfordshire</h3><p>Environment Agency native 1 m DTM. Terrain data are licensed under <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener noreferrer">OGL v3.0</a>.</p></div>
+        </div>
+        <p>RVT algorithms are provided by <a href="https://github.com/EarthObservation/RVT_py" target="_blank" rel="noopener noreferrer">RVT_py</a> (ZRC SAZU and University of Ljubljana, Apache License 2.0), pinned to commit bab109c. Cite RVT_py and the relevant method publications when using its visualizations.</p>"""),
+    ("questions", "Practical questions", """
         <div class="ag-faq">
-        <details><summary>Which visualization should I start with?</summary><p>The initial Hillshade uses 315°. There is no universally best light direction: features parallel to illumination may be hidden. Compare several directions, Multi-Hillshade, sky-view factor or a local relief model. Change the light direction to check features that may be hidden by directional shading.</p></details>
-        <details><summary>Does AIrchGIS identify archaeological sites?</summary><p>No. Relief views help you inspect terrain forms, and Find hidden features (AI) lists places to check first, not sites. Interpret anomalies alongside other evidence and, where appropriate, field observations.</p></details>
-        <details><summary>Do uploaded data leave my computer?</summary><p>Terrain processing runs locally. Internet access is needed for basemap imagery, geographic labels and global terrain tiles. Opening Google Earth passes the selected coordinates to that service.</p></details>
-        <details><summary>Why does a file fail to open?</summary><p>Check its coordinate system, georeferencing and file contents. For large terrain models, try fewer tiles or a smaller area. Available memory can limit the size of an analysis.</p></details>
-        <details><summary>Are the use cases available?</summary><p>Betterton, Oxfordshire, UK opens the native Environment Agency DTM from the LidarMap UK comparison area, licensed under OGL v3.0. Colle San Mauro and Castello di Montedoglio, Sansepolcro, Italy open the supplied DTM datasets as the first two cases; Betterton is third. The Site &amp; references section in the map provides context and bibliographic references for both Italian sites.</p></details>
+          <details><summary>Which light direction is best?</summary><p>There is no universally best direction. Compare 315° with another direction and check a non-directional method. Directional shading can hide forms aligned with the light.</p></details>
+          <details><summary>Does contrast improve terrain resolution?</summary><p>No. It changes tonal differences in the display. Source resolution, point density and data quality determine which terrain forms are present.</p></details>
+          <details><summary>Does an AI anomaly mean an archaeological site?</summary><p>No. It identifies unusual relief. Its possible interpretation must be checked against imagery, survey context and independent evidence.</p></details>
+          <details><summary>Why is part of the terrain missing?</summary><p>NoData and large boundary-connected fill regions are excluded from the 3D surface. Check the input coverage and preparation log before treating an edge as a real landform.</p></details>
+          <details><summary>What stays local?</summary><p>Terrain processing runs locally. Basemap imagery, place labels and global terrain tiles require internet access. Opening an external coordinate link passes that location to the external service.</p></details>
+          <details><summary>What if a file or operation is too large?</summary><p>Check georeferencing and input contents first. Reduce the study area or tile count, or use a tiled RVT operation. Processing uses local memory. Browser downloads are limited to 200 MB; larger outputs remain at the local location reported by the app.</p></details>
+          <details><summary>Can I reproduce the processing?</summary><p>Use the map's <strong>Script</strong> card to download the recorded Python steps. RVT workspace packages retain managed inputs, outputs, settings and operation history.</p></details>
         </div>"""),
 ]
+
+@st.cache_data(show_spinner=False)
+def screenshot_uri(path, modified):
+    return "data:image/png;base64," + base64.b64encode(Path(path).read_bytes()).decode("ascii")
+
+
+def screenshot_markup(name, section, alt, caption):
+    path = Path(__file__).resolve().parents[1] / "docs" / "assets" / name
+    uri = screenshot_uri(str(path), path.stat().st_mtime_ns)
+    ident = "ag-shot-" + name.removeprefix("screenshot-").removesuffix(".png")
+    return (f'<figure class="ag-figure" id="{ident}">'
+            f'<a class="ag-figure-close" href="#ag-{section}" aria-label="Close enlarged screenshot">Close image ×</a>'
+            f'<a class="ag-figure-open" href="#{ident}" aria-label="Enlarge screenshot: {escape(alt, quote=True)}">'
+            f'<img src="{uri}" alt="{escape(alt, quote=True)}" width="1440" height="900" loading="lazy" decoding="async"></a>'
+            f'<figcaption>{escape(caption)}<small>Click image to enlarge</small></figcaption></figure>')
 
 
 def guide_markup():
     rows = "".join(f"<tr><th scope='row'>{escape(n)}</th><td>{escape(w)}</td><td>{escape(u)}</td></tr>" for n, w, u in VIEWS)
     table = ("<div class='ag-table-wrap'><table><thead><tr><th>View</th><th>What it shows</th><th>Use it for</th></tr></thead>"
              f"<tbody>{rows}</tbody></table></div>")
+    replacements = {
+        "views_table": table,
+        "upload_image": screenshot_markup("screenshot-upload.png", "input", "Upload screen and bundled use cases",
+                                            "Load a file or choose one of the three bundled terrains."),
+        "map_image": screenshot_markup("screenshot-map.png", "map", "Colle San Mauro on the map with layers and preprocessing",
+                                         "Colle San Mauro: hillshade over satellite imagery, with the preparation log on the right."),
+        "ai_image": screenshot_markup("screenshot-3d-anomaly-info.png", "ai", "Anomaly 2 details in the Colle San Mauro 3D view",
+                                        "Hover an anomaly label to read measurements and its possible morphological interpretation."),
+        "terrain_image": screenshot_markup("screenshot-3d.png", "export", "3D AI Relief with settings and export controls",
+                                             "The 3D terrain has its own viewport, with View settings and EXPORT AS on the right."),
+        "satellite_image": screenshot_markup("screenshot-3d-satellite.png", "export", "Satellite imagery draped on the cropped 3D terrain",
+                                               "Relief view at 0%: satellite imagery follows the same valid terrain surface."),
+    }
+    def content(body):
+        for key, value in replacements.items():
+            body = body.replace("{" + key + "}", value)
+        return body
     links = "".join(f'<a href="#ag-{key}"><span>{i:02}</span>{escape(title)}</a>'
                     for i, (key, title, _) in enumerate(SECTIONS, 1))
     cards = "".join(f'<section id="ag-{key}" class="ag-info-card{ " ag-intro" if i == 1 else ""}">'
                     f'<span class="ag-section-number">{i:02}</span><h2>{escape(title)}</h2>'
-                    f'{body.replace("{views_table}", table)}</section>'
+                    f'{content(body)}</section>'
                     for i, (key, title, body) in enumerate(SECTIONS, 1))
     return ('<div class="ag-guide"><section class="ag-guide-hero">'
             '<div class="ag-orbits" aria-hidden="true"><i></i><i></i><i></i></div>'
-            '<h1>How AIrchGIS works</h1><p>A guide to terrain input, relief visualization, map comparison and research exports.</p></section>'
+            '<h1>How AIrchGIS works</h1><p>Follow a terrain from upload to relief comparison, anomaly inspection and research export. Includes examples from Colle San Mauro.</p></section>'
             '<div class="ag-guide-layout"><aside class="ag-toc" aria-label="Guide contents">'
             f'<p>In this guide</p><nav>{links}</nav></aside><article class="ag-guide-content">{cards}</article></div></div>')
 

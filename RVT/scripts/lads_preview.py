@@ -121,7 +121,7 @@ CLOUD_PREPROCESS_PROFILES = {
         "point_opacity": 0.26,
     },
     "ai_relief": {
-        "label": "AI relief",
+        "label": "AI Relief",
         "description": "True terrain heights coloured by the Unusual relief (AI) score, with the priority areas outlined. Priorities to check, not sites.",
         "sanitize": False,
         "sigma": 0.0,
@@ -1615,9 +1615,9 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
     dx = _mean_abs_step(x, axis=1)
     dy = _mean_abs_step(y, axis=0)
     if cfg.get("needs_ai") and ai is None:
-        raise RuntimeError("AI relief shows the result of «Find hidden features (AI)», which has not been run on this "
+        raise RuntimeError("AI Relief shows the result of «Find hidden features (AI)», which has not been run on this "
                            "terrain yet. Close the 3D window, run it from Visualization tools on the map, then choose "
-                           "AI relief again.")
+                           "AI Relief again.")
     ai_views, ai_outline, ai_ve = [], None, None
     if ai is not None:
         ai_score, ai_outline, ai_views, ai_ve = _ai_overlay(ai, rows, cols, x, y, z_fill, valid, step)
@@ -1716,6 +1716,7 @@ def write_browser_cloud_viewer(
 ):
     output_html = Path(output_html)
     output_html.parent.mkdir(parents=True, exist_ok=True)
+    anomaly_layout_js = Path(__file__).with_name("anomaly_labels.js").read_text(encoding="utf-8")
 
     x = np.asarray(terrain["x"], dtype=np.float32)
     y = np.asarray(terrain["y"], dtype=np.float32)
@@ -2014,6 +2015,7 @@ def write_browser_cloud_viewer(
   <div id="errorbox" style="display:none; position:fixed; right:14px; top:14px; max-width:520px; padding:12px 14px; background:rgba(120,0,0,0.9); color:#fff; font:13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; z-index:30; border-radius:10px; white-space:pre-wrap;"></div>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script>{anomaly_layout_js}</script>
   <script>
     function showError(message) {{
       const box = document.getElementById('errorbox');
@@ -2414,8 +2416,23 @@ def write_browser_cloud_viewer(
     controls.target.set(0, 0, 0);
     camera.near = 0.1;
     camera.far = Math.max(200000, radius * 80);
-    camera.position.set(radius * 1.22, -radius * 1.18, radius * 0.92);
-    camera.lookAt(0, 0, 0);
+    function fitTerrainView(exaggeration = Z_EXAGGERATION) {{
+      const direction = new THREE.Vector3(1.22, -1.18, .92).normalize();
+      const right = new THREE.Vector3().crossVectors(camera.up, direction).normalize();
+      const up = new THREE.Vector3().crossVectors(direction, right).normalize();
+      const tangent = Math.tan(camera.fov * Math.PI / 360);
+      let distance = 1;
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {{
+        const corner = new THREE.Vector3(sx * spanX / 2, sy * spanY / 2, sz * spanZ * exaggeration / Z_EXAGGERATION / 2);
+        distance = Math.max(distance, corner.dot(direction) + 1.22 * Math.max(Math.abs(corner.dot(up)) / tangent,
+          Math.abs(corner.dot(right)) / (tangent * camera.aspect)));
+      }}
+      controls.target.set(0, 0, 0);
+      camera.position.copy(direction.multiplyScalar(distance));
+      camera.lookAt(controls.target);
+      controls.update();
+    }}
+    fitTerrainView();
     camera.updateProjectionMatrix();
     controls.update();
 
@@ -2425,9 +2442,7 @@ def write_browser_cloud_viewer(
       if (!v) {{
         window.AI_CURRENT = null;
         dir1.position.copy(defaultLight);
-        controls.target.set(0, 0, 0);
-        camera.position.set(radius * 1.22, -radius * 1.18, radius * 0.92);
-        controls.update();
+        fitTerrainView(typeof viewerDisplay === 'undefined' ? Z_EXAGGERATION : viewerDisplay.verticalExaggeration);
         if (typeof viewerDirty !== 'undefined') viewerDirty = true;
         return;
       }}
@@ -2445,18 +2460,26 @@ def write_browser_cloud_viewer(
     const aiCallouts = document.getElementById('ai-callouts');
     const aiHoverInfo = document.getElementById('ai-hover-info');
     const aiLinks = [];
+    const aiLabelLayout = new globalThis.AnomalyLabelLayout();
+    let aiHideTimer = null;
     function showAiInfo(index) {{
       const v = AI_VIEWS[index];
       if (!aiHoverInfo || !v) return;
+      clearTimeout(aiHideTimer);
+      aiLabelLayout.pinned = v.id;
       aiHoverInfo.querySelector('h3').textContent = v.label;
       aiHoverInfo.querySelector('.ai-observation').textContent = v.note;
       aiHoverInfo.querySelector('.ai-interpretation').textContent = v.interpretation;
       aiHoverInfo.querySelector('.ai-dimensions').textContent = `${{v.length_m.toFixed(1)}} × ${{v.width_m.toFixed(1)}} m · Local relief ${{v.relief_m.toFixed(2)}} m`;
       aiHoverInfo.hidden = false;
     }}
-    function hideAiInfo() {{ if (aiHoverInfo) aiHoverInfo.hidden = true; }}
+    function hideAiInfo() {{
+      clearTimeout(aiHideTimer);
+      aiHideTimer = setTimeout(() => {{ if (aiHoverInfo) aiHoverInfo.hidden = true;aiLabelLayout.pinned = null; }}, 100);
+    }}
+    controls.addEventListener('start', () => {{ aiLabelLayout.pinned = null;hideAiInfo(); }});
     for (const button of document.querySelectorAll('.ai-view-btn')) {{
-      button.addEventListener('click', () => goToAiView(Number(button.dataset.aiView)));
+      button.addEventListener('click', () => {{ aiLabelLayout.pinned = null;hideAiInfo();goToAiView(Number(button.dataset.aiView)); }});
       const index = Number(button.dataset.aiView);
       if (index < 0 || !aiCallouts) continue;
       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -2480,7 +2503,7 @@ def write_browser_cloud_viewer(
       if (!aiCallouts) return;
       camera.updateMatrixWorld();
       const ratio = typeof viewerDisplay === 'undefined' ? 1 : viewerDisplay.verticalExaggeration / Z_EXAGGERATION;
-      const placed = [];
+      const visibleLinks = [];
       for (const link of aiLinks) {{
         const v = link.view;
         const p = new THREE.Vector3(v.target[0] - centerX, v.target[1] - centerY, (v.target[2] * Z_EXAGGERATION - centerZ) * ratio).project(camera);
@@ -2489,24 +2512,14 @@ def write_browser_cloud_viewer(
         link.button.style.display = visible ? '' : 'none';
         if (!visible) continue;
         const x = (p.x + 1) * window.innerWidth / 2, y = (1 - p.y) * window.innerHeight / 2;
-        const w = link.button.offsetWidth, h = link.button.offsetHeight;
-        let best = null;
-        for (const gap of [14, 36, 60, 84]) {{
-          for (const offset of [[gap, -h - gap], [gap, gap], [-w - gap, -h - gap], [-w - gap, gap], [gap, -h / 2], [-w - gap, -h / 2], [-w / 2, -h - gap], [-w / 2, gap]]) {{
-            const left = Math.max(4, Math.min(window.innerWidth - w - 4, x + offset[0]));
-            const top = Math.max(4, Math.min(window.innerHeight - h - 4, y + offset[1]));
-            let penalty = Math.hypot(left + w / 2 - x, top + h / 2 - y);
-            for (const box of placed) {{
-              penalty += Math.max(0, Math.min(left + w + 5, box.right) - Math.max(left - 5, box.left)) *
-                         Math.max(0, Math.min(top + h + 5, box.bottom) - Math.max(top - 5, box.top)) * 100;
-            }}
-            if (!best || penalty < best.penalty) best = {{left, top, penalty}};
-          }}
-        }}
+        visibleLinks.push({{id:v.id,x,y,width:link.button.offsetWidth,height:link.button.offsetHeight,link}});
+      }}
+      const layout = aiLabelLayout.place(visibleLinks, window.innerWidth, window.innerHeight);
+      for (let i = 0; i < layout.length; i++) {{
+        const best = layout[i], item = visibleLinks[i], link = item.link, x = item.x, y = item.y;
         link.button.style.left = best.left + 'px';link.button.style.top = best.top + 'px';
-        placed.push({{left:best.left,top:best.top,right:best.left + w,bottom:best.top + h}});
-        const anchorX = Math.max(best.left, Math.min(best.left + w, x));
-        const anchorY = Math.max(best.top, Math.min(best.top + h, y));
+        const anchorX = Math.max(best.left, Math.min(best.right, x));
+        const anchorY = Math.max(best.top, Math.min(best.bottom, y));
         link.line.setAttribute('x1', anchorX);link.line.setAttribute('y1', anchorY);
         link.line.setAttribute('x2', x);link.line.setAttribute('y2', y);
         link.dot.setAttribute('cx', x);link.dot.setAttribute('cy', y);

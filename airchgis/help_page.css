@@ -1,6 +1,6 @@
 .ag-guide { --ag-gold:#e4bf6b; --ag-muted:#c1b29d; color:#fffaf0; font-family:Inter,Arial,sans-serif; }
 .ag-guide * { box-sizing:border-box; }
-.ag-guide-hero { min-height:290px; padding:64px 24px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; position:relative; overflow:hidden; border:1px solid rgba(228,191,107,.12); border-radius:12px; background:radial-gradient(ellipse at 50% 40%,rgba(171,112,40,.14),transparent 60%),linear-gradient(180deg,#21140c,#160e09); }
+.ag-guide-hero { min-height:220px; padding:44px 24px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; position:relative; overflow:hidden; border:1px solid rgba(228,191,107,.12); border-radius:12px; background:radial-gradient(ellipse at 50% 40%,rgba(171,112,40,.14),transparent 60%),linear-gradient(180deg,#21140c,#160e09); }
 .ag-orbits { position:absolute; inset:0; pointer-events:none; opacity:.5; }
 .ag-orbits i { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); border:1px solid rgba(228,191,107,.13); border-radius:50%; }
 .ag-orbits i:nth-child(1) { width:440px; height:140px; }
@@ -49,3 +49,33 @@
 .ag-ai-flow li:not(:last-child)::after { content:"→"; position:absolute; right:-10px; top:50%; transform:translateY(-50%); color:#f3d68f; }
 .ag-ai-flow b { display:inline; }
 .ag-ai-flow span { display:block; margin-top:4px; font-size:.86em; opacity:.8; }
+.ag-guide a { color:#edcf85; text-underline-offset:3px; }
+.ag-workflow-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:22px 0; }
+.ag-workflow-grid>a { padding:18px 15px;border:1px solid #765936;border-radius:9px;background:rgba(228,191,107,.035);text-decoration:none; }
+.ag-workflow-grid>a:hover { border-color:var(--ag-gold);background:rgba(228,191,107,.075); }
+.ag-workflow-grid span { display:block;margin-bottom:10px;color:#b88b49;font-size:12px; }
+.ag-workflow-grid h3 { font-size:17px; }
+.ag-workflow-grid p { font-size:12px;line-height:1.65; }
+.ag-figure { margin:24px 0;border:1px solid #765936;border-radius:10px;overflow:hidden;background:#120c08; }
+.ag-figure-open { display:block;cursor:zoom-in; }
+.ag-figure img { display:block;width:100%;height:auto; }
+.ag-figure figcaption { padding:12px 15px;color:#c1b29d;font-size:11px;line-height:1.65; }
+.ag-figure figcaption small { display:block;margin-top:5px;color:#e4bf6b;font-size:10px; }
+.ag-figure-close { display:none; }
+.ag-figure:target { position:fixed;inset:20px;z-index:10000;margin:0;padding:16px;display:flex;flex-direction:column;box-shadow:0 0 0 100vmax #000b;overflow:auto; }
+.ag-figure:target .ag-figure-close { display:block;align-self:flex-end;padding:6px 10px;margin-bottom:10px;font-size:13px;text-decoration:none;border:1px solid #765936;border-radius:6px; }
+.ag-figure:target .ag-figure-open { display:flex;align-items:center;justify-content:center;min-height:0;flex:1;pointer-events:none; }
+.ag-figure:target img { width:auto;max-width:100%;max-height:calc(100vh - 165px);object-fit:contain; }
+.ag-figure:target figcaption { flex-shrink:0; }
+.ag-figure:target figcaption small { display:none; }
+.ag-example { margin:22px 0;padding:20px 22px;border:1px solid #765936;border-left:3px solid var(--ag-gold);border-radius:8px;background:rgba(228,191,107,.045); }
+.ag-example-label { display:block;margin-bottom:10px;color:#e4bf6b;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase; }
+.ag-example h3 { margin-bottom:10px; }
+.ag-example p,.ag-example li { font-size:12px; }
+.ag-visual-example { margin:24px 0;border:1px solid #765936;border-radius:9px;background:rgba(228,191,107,.035); }
+.ag-visual-example>summary { cursor:pointer;padding:16px 18px;color:#edcf85;font-size:13px;font-weight:600; }
+.ag-visual-example>div { padding:0 18px 16px; }
+.ag-case-list { display:grid;gap:14px;margin:20px 0; }
+.ag-case-list>div { padding:18px;border:1px solid #62472c;border-radius:8px;background:rgba(228,191,107,.025); }
+.ag-case-list p { font-size:12px; }
+@media(max-width:600px) { .ag-workflow-grid { grid-template-columns:1fr; } .ag-figure:target { inset:8px;padding:10px; } .ag-example { padding:17px; } }
