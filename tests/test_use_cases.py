@@ -59,6 +59,25 @@ class UseCaseTests(unittest.TestCase):
         self.assertTrue(wb.layers)
         self.assertEqual(str(wb.crs), "EPSG:27700")
 
+    def test_italian_cases_open_georeferenced_terrain_with_references(self):
+        for case in CASES[:2]:
+            with self.subTest(case=case["id"]):
+                metadata = json.loads((case["path"].parent / "provenance.json").read_text())
+                self.assertEqual(hashlib.sha256(case["path"].read_bytes()).hexdigest(), metadata["sha256"])
+                with rasterio.open(case["path"]) as src:
+                    self.assertEqual(src.crs.to_epsg(), 4326)
+                    self.assertEqual(list(src.shape), metadata["shape"])
+                    self.assertEqual(src.nodata, -9999)
+                app = AppTest.from_file(APP, default_timeout=120).run()
+                app.button(key="as_case_" + case["id"]).click().run()
+                self.assertFalse(app.exception)
+                wb = app.session_state["as_wb"]
+                self.assertTrue(wb.crs.is_projected)
+                self.assertTrue(wb.layers)
+                self.assertEqual(wb.use_case["label"], case["label"])
+                self.assertTrue(wb.use_case["references"][0]["url"].startswith("https://"))
+                self.assertEqual(wb.use_case["summary"], case["summary"])
+
 
 if __name__ == "__main__":
     unittest.main()

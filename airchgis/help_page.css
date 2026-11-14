@@ -43,3 +43,9 @@
 .ag-faq details p { padding:0 18px 17px; margin:0; }
 @media(max-width:850px) { .ag-guide-layout { grid-template-columns:1fr; gap:24px; padding-top:28px; } .ag-toc { position:static; max-height:none; } .ag-toc nav { grid-template-columns:1fr 1fr; } }
 @media(max-width:600px) { .ag-guide-hero { min-height:240px; padding:44px 20px; } .ag-info-card { padding:26px 20px; } .ag-toc nav,.ag-tool-grid { grid-template-columns:1fr; } .ag-table-wrap { margin:0 -8px; } }
+.ag-ai-flow { list-style:none; counter-reset:aiflow; display:flex; flex-wrap:wrap; gap:10px; padding:0; margin:18px 0; }
+.ag-ai-flow li { counter-increment:aiflow; flex:1 1 150px; position:relative; padding:12px 14px; border:1px solid rgba(243,214,143,.35); border-radius:12px; background:rgba(243,214,143,.06); }
+.ag-ai-flow li::before { content:counter(aiflow); display:inline-block; margin-right:6px; color:#f3d68f; font-weight:700; }
+.ag-ai-flow li:not(:last-child)::after { content:"→"; position:absolute; right:-10px; top:50%; transform:translateY(-50%); color:#f3d68f; }
+.ag-ai-flow b { display:inline; }
+.ag-ai-flow span { display:block; margin-top:4px; font-size:.86em; opacity:.8; }

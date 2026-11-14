@@ -15,6 +15,14 @@ from airchgis.terrain.export3d import export_terrain_3d, read_glb, read_ply
 
 
 class CurrentViewExportTests(unittest.TestCase):
+    def test_satellite_blend_is_recorded_in_the_export_caption(self):
+        from airchgis.terrain.view_export import view_caption
+
+        caption = view_caption({"relief_opacity": 35, "imagery_attribution": "© Esri, Maxar, Earthstar Geographics"})
+        self.assertIn("relief opacity 35% over satellite imagery", caption)
+        self.assertIn("Esri", caption)
+        self.assertNotIn("satellite imagery", view_caption({"relief_opacity": 100}))
+
     def test_png_preserves_exact_captured_pixels_and_camera(self):
         pixels = np.zeros((60, 80, 3), dtype=np.uint8)
         pixels[5:25, 35:70] = [213, 157, 48]

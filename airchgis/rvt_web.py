@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import logging
 import math
 import sys
 import zipfile
@@ -103,6 +104,10 @@ def render_start_page(core):
         wb = Workbench(data.dtm, data.profile["transform"], data.crs, data.profile, name=clean_name(name),
                        log=st.session_state.get("as_prep_log") if source.get("kind") == "points" else None,
                        source=source, notes=st.session_state.get("as_prep_notes"))
+        from airchgis.use_cases import CASES
+
+        case = next((c for c in CASES if example_path and str(c["path"]) == example_path), None)
+        wb.use_case = {k: case[k] for k in ("label", "summary", "terrain", "references") if k in case} if case else None
         if source.get("kind") == "points":
             wb.prep["source_steps"] = source.get("steps", [])
             wb.prep["grid"] = {"method": "tin", "cell_m": 0.0, "ground_only": True, "remove_outliers": True}
@@ -130,6 +135,8 @@ def workbench_tools(core):
         "cloud2": "Continuous surface with wireframe and point overlays.",
         "cloud3": "Enhanced local relief at a %g m scale. Displayed elevations are modified to emphasize small terrain "
                   "forms." % core.CLOUD_PREPROCESS_PROFILES.get("cloud3", {}).get("relief_sigma_m", 18.0),
+        "ai_relief": "Terrain coloured by the Unusual relief (AI) score, with priority areas outlined. The analysis "
+                     "runs automatically on first use. Priorities to check, not sites.",
     }
     profiles = [{"id": key, "name": core.CLOUD_PREPROCESS_PROFILES[key]["label"], "description": description}
                 for key, description in descriptions.items() if key in core.CLOUD_PREPROCESS_PROFILES]
@@ -154,6 +161,7 @@ def render_workbench(core, wb):
 
     data = st.session_state.get("as_wb_data")
     args = wb.map_args(workbench_tools(core))
+    args["use_case"] = getattr(wb, "use_case", None)
     args["basemap"] = satellite_template(core, "Current")
     event = map_workbench(args, key="as_map_workbench", height=780)
     event = st.session_state.pop("as_wb_nav_event", None) or event
@@ -176,7 +184,12 @@ def render_workbench(core, wb):
         from types import SimpleNamespace
 
         terrain = SimpleNamespace(dtm=wb.dem, profile=wb.profile, crs=wb.crs)
-        html_path, _las, _meta = build_3d_cloud(core, terrain, {"source_mode": "Upload", "source_payload": {}}, cloud_key)
+        prev = getattr(wb, "ai3d", None) or {}
+        wb.ai3d = {"show": bool(event.get("ai_show", prev.get("show", True))),
+                   "adaptive_ve": False}
+        html_path, _las, _meta = build_3d_cloud(core, terrain, {"source_mode": "Upload", "source_payload": {}}, cloud_key,
+                                                ai=getattr(wb, "ai_result", None), show_ai=wb.ai3d["show"],
+                                                adaptive_ve=wb.ai3d["adaptive_ve"])
         html = Path(html_path).read_text(encoding="utf-8")
         capture = (Path(__file__).with_name("terrain") / "viewer_capture.js").read_text(encoding="utf-8")
         html = html.replace("      renderer.render(scene, camera);", "      renderInteractive();")
@@ -1220,7 +1233,7 @@ def render_research_export(data, params):
                                key="as_rvt_export3d_dl")
 
 
-def build_3d_cloud(core, data, params, cloud_key):
+def build_3d_cloud(core, data, params, cloud_key, ai=None, show_ai=False, adaptive_ve=False):
     dtm, profile, crs = current_loaded_dtm_surface(data)
     out_dir = RVT_OUTPUT_DIR / "3d_cloud"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1243,7 +1256,18 @@ def build_3d_cloud(core, data, params, cloud_key):
         target_crs=core.LADS_TARGET_CRS,
         max_side=min(core.LADS_BROWSER_MAX_SIDE, WEB_3D_BROWSER_MAX_SIDE),
         cloud_preprocess_key=cloud_key,
+        ai=ai,
+        show_ai=show_ai,
+        adaptive_ve=adaptive_ve,
     )
+    from airchgis.terrain.imagery import ATTRIBUTION, drape_imagery
+
+    try:
+        terrain_grid["basemap_colors"] = drape_imagery(profile, crs, dtm.shape, terrain_grid,
+                                                       satellite_template(core, "Current"))
+        terrain_grid["basemap_attribution"] = ATTRIBUTION
+    except Exception as exc:
+        logging.getLogger(__name__).warning("3D satellite imagery unavailable: %s", exc)
     core.write_browser_cloud_viewer(
         html_path,
         terrain_grid,

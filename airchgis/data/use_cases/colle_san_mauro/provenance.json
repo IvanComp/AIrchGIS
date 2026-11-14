@@ -1,0 +1,22 @@
+{
+  "source": "User-provided DTM archive",
+  "archive": "DTM_ColleSanMauro.zip",
+  "archive_sha256": "72d791f856530513cd7353d301e67bab81d656f537f5e83a61e9a6ea0f1e5661",
+  "tiles": [
+    "abruzzo_140_D42401329_0101_DTM.tiff"
+  ],
+  "tile_selection_csv": "idSessione;canale;prodotto;layer;fid;tavola;regione;contratto;orientation\r\na57f0b634d4c4fec8c8c4445bdc8ac90;PST2;LIDAR_2014;dtm_1x1;192110;D42401329_0101;Abruzzo;140;\r\n",
+  "source_metadata_note": "Uno o pi\u00f9 metadati richiesti non sono disponibili.\n- URN: urn:li:dataset:(urn:li:dataPlatform:postgres,gis.pst.abruzzo_griglia_1x1_dtm,PROD)@sim_catalog - errore: DAB ha restituito HTTP 403 - risposta: <html>  <head>     <meta http-equiv=\"Content-Type\" content=\"text/html; charset=windows-1252\">      <title>Fortinet Secure DNS Service Portal</title> </head>  <body>     <center>         <h2>Web Page Blocked!</h2>         You have tried to access a web page which belongs to a category that is blocked\n",
+  "license": "Not specified in supplied archive",
+  "crs": "EPSG:4326",
+  "resolution_degrees": [
+    1e-05,
+    1e-05
+  ],
+  "shape": [
+    1000,
+    1000
+  ],
+  "processing": "Native grid retained; adjacent tiles mosaicked without resampling; original NoData retained; lossless compression. Reprojected to metric coordinates by the app on load.",
+  "sha256": "1528a4f4fade567258744ede649cfaa8bdb29045639bc6df20a6061e3f963128"
+}

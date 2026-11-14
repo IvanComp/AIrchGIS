@@ -812,6 +812,47 @@ register(Tool("prepare_dtm", "Prepare a raster terrain model for relief visualiz
               _native_prepare_dtm, None, ("input",), tags=("lidar", "preprocessing")))
 
 
+def _native_unusual_relief(input, output, target_feature_width_m, sensitivity="medium", seed=0, output_areas=None,
+                           sites=None, compare=True):
+    from airchgis.ai import unusual_relief as ur
+
+    arr, prof = _read(input)
+    res = _res(prof)
+    score, labels, areas, report = ur.unusual_relief(arr, res, target_feature_width_m, sensitivity=sensitivity,
+                                                     seed=int(seed), transform=prof["transform"])
+    out = {"output": _write(output, score, prof), **_json_safe(report), "areas": _json_safe(areas)}
+    lab_path = str(Path(output).with_name(Path(output).stem + "_priorities.tif"))
+    out["priorities"] = _write(lab_path, np.where(labels > 0, labels, np.nan).astype(np.float32), prof)
+    if output_areas:
+        crs = prof.get("crs")
+        feats = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [a["x"], a["y"]]},
+                  "properties": {k: a[k] for k in ("id", "mean_score", "area_m2", "length_m", "width_m", "bearing_deg",
+                                                   "relief_m", "note")}} for a in areas]
+        Path(output_areas).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_areas).write_text(json.dumps({"type": "FeatureCollection", "name": "priorities to check",
+                                                  "crs": {"type": "name", "properties": {"name": crs.to_string() if crs else None}},
+                                                  "features": _json_safe(feats)}, indent=2), encoding="utf-8")
+        out["output_areas"] = str(output_areas)
+    px = _site_pixels(sites, prof)
+    if px:
+        out["known_features"] = _json_safe(ur.compare_with_rvt(arr, res, target_feature_width_m, score, labels, px,
+                                                               blends=bool(compare)))
+    return out
+
+
+register(Tool("unusual_relief", "Unusual relief (AI): an unsupervised model of the usual relief of this area, read through several RVT views (sky-view factor, openness, local relief model, slope, two band-pass filters) at the scale of the features sought. Gives each pixel a score and lists the most unusual places as priorities to check. They are not sites: modern features and data artefacts can be unusual too. Deterministic for a given seed.",
+              _schema(["input", "output", "target_feature_width_m"], input=_IN,
+                      output={"type": "string", "description": "Path of the score GeoTIFF; the priority areas are written next to it."},
+                      target_feature_width_m=_WIDTH_REQ,
+                      sensitivity={"type": "string", "enum": ["low", "medium", "high"], "default": "medium",
+                                   "description": "Largest share of the area to check: low 0.5%, medium 1%, high 2%."},
+                      seed={"type": "integer", "minimum": 0, "default": 0, "description": "Random seed of the sample used to fit the model."},
+                      output_areas={"type": "string", "description": "Optional GeoJSON with one point per priority area and its description."},
+                      sites=_SITES,
+                      compare={"type": "boolean", "default": True, "description": "With known features: also compare with RVT's VAT and e3MSTP blends."}),
+              _native_unusual_relief, None, ("input",), output_keys=("output", "priorities", "output_areas"), tags=("lidar", "ai")))
+
+
 def _guard(tool, params):
     width = params.get("target_feature_width_m")
     if not width or "input" not in params:

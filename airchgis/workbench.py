@@ -46,6 +46,9 @@ class Workbench:
         self.clean_path = None
         self.sites = None
         self.paths = {}
+        self.ai = None
+        self.ai_result = None
+        self.ai3d = {"show": True, "adaptive_ve": False}
 
 
     def harmonize(self, dem, transform, crs, profile, notes=None):
@@ -81,6 +84,7 @@ class Workbench:
         self.n_zero = 0
         self.src_path = None
         self.layers, self.arrays, self.paths = [], {}, {}
+        self.ai, self.ai_result = None, None
         if hasattr(self, "_elev"):
             del self._elev
 
@@ -128,7 +132,7 @@ class Workbench:
     def map_args(self, tools):
         return {"layers": self.layers, "message": self.message if self.message_level in {"warning", "error"} else "", "message_level": self.message_level, "details": self.details, "download": self.download,
                 "view3d": self.view3d, "prep": self.prep_view(), "resolution": self.resolution, "cloud_key": self.cloud_key, "done_nonce": self.done_nonce, "tools": tools, "name": self.name,
-                "elevation": self.elevation(), "sites": bool(self.sites),
+                "elevation": self.elevation(), "sites": bool(self.sites), "ai": self.ai, "ai3d": {**self.ai3d, "available": self.ai_result is not None},
                 "rvt_api": self.rvt_workspace.snapshot() if self.rvt_workspace is not None else None}
 
     def prep_view(self):
@@ -451,6 +455,67 @@ def run_contrast(wb, layer_id, replace=False):
     wb.message = rep["note"]
 
 
+AI_SCORE_RANGE = (2.0, 9.0)
+
+
+def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True):
+    """Unusual relief (AI): score layer and priority outlines, shown next to the relief view, never instead of it."""
+    from airchgis.gis.tools import run_tool
+
+    width = float(width)
+    out_path = OUT_DIR / f"{wb.name}_unusual_relief_{width:g}m.tif"
+    r = run_tool("unusual_relief", log=wb.log, input=wb.input_path(), output=str(out_path), target_feature_width_m=width,
+                 sensitivity=str(sensitivity), seed=int(seed), output_areas=str(out_path.with_suffix(".geojson")),
+                 sites=wb.sites, compare=bool(compare))
+    if r["status"] == "refused":
+        wb.message = r["message"]
+        wb.message_level = "warning"
+        return
+    out = r["outputs"]
+    score = read_raster(out["output"])
+    labels = np.nan_to_num(read_raster(out["priorities"]), nan=0).astype(np.int32)
+    if not any(l["id"] != "ai_score" and l["id"] != "ai_areas" and np.ndim(wb.arrays.get(l["id"])) >= 2 for l in wb.layers):
+        wb.add_layer("before", "Hillshade", "The terrain lit from the north-west, for reference.", hillshade(wb.dem, wb.res),
+                     display_range=(0, 1))
+    wb.add_layer("ai_score", "Unusual relief (AI)", "Bright = the relief does not look like the rest of this terrain when "
+                 "several RVT views are read together. Priorities to check, not sites.", score, opacity=0.75,
+                 cmap="magma", raw=score, hide_others=False, display_range=AI_SCORE_RANGE)
+    edge = (labels > 0) & ~ndimage_erode(labels > 0)
+    wb.add_layer("ai_areas", "Priorities to check (AI)", "Outlines of the most unusual places, numbered as in the list.",
+                 np.where(edge, 1.0, np.nan), opacity=1.0, cmap="cool", hide_others=False, display_range=(0, 1))
+    areas = out.get("areas", [])
+    lonlat = _to_lonlat_points([(a["x"], a["y"]) for a in areas], wb.crs)
+    wb.ai = {"note": out["note"], "width": width, "sensitivity": sensitivity, "seed": int(seed),
+             "flagged_share": out["flagged_share"], "range": list(AI_SCORE_RANGE), "views": out["views"],
+             "areas": [{"id": a["id"], "note": a["note"], "score": round(a["mean_score"], 2),
+                        "drivers": [f"{d['view']} {round(100 * d['share'])}%" for d in a["drivers"]],
+                        "lon": ll[0], "lat": ll[1]} for a, ll in zip(areas[:12], lonlat)],
+             "known": (out.get("known_features") or {}).get("verdict"),
+             "known_rows": (out.get("known_features") or {}).get("rows")}
+    if wb.ai["known"] is None:
+        wb.ai["known"] = ("No known features loaded, so how well this works on your terrain cannot be measured here. "
+                          "Load known features under Advanced to compare it with the RVT views, VAT and e3MSTP.")
+    wb.ai_result = {"score": score, "labels": labels, "areas": areas, "width": width}
+    wb.message = out["note"]
+
+
+def ndimage_erode(mask):
+    from scipy import ndimage
+
+    return ndimage.binary_erosion(mask, iterations=1, border_value=0)
+
+
+def _to_lonlat_points(points, crs):
+    if not points:
+        return []
+    from pyproj import Transformer
+
+    if crs is None:
+        return [(float(x), float(y)) for x, y in points]
+    tr = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+    return [tuple(float(v) for v in tr.transform(x, y)) for x, y in points]
+
+
 def offer_script(wb):
     path = OUT_DIR / f"{wb.name}_steps.py"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -463,7 +528,8 @@ def save_sites(wb, filename, b64):
     path = di.save_upload(Path(filename).name, base64.b64decode(b64), "sites")
     sites = di.read_sites(path)
     wb.sites = str(path)
-    wb.message = f"{len(sites)} known sites loaded: the best view will report how well each view separates them (AUC)."
+    wb.message = (f"{len(sites)} known sites loaded: Find hidden features (AI) will report how well it and each RVT "
+                  "view separate them from the rest (AUC, precision at k).")
 
 
 def handle_event(wb, event, compute=None, core=None, view3d=None):
@@ -511,6 +577,11 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
         elif action == "view3d":
             if view3d is None:
                 raise ValueError("The 3D view is not available here.")
+            if event.get("cloud_key", wb.cloud_key) == "ai_relief" and wb.ai_result is None:
+                run_unusual_relief(wb, **{k: event[k] for k in ("width", "sensitivity", "seed", "compare") if k in event})
+                if wb.ai_result is None:
+                    wb.done_nonce = event.get("nonce")
+                    return None
             wb.view3d = {"id": event.get("nonce"), "html": view3d()}
             wb.message = "3D view of your terrain: drag to rotate, scroll to zoom. Close it with ×."
         elif action == "prepare":
@@ -525,6 +596,8 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
             run_best_view(wb, float(event.get("width") or 4.0))
         elif action == "fused":
             run_fused(wb, event.get("width"))
+        elif action == "unusual_relief":
+            run_unusual_relief(wb, **{k: event[k] for k in ("width", "sensitivity", "seed", "compare") if k in event})
         elif action == "capture3d":
             from airchgis.terrain.view_export import save_current_view
 

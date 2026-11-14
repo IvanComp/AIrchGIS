@@ -7,11 +7,12 @@ function fitHeight(){let height=ARGS?.height||760;try{const top=window.frameElem
 
 let ARGS=null,map=null,initialized=false,pendingNonce=null,lastDownload=null,last3d=null,nonceCounter=0;
 let rvtWorkspace=null,captureRequest=null,captureTimeout=null,viewerReady=false;
-const display3D={background:'black',contrast:50,brightness:40};
-function update3DDisplay(){const toolbar=document.querySelector('.wb-3d-toolbar');if(!toolbar)return;display3D.background=toolbar.querySelector('.wb-no-background').checked?'none':'black';display3D.contrast=Number(toolbar.querySelector('.wb-contrast-3d').value);display3D.brightness=Number(toolbar.querySelector('.wb-brightness-3d').value);toolbar.querySelector('.wb-contrast-readout').textContent=Math.round(display3D.contrast)+'%';toolbar.querySelector('.wb-brightness-readout').textContent=Math.round(display3D.brightness)+'%';if(viewerReady)document.querySelector('.wb-modal iframe').contentWindow.postMessage({type:'airchgis:3d-options',...display3D},'*');}
+const display3D={background:'none',contrast:65,brightness:40,verticalExaggeration:1,reliefOpacity:100};
+let automaticExaggeration=1;
+function update3DDisplay(){const toolbar=document.querySelector('.wb-3d-toolbar');if(!toolbar)return;display3D.contrast=Number(toolbar.querySelector('.wb-contrast-3d').value);display3D.brightness=Number(toolbar.querySelector('.wb-brightness-3d').value);display3D.reliefOpacity=Number(toolbar.querySelector('.wb-relief-opacity-3d').value);toolbar.querySelector('.wb-relief-opacity-readout').textContent=Math.round(display3D.reliefOpacity)+'%';toolbar.querySelector('.wb-contrast-readout').textContent=Math.round(display3D.contrast)+'%';toolbar.querySelector('.wb-brightness-readout').textContent=Math.round(display3D.brightness)+'%';const ve=display3D.verticalExaggeration||automaticExaggeration;toolbar.querySelector('.wb-exaggeration-readout').textContent=Math.abs(ve-automaticExaggeration)<.00001?'Auto':'×'+Number(ve).toFixed(2);if(viewerReady)document.querySelector('.wb-modal iframe').contentWindow.postMessage({type:'airchgis:3d-options',...display3D,controlPanelWidth:0,verticalExaggeration:display3D.verticalExaggeration||automaticExaggeration},'*');}
 function sync3DButtons(){for(const b of document.querySelectorAll('[data-3d-export]'))b.disabled=Boolean(pendingNonce||captureRequest)||(['pdf','png'].includes(b.dataset['3dExport'])&&!viewerReady);}
 function capture3D(format){if(pendingNonce||captureRequest||!viewerReady)return;const id=String(Date.now())+'-'+(++nonceCounter);captureRequest={id,format};document.querySelector('.wb-3d-busy').hidden=false;document.querySelector('.wb-3d-busy').textContent='Preparing '+format.toUpperCase()+'…';sync3DButtons();document.querySelector('.wb-modal iframe').contentWindow.postMessage({type:'airchgis:capture3d',id},'*');captureTimeout=setTimeout(()=>{captureRequest=null;document.querySelector('.wb-3d-busy').hidden=true;showToast('Image export timed out. Try again.');sync3DButtons();},60000);}
-window.addEventListener('message',ev=>{const frame=document.querySelector('.wb-modal iframe');if(!frame||ev.source!==frame.contentWindow)return;const d=ev.data||{};if(d.type==='airchgis:3d-ready'){viewerReady=true;sync3DButtons();update3DDisplay();}else if(d.type==='airchgis:3d-capture'&&captureRequest&&d.id===captureRequest.id){const request=captureRequest;captureRequest=null;clearTimeout(captureTimeout);if(d.error){document.querySelector('.wb-3d-busy').hidden=true;showToast(d.error);sync3DButtons();return;}send({action:'capture3d',fmt:request.format,b64:d.png.split(',')[1],view:d.view});}});
+window.addEventListener('message',ev=>{const frame=document.querySelector('.wb-modal iframe');if(!frame||ev.source!==frame.contentWindow)return;const d=ev.data||{};if(d.type==='airchgis:3d-ready'){viewerReady=true;const opacity=document.querySelector('.wb-relief-opacity-3d');opacity.disabled=!d.basemapAvailable;opacity.parentElement.title=d.basemapAvailable?'100% relief; 0% satellite imagery draped on the terrain.':'Satellite imagery could not be loaded. Reopen the 3D view to retry.';if(!d.basemapAvailable){display3D.reliefOpacity=100;opacity.value=100;}automaticExaggeration=Math.max(1,Number(d.verticalExaggeration)||1);if(display3D.verticalExaggeration!==null)display3D.verticalExaggeration=Math.min(automaticExaggeration,Math.max(1,display3D.verticalExaggeration));const slider=document.querySelector('.wb-exaggeration-3d');slider.max=automaticExaggeration;slider.value=display3D.verticalExaggeration||automaticExaggeration;slider.disabled=automaticExaggeration===1;sync3DButtons();update3DDisplay();}else if(d.type==='airchgis:3d-capture'&&captureRequest&&d.id===captureRequest.id){const request=captureRequest;captureRequest=null;clearTimeout(captureTimeout);if(d.error){document.querySelector('.wb-3d-busy').hidden=true;showToast(d.error);sync3DButtons();return;}send({action:'capture3d',fmt:request.format,b64:d.png.split(',')[1],view:d.view});}});
 const shownLayers=new Map();
 const toast=document.querySelector('.toast');
 const busy=document.querySelector('.wb-busy');
@@ -27,7 +28,7 @@ function send(event){
   rvtWorkspace?.setBusy(true,event.action);
   sync3DButtons();
   document.querySelector('.wb-3d-busy').hidden=document.querySelector('.wb-modal').hidden;
-  document.querySelector('.wb-3d-busy').textContent=event.action==='view3d'?'Preparing 3D view…':'Preparing export…';
+  document.querySelector('.wb-3d-busy').textContent=event.action==='view3d'?(event.cloud_key==='ai_relief'&&!ARGS.ai3d?.available?'Analysing terrain for AI relief…':'Preparing 3D view…'):'Preparing export…';
   document.querySelector('.wb-cloud').disabled=true;
   document.querySelectorAll('.wb-run').forEach(b=>b.disabled=true);
   setValue(event);
@@ -232,16 +233,56 @@ function buildTools(){
   rel.querySelector('[data-act=relief]').addEventListener('click',()=>{const v=views.find(x=>x.id===sel.value)||{};send({action:'relief',replace:true,method:sel.value,value:v.param?Number(rel.querySelector('.wb-param-value').value):null});});
   box.appendChild(rel);
 
+  const ai=el(`<div class="wb-card wb-ai"><h4>Find hidden features (AI)</h4><p>Reads several RVT views together and marks the places whose relief does not look like the rest of this terrain. They are priorities to check, not sites: modern features and data artefacts show up too.</p>
+    <div class="wb-row"><label for="wb-ai-width">Feature width (m)</label><input id="wb-ai-width" type="number" class="wb-ai-width" min="0.5" step="0.5" value="5"></div>
+    <div class="wb-row"><label for="wb-ai-sens">Sensitivity</label><select id="wb-ai-sens" class="wb-ai-sens"><option value="low">Low · check up to 0.5% of the area</option><option value="medium" selected>Medium · up to 1%</option><option value="high">High · up to 2%</option></select></div>
+    <details class="wb-ai-advanced"><summary>Advanced</summary>
+      <div class="wb-row"><label for="wb-ai-seed">Random seed</label><input id="wb-ai-seed" type="number" class="wb-ai-seed" min="0" step="1" value="0"></div>
+      <div class="wb-row"><label><input type="checkbox" class="wb-ai-compare" checked> With known features, also compare with VAT and e3MSTP</label></div>
+      <div class="wb-row"><label for="wb-ai-sites">Known features (CSV or GeoJSON)</label><input id="wb-ai-sites" type="file" class="wb-ai-sites" accept=".csv,.txt,.geojson,.json,.gpkg,.kml,.zip"></div>
+      <p class="wb-ai-sites-state"></p>
+    </details>
+    <button type="button" class="wb-run" data-act="ai">Find hidden features</button>
+    <div class="wb-ai-result" hidden>
+      <p class="wb-ai-note"></p>
+      <div class="wb-ai-legend"><span>usual</span><i></i><span>unusual</span></div>
+      <button type="button" class="wb-ai-compare-btn secondary">Before / after</button>
+      <p class="wb-ai-known"></p>
+      <ol class="wb-ai-areas"></ol>
+    </div></div>`);
+  ai.querySelector('[data-act=ai]').addEventListener('click',()=>send({action:'unusual_relief',width:Number(ai.querySelector('.wb-ai-width').value)||5,
+    sensitivity:ai.querySelector('.wb-ai-sens').value,seed:Number(ai.querySelector('.wb-ai-seed').value)||0,compare:ai.querySelector('.wb-ai-compare').checked}));
+  ai.querySelector('.wb-ai-sites').addEventListener('change',ev=>{const f=ev.target.files[0];if(!f)return;const rd=new FileReader();
+    rd.onload=()=>send({action:'sites',filename:f.name,b64:String(rd.result).split(',')[1]});rd.readAsDataURL(f);});
+  ai.querySelector('.wb-ai-compare-btn').addEventListener('click',()=>{
+    const ids=['ai_score','ai_areas'].filter(id=>map.getLayer('wb-'+id));if(!ids.length)return;
+    const show=!(shownLayers.get(ids[0])||{visible:true}).visible;
+    ids.forEach(id=>{const st=shownLayers.get(id)||{visible:true,opacity:1};st.visible=show;shownLayers.set(id,st);map.setLayoutProperty('wb-'+id,'visibility',show?'visible':'none');});
+    renderLayerCards();showToast(show?'After: with the AI layer':'Before: relief view only');});
+  box.appendChild(ai);
+
   const profiles=tools.cloud_profiles||[];
   const toolbar=document.querySelector('.wb-3d-toolbar');
-  toolbar.innerHTML=`<div class="wb-3d-look"><label class="wb-3d-mode">View <select id="wb-cloud-mode" class="wb-cloud" aria-label="Terrain rendering">${profiles.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select><span class="wb-cloud-help"></span></label><label class="wb-3d-adjust">Contrast <input class="wb-contrast-3d" aria-label="3D contrast" type="range" min="0" max="100" step="1" value="${display3D.contrast}"><output class="wb-contrast-readout">50%</output></label><label class="wb-3d-adjust">Brightness <input class="wb-brightness-3d" aria-label="3D brightness" type="range" min="0" max="100" step="1" value="${display3D.brightness}"><output class="wb-brightness-readout">40%</output></label></div><div class="wb-3d-display"><label class="wb-3d-mode"><input type="checkbox" class="wb-no-background" ${display3D.background==='none'?'checked':''}>No background</label></div><div class="wb-3d-downloads" role="group" aria-label="Download 3D"><span>Download</span><button type="button" data-3d-export="pdf" title="High-resolution PDF of the current view">PDF</button><button type="button" data-3d-export="png" title="High-resolution PNG of the current view">PNG</button><button type="button" data-3d-export="laz" title="Full-resolution georeferenced point cloud">LAZ</button><button type="button" data-3d-export="ply" title="Full-resolution point data">PLY</button><button type="button" data-3d-export="glb" title="Full-resolution terrain mesh">glTF</button></div>`;
-  for(const element of toolbar.querySelectorAll('.wb-contrast-3d,.wb-brightness-3d'))element.addEventListener('input',update3DDisplay);
-  for(const element of toolbar.querySelectorAll('.wb-no-background'))element.addEventListener('change',update3DDisplay);
-  toolbar.querySelector('.wb-cloud').addEventListener('change',ev=>send({action:'view3d',cloud_key:ev.target.value}));
+  toolbar.innerHTML=`<h4>View settings</h4><div class="wb-3d-look"><label class="wb-3d-mode">View <select id="wb-cloud-mode" class="wb-cloud" aria-label="Terrain rendering">${profiles.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select><span class="wb-cloud-help"></span></label><label class="wb-3d-adjust">Relief view <input class="wb-relief-opacity-3d" aria-label="3D Relief view opacity" type="range" min="0" max="100" step="1" value="${display3D.reliefOpacity}" disabled><output class="wb-relief-opacity-readout">${display3D.reliefOpacity}%</output></label><label class="wb-3d-adjust">Contrast <input class="wb-contrast-3d" aria-label="3D contrast" type="range" min="0" max="100" step="1" value="${display3D.contrast}"><output class="wb-contrast-readout">65%</output></label><label class="wb-3d-adjust">Brightness <input class="wb-brightness-3d" aria-label="3D brightness" type="range" min="0" max="100" step="1" value="${display3D.brightness}"><output class="wb-brightness-readout">40%</output></label></div><div class="wb-3d-elevation" title="×1 shows true proportions. Auto emphasizes relief without changing source elevations."><div class="wb-3d-setting-title"><span>Vertical exaggeration</span><output class="wb-exaggeration-readout">×1.00</output></div><div class="wb-3d-elevation-range"><button type="button" class="wb-true-scale" title="Show true proportions">×1</button><input class="wb-exaggeration-3d" aria-label="Vertical exaggeration" type="range" min="1" max="${automaticExaggeration}" step="any" value="${display3D.verticalExaggeration||automaticExaggeration}"><button type="button" class="wb-auto-scale" title="Use the automatic exaggeration calculated for this terrain">Auto</button></div></div><div class="wb-3d-downloads" role="group" aria-label="Export as"><h4>EXPORT AS</h4><button type="button" data-3d-export="pdf" title="High-resolution PDF of the current view">PDF</button><button type="button" data-3d-export="png" title="High-resolution PNG of the current view">PNG</button><button type="button" data-3d-export="laz" title="Full-resolution georeferenced point cloud">LAZ</button><button type="button" data-3d-export="ply" title="Full-resolution point data">PLY</button><button type="button" data-3d-export="glb" title="Full-resolution terrain mesh">glTF</button></div>`;
+  const exaggeration=toolbar.querySelector('.wb-exaggeration-3d');
+  exaggeration.addEventListener('input',()=>{display3D.verticalExaggeration=Number(exaggeration.value);update3DDisplay();});
+  toolbar.querySelector('.wb-true-scale').onclick=()=>{display3D.verticalExaggeration=1;exaggeration.value=1;update3DDisplay();};
+  toolbar.querySelector('.wb-auto-scale').onclick=()=>{display3D.verticalExaggeration=null;exaggeration.value=automaticExaggeration;update3DDisplay();};
+  for(const element of toolbar.querySelectorAll('.wb-contrast-3d,.wb-brightness-3d,.wb-relief-opacity-3d'))element.addEventListener('input',update3DDisplay);
+  const view3dEvent=()=>({action:'view3d',cloud_key:toolbar.querySelector('.wb-cloud').value,ai_show:true,ai_ve:false,width:Number(document.querySelector('.wb-ai-width').value)||5,sensitivity:document.querySelector('.wb-ai-sens').value,seed:Number(document.querySelector('.wb-ai-seed').value)||0,compare:document.querySelector('.wb-ai-compare').checked});
+  toolbar.querySelector('.wb-cloud').addEventListener('change',()=>send(view3dEvent()));
   for(const button of toolbar.querySelectorAll('[data-3d-export]'))button.onclick=()=>{
     const format=button.dataset['3dExport'];
     if(format==='pdf'||format==='png')capture3D(format);else send({action:'research',format});
   };
+  const downloads=toolbar.querySelector('.wb-3d-downloads');
+  const icons={pdf:'<path d="M6 2h8l4 4v8M14 2v5h5M6 2v12M5 18h14M12 14v8m-3-3 3 3 3-3"/>',png:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',laz:'<circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>',ply:'<path d="m12 3 9 17H3L12 3Zm0 0v11m-9 6 9-6 9 6"/><circle cx="12" cy="14" r="1"/>',glb:'<path d="m12 2 9 5v10l-9 5-9-5V7l9-5Zm0 10 9-5M12 12 3 7m9 5v10"/>'};
+  for(const button of downloads.querySelectorAll('button')){
+    const label=button.textContent,format=button.dataset['3dExport'];
+    button.setAttribute('aria-label','Download '+label);
+    button.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[format]}</svg><span>${label}</span>`;
+  }
+  document.querySelector('.wb-modal-content').appendChild(downloads);
   sync3DButtons();
   const sc=el(`<div class="wb-card"><h4>Script</h4><p>Every step of this session (pre-processing, relief views, exports) with its settings and input checksums, as a Python script that repeats it.</p>
     <button type="button" class="wb-run secondary" data-act="script">Download the steps as a Python script</button></div>`);
@@ -262,9 +303,40 @@ function renderPrep(){
   const g=p.grid||{};if(p.kind==='points'){document.querySelector('.wb-pc-method').value=g.method||'tin';}
   const r=ARGS.resolution,out=document.querySelector('.wb-reso-result');
   if(r&&out){out.hidden=false;out.textContent=`${r.message} (cell ${r.cell_m} m)`;out.className='wb-reso-result '+(r.verdict||'');}
+  renderAI();
+}
+function renderAI(){
+  const box=document.querySelector('.wb-ai-result');if(!box)return;
+  const st=document.querySelector('.wb-ai-sites-state');if(st)st.textContent=ARGS.sites?'Known features loaded.':'';
+  const a=ARGS.ai;box.hidden=!a;if(!a)return;
+  box.querySelector('.wb-ai-note').textContent=a.note;
+  box.querySelector('.wb-ai-known').textContent=a.known||'';
+  const list=box.querySelector('.wb-ai-areas');list.innerHTML='';
+  (a.areas||[]).forEach(x=>{const li=document.createElement('li');li.tabIndex=0;li.title='Show on the map';
+    const n=document.createElement('span');n.textContent=x.note;li.appendChild(n);
+    const s=document.createElement('small');s.textContent=`Score ${x.score} · driven by ${x.drivers.join(', ')}`;li.appendChild(s);
+    const go=()=>map&&map.flyTo({center:[x.lon,x.lat],zoom:Math.max(map.getZoom(),17),duration:600});
+    li.addEventListener('click',go);li.addEventListener('keydown',e=>{if(e.key==='Enter')go();});list.appendChild(li);});
+}
+
+function renderSiteInfo(){
+  const box=document.querySelector('.wb-site'),site=ARGS.use_case;
+  box.hidden=!site?.summary;
+  if(box.hidden)return;
+  box.querySelector('.wb-site-title').textContent=site.label;
+  box.querySelector('.wb-site-summary').textContent=site.summary;
+  box.querySelector('.wb-site-terrain').textContent=site.terrain;
+  const refs=box.querySelector('.wb-site-references');refs.replaceChildren();
+  for(const ref of site.references||[]){
+    const p=document.createElement('p'),a=document.createElement('a');
+    a.textContent=ref.citation;a.href=ref.url;a.target='_blank';a.rel='noopener noreferrer';p.append(a);
+    if(ref.pdf){const pdf=document.createElement('a');pdf.textContent='Open paper (PDF)';pdf.href=ref.pdf;pdf.target='_blank';pdf.rel='noopener noreferrer';pdf.className='wb-site-pdf';p.append(pdf);}
+    refs.append(p);
+  }
 }
 
 function update(){
+  renderSiteInfo();
   for(const box of [messageBox,document.querySelector('.wb-3d-message')]){box.hidden=!ARGS.message;box.textContent=ARGS.message||'';box.classList.toggle('error',ARGS.message_level==='error');}
   if(pendingNonce&&ARGS.done_nonce===pendingNonce){pendingNonce=null;busy.hidden=true;document.querySelector('.wb-3d-busy').hidden=true;document.querySelectorAll('.wb-run').forEach(b=>b.disabled=false);document.querySelector('.wb-cloud').disabled=false;rvtWorkspace?.setBusy(false);sync3DButtons();}
   syncLayers();
@@ -274,6 +346,7 @@ function update(){
   cloud.value=ARGS.cloud_key||'original';
   const profile=(ARGS.tools.cloud_profiles||[]).find(p=>p.id===cloud.value);
   document.querySelector('.wb-cloud-help').textContent=profile?profile.description:'';
+  const aiOpt=cloud.querySelector('option[value=ai_relief]');if(aiOpt){aiOpt.disabled=false;aiOpt.textContent='AI relief';}
   const dl=ARGS.download;
   if(dl&&dl.id!==lastDownload){lastDownload=dl.id;const bytes=Uint8Array.from(atob(dl.b64),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:dl.mime}));const a=document.createElement('a');a.href=url;a.download=dl.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);showToast(`Saved: ${dl.filename}`);}
   const v3=ARGS.view3d;

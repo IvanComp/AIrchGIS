@@ -120,7 +120,29 @@ CLOUD_PREPROCESS_PROFILES = {
         "point_size": 1.15,
         "point_opacity": 0.26,
     },
+    "ai_relief": {
+        "label": "AI relief",
+        "description": "True terrain heights coloured by the Unusual relief (AI) score, with the priority areas outlined. Priorities to check, not sites.",
+        "sanitize": False,
+        "sigma": 0.0,
+        "blend": 0.0,
+        "passes": 0,
+        "render_mode": "mesh",
+        "flat_shading": False,
+        "wireframe_overlay": False,
+        "mesh_opacity": 1.0,
+        "relief_sigma_m": 0.0,
+        "relief_gain": 1.0,
+        "show_points": False,
+        "point_stride": 1,
+        "point_size": 0.0,
+        "point_opacity": 0.0,
+        "needs_ai": True,
+    },
 }
+AI_SCORE_RANGE = (2.0, 9.0)
+AI_OUTLINE_RGB = (0, 230, 255)
+AI_MAX_VIEWS = 5
 
 
 def _as_crs_text(crs):
@@ -1314,7 +1336,8 @@ def _grid_spacing(x_arr, y_arr):
     return col_step, row_step
 
 
-def _height_shaded_colors_u8(z_values, valid_mask, dx=1.0, dy=1.0):
+def _height_shaded_colors_u8(z_values, valid_mask, dx=1.0, dy=1.0, color_values=None, cmap="RdYlGn_r", vrange=None):
+    """Colour by height (or by color_values, e.g. a draped analysis layer) multiplied by a hillshade of z."""
     z = np.asarray(z_values, dtype=np.float32)
     valid = np.asarray(valid_mask, dtype=bool)
     if z.ndim != 2:
@@ -1322,14 +1345,21 @@ def _height_shaded_colors_u8(z_values, valid_mask, dx=1.0, dy=1.0):
     if not valid.any():
         return np.zeros(z.shape + (3,), dtype=np.uint8)
 
-    lo = float(np.nanpercentile(z[valid], 2.0))
-    hi = float(np.nanpercentile(z[valid], 98.0))
+    v = z if color_values is None else np.asarray(color_values, dtype=np.float32)
+    ok = valid & np.isfinite(v)
+    if vrange is not None:
+        lo, hi = float(vrange[0]), float(vrange[1])
+    elif ok.any():
+        lo = float(np.nanpercentile(v[ok], 2.0))
+        hi = float(np.nanpercentile(v[ok], 98.0))
+    else:
+        lo, hi = 0.0, 1.0
     if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
-        lo = float(np.nanmin(z[valid]))
-        hi = float(np.nanmax(z[valid]))
+        lo = float(np.nanmin(v[ok])) if ok.any() else 0.0
+        hi = float(np.nanmax(v[ok])) if ok.any() else 1.0
     denom = max(1e-6, hi - lo)
-    norm = np.clip((z - lo) / denom, 0.0, 1.0)
-    base_rgb = colormaps["RdYlGn_r"](norm)[..., :3]
+    norm = np.clip((np.nan_to_num(v, nan=lo) - lo) / denom, 0.0, 1.0)
+    base_rgb = colormaps[cmap](norm)[..., :3]
 
     fill = np.array(z, copy=True)
     fill[~valid] = np.nan
@@ -1436,7 +1466,94 @@ def _browser_terrain_surface(dtm, profile):
     return arr
 
 
-def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS, max_side=LADS_BROWSER_MAX_SIDE, cloud_preprocess_key="cloud1"):
+def _best_light_azimuth(z, valid, rows, cols, ecol, erow, n=16, altitude=35.0):
+    """Sun azimuth (grid frame, 0 = up the rows) giving the strongest hillshade contrast inside a window, and the
+    light direction in local scene coordinates."""
+    r0, r1 = max(0, rows[0]), min(z.shape[0], rows[1] + 1)
+    c0, c1 = max(0, cols[0]), min(z.shape[1], cols[1] + 1)
+    win = np.where(valid[r0:r1, c0:c1], z[r0:r1, c0:c1], np.nan)
+    if win.shape[0] < 3 or win.shape[1] < 3 or not np.isfinite(win).any():
+        az = 315.0
+    else:
+        f = np.where(np.isfinite(win), win, np.nanmedian(win))
+        gy, gx = np.gradient(f, max(1e-6, float(np.hypot(*erow))), max(1e-6, float(np.hypot(*ecol))))
+        slope = np.pi / 2.0 - np.arctan(np.hypot(gx, gy))
+        aspect = np.arctan2(-gx, gy)
+        alt = math.radians(altitude)
+        best, az = -1.0, 315.0
+        for a in np.arange(n) * 360.0 / n:
+            s = np.sin(alt) * np.sin(slope) + np.cos(alt) * np.cos(slope) * np.cos(math.radians(a) - aspect)
+            c = float(np.nanstd(s))
+            if c > best:
+                best, az = c, float(a)
+    a = math.radians(az)
+    ec = np.asarray(ecol, dtype=float) / max(1e-9, float(np.hypot(*ecol)))
+    er = np.asarray(erow, dtype=float) / max(1e-9, float(np.hypot(*erow)))
+    v = math.sin(a) * ec - math.cos(a) * er
+    return az, [float(v[0]), float(v[1]), float(math.tan(math.radians(altitude)))]
+
+
+def _ai_interpretation(area):
+    if abs(float(area.get("relief_m") or 0)) < .01:
+        return "A subtle terrain variation; its origin cannot be distinguished from this relief alone."
+    linear = float(area.get("length_m") or 0) >= 3 * max(.01, float(area.get("width_m") or 0))
+    raised = float(area.get("relief_m") or 0) > 0
+    if linear and raised:
+        return "Possible bank, embankment or raised track. Natural ridges and modern earthworks can have similar relief."
+    if linear:
+        return "Possible ditch, drainage channel or sunken track. Erosion gullies can have similar relief."
+    if raised:
+        return "Possible mound or built-up platform. Natural rises and spoil heaps can have similar relief."
+    return "Possible pit or local hollow. Erosion and modern ground disturbance can have similar relief."
+
+
+def _ai_overlay(ai, rows, cols, x, y, z_fill, valid, res_cells):
+    """Subsample the AI score and priority labels to the 3D grid; outline cells, adaptive exaggeration and the
+    'views worth looking at' (one camera per top priority area, with a light chosen for that area)."""
+    score = np.asarray(ai["score"], dtype=np.float32)[np.ix_(rows, cols)]
+    labels = np.asarray(ai["labels"], dtype=np.int32)[np.ix_(rows, cols)]
+    from scipy import ndimage as _ndi
+
+    inside = labels > 0
+    outline = inside & ~_ndi.binary_erosion(inside, iterations=1, border_value=0)
+    ecol = (float(np.nanmedian(np.diff(x, axis=1))), float(np.nanmedian(np.diff(y, axis=1))))
+    erow = (float(np.nanmedian(np.diff(x, axis=0))), float(np.nanmedian(np.diff(y, axis=0))))
+    views = []
+    for area in (ai.get("areas") or [])[:AI_MAX_VIEWS]:
+        mask = labels == int(area["id"])
+        if not mask.any():
+            ri = int(np.clip(np.searchsorted(rows, area["row"]), 0, len(rows) - 1))
+            ci = int(np.clip(np.searchsorted(cols, area["col"]), 0, len(cols) - 1))
+            mask = np.zeros_like(inside)
+            mask[ri, ci] = True
+        rr, cc = np.nonzero(mask)
+        px, py = x[rr, cc].astype(float), y[rr, cc].astype(float)
+        tx, ty = float(px.mean()), float(py.mean())
+        tz = float(np.nanmean(z_fill[rr, cc]))
+        if px.size >= 3:
+            vals, vecs = np.linalg.eigh(np.cov(np.vstack([px, py])) + 1e-9 * np.eye(2))
+            ux, uy = vecs[:, 1]
+        else:
+            ux, uy = 1.0, 0.0
+        length = float(area.get("length_m") or 10.0)
+        pad = 3.0 * float(ai.get("width") or 5.0)
+        az, light = _best_light_azimuth(z_fill, valid, (int(rr.min()) - 3, int(rr.max()) + 3),
+                                        (int(cc.min()) - 3, int(cc.max()) + 3), ecol, erow)
+        views.append({"id": int(area["id"]), "label": f"Anomaly {int(area['id'])}", "note": str(area.get("note", "")),
+                      "interpretation": _ai_interpretation(area),
+                      "length_m": float(area.get("length_m") or 0), "width_m": float(area.get("width_m") or 0),
+                      "relief_m": float(area.get("relief_m") or 0),
+                      "target": [tx, ty, tz], "side": [float(-uy), float(ux)], "distance": max(60.0, 2.5 * length + 2 * pad),
+                      "light": light, "light_azimuth": az})
+    reliefs = [abs(float(a.get("relief_m") or 0.0)) for a in (ai.get("areas") or [])[:AI_MAX_VIEWS]]
+    adaptive = None
+    if reliefs and np.median(reliefs) > 1e-3:
+        adaptive = float(np.clip(0.25 * float(ai.get("width") or 5.0) / float(np.median(reliefs)), 1.0, 5.0))
+    return score, outline, views, adaptive
+
+
+def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS, max_side=LADS_BROWSER_MAX_SIDE, cloud_preprocess_key="cloud1",
+                               ai=None, show_ai=False, adaptive_ve=False):
     source = np.ma.asarray(dtm)
     cfg = CLOUD_PREPROCESS_PROFILES.get(cloud_preprocess_key, CLOUD_PREPROCESS_PROFILES["cloud1"])
     if source.ndim != 2:
@@ -1497,7 +1614,22 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
     z_fill = np.where(valid, z_render, np.nanmin(z_render[valid])).astype(np.float32)
     dx = _mean_abs_step(x, axis=1)
     dy = _mean_abs_step(y, axis=0)
-    colors = _height_shaded_colors_u8(z_fill, valid, dx=dx, dy=dy)
+    if cfg.get("needs_ai") and ai is None:
+        raise RuntimeError("AI relief shows the result of «Find hidden features (AI)», which has not been run on this "
+                           "terrain yet. Close the 3D window, run it from Visualization tools on the map, then choose "
+                           "AI relief again.")
+    ai_views, ai_outline, ai_ve = [], None, None
+    if ai is not None:
+        ai_score, ai_outline, ai_views, ai_ve = _ai_overlay(ai, rows, cols, x, y, z_fill, valid, step)
+    if cfg.get("needs_ai"):
+        colors = _height_shaded_colors_u8(z_fill, valid, dx=dx, dy=dy, color_values=ai_score, cmap="magma",
+                                          vrange=AI_SCORE_RANGE)
+    else:
+        colors = _height_shaded_colors_u8(z_fill, valid, dx=dx, dy=dy)
+    if ai_outline is not None and (cfg.get("needs_ai") or show_ai):
+        colors[ai_outline & valid] = AI_OUTLINE_RGB
+    else:
+        ai_views = []
     colors[~valid] = 0
     analysis_rows = np.arange(0, z_fill.shape[0], max(1, int(math.ceil(z_fill.shape[0] / float(LADS_ANALYSIS_MAX_SIDE)))), dtype=np.int32)
     analysis_cols = np.arange(0, z_fill.shape[1], max(1, int(math.ceil(z_fill.shape[1] / float(LADS_ANALYSIS_MAX_SIDE)))), dtype=np.int32)
@@ -1531,6 +1663,9 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
     y_span = float(np.nanmax(y[valid]) - np.nanmin(y[valid]))
     z_span = float(np.nanmax(z_render[valid]) - np.nanmin(z_render[valid]))
     z_scale = _adaptive_z_scale(x_span, y_span, z_span)
+    ve_source = "automatic (from the area's spans)"
+    if adaptive_ve and ai_ve is not None:
+        z_scale, ve_source = ai_ve, "adaptive (from the height and width of the priority features)"
 
     return {
         "x": x,
@@ -1562,6 +1697,11 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
         "point_stride": int(cfg.get("point_stride", 1) or 1),
         "point_size": float(cfg["point_size"]) if cfg.get("point_size") is not None else 1.0,
         "point_opacity": float(cfg["point_opacity"]) if cfg.get("point_opacity") is not None else 0.7,
+        "mode_label": str(cfg.get("label", cloud_preprocess_key)),
+        "ai_views": ai_views,
+        "ai_shown": bool(ai is not None and (cfg.get("needs_ai") or show_ai)),
+        "ai_width_m": float(ai.get("width") or 0.0) if ai is not None else 0.0,
+        "ve_source": ve_source,
     }
 
 
@@ -1614,19 +1754,30 @@ def write_browser_cloud_viewer(
 
     pos_b64 = _encode_f32_triplets_base64(x.reshape(-1), y.reshape(-1), z.reshape(-1))
     color_b64 = _encode_u8_triplets_base64(colors.reshape(-1, 3))
+    basemap_colors = terrain.get("basemap_colors")
+    basemap_b64 = _encode_u8_triplets_base64(np.asarray(basemap_colors, dtype=np.uint8).reshape(-1, 3)) if basemap_colors is not None else ""
     valid_b64 = _encode_u8_base64(valid.reshape(-1))
     exag = float(z_scale)
     analysis_profiles_json = json.dumps(analysis_profiles, ensure_ascii=False)
     view_crs = str(terrain.get("target_crs") or "")
     cell_size_m = float(terrain.get("cell_size_m") or 0.0)
     relief_scale_m = float(terrain.get("relief_sigma_m") or 0.0)
-    info_parts = [f"CRS {view_crs}"] if view_crs else []
-    if cell_size_m > 0:
-        info_parts.append(f"3D grid cell {cell_size_m:.2f} m")
+    info_parts = []
     if relief_scale_m > 0:
         info_parts.append(f"local relief scale {relief_scale_m:g} m")
-    info_parts.append(f"vertical exaggeration x{float(z_scale):.2f}")
+    ai_views = list(terrain.get("ai_views") or [])
+    ai_shown = bool(terrain.get("ai_shown"))
     view_info_html = f'<div class="toolbar-help" id="view-info">{escape(" · ".join(info_parts))}</div>'
+    ai_panel_html = ""
+    if ai_views:
+        buttons = "".join(
+            f'<button type="button" class="toolbar-btn toolbar-btn--button ai-view-btn" data-ai-view="{i}" '
+            f'aria-controls="ai-hover-info">{escape(v["label"])}</button>'
+            for i, v in enumerate(ai_views))
+        ai_panel_html = (f'<nav class="ai-views" aria-label="Anomalies">{buttons}</nav>'
+                         '<svg id="ai-callouts" aria-label="Area locations"></svg>'
+                         '<aside id="ai-hover-info" aria-live="polite" hidden><h3></h3><p class="ai-observation"></p>'
+                         '<h4>Possible interpretation</h4><p class="ai-interpretation"></p><p class="ai-dimensions"></p></aside>')
     las_button = ""
     if las_href:
         las_button = f'<a class="toolbar-btn" href="{las_href}" download>Export .LAS</a>'
@@ -1836,11 +1987,25 @@ def write_browser_cloud_viewer(
     canvas {{
       display: block;
     }}
+    #view-info:empty {{ display: none; }}
+    .ai-views {{ position:fixed;inset:0;z-index:24;pointer-events:none; }}
+    .ai-views .toolbar-btn {{ position:absolute;pointer-events:auto;padding:7px 10px;border-color:#765936;background:rgba(33,21,14,.9);color:#f3d68f;font-size:11px;white-space:nowrap; }}
+    .ai-views .toolbar-btn:hover,.ai-views .toolbar-btn:focus-visible {{ border-color:#e4bf6b;outline:none;background:#49301c; }}
+    #ai-callouts {{ position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:21;overflow:hidden; }}
+    #ai-callouts line {{ stroke:#e4bf6b;stroke-width:1;opacity:.22; }}
+    #ai-callouts circle {{ fill:#e4bf6b;stroke:#21150e;stroke-width:2;pointer-events:all;cursor:pointer; }}
+    #ai-hover-info {{ position:fixed;right:14px;top:14px;z-index:25;box-sizing:border-box;width:min(290px,calc(100vw - 150px));max-height:calc(100vh - 28px);overflow:auto;padding:16px;border:1px solid #98703a;border-radius:10px;background:rgba(33,21,14,.96);color:#d9c7a8;pointer-events:none;font:12px/1.6 Inter,system-ui,sans-serif; }}
+    #ai-hover-info[hidden] {{ display:none; }}
+    #ai-hover-info h3 {{ margin:0 0 8px;font-size:15px;color:#f3d68f; }}
+    #ai-hover-info h4 {{ margin:14px 0 4px;font-size:11px;color:#e4bf6b; }}
+    #ai-hover-info p {{ margin:0 0 6px; }}
+    .ai-dimensions {{ color:#bba78c;font-size:11px; }}
   </style>
 </head>
 <body>
   <div id="toolbar">{las_button}{analysis_button_html}{variant_html}{cloud_preprocess_html}{cloud_preprocess_desc_html}{view_info_html}</div>
   <div id="app"></div>
+  {ai_panel_html}
   <aside id="analysis-panel">
     <h3 id="analysis-title">Analysis</h3>
     <p id="analysis-note" class="analysis-note"></p>
@@ -1877,6 +2042,8 @@ def write_browser_cloud_viewer(
     }}
     const POS_B64 = "{pos_b64}";
     const COLOR_B64 = "{color_b64}";
+    const BASEMAP_COLOR_B64 = "{basemap_b64}";
+    const BASEMAP_ATTRIBUTION = {json.dumps(str(terrain.get("basemap_attribution") or ""))};
     const VALID_B64 = "{valid_b64}";
     const GRID_ROWS = {rows};
     const GRID_COLS = {cols};
@@ -1893,6 +2060,12 @@ def write_browser_cloud_viewer(
     const VIEW_CRS = {json.dumps(view_crs)};
     const CELL_SIZE_M = {cell_size_m:.6f};
     const RELIEF_SCALE_M = {relief_scale_m:.6f};
+    const MODE_LABEL = {json.dumps(str(terrain.get("mode_label") or ""))};
+    const AI_VIEWS = {json.dumps(ai_views)};
+    const AI_SHOWN = {"true" if ai_shown else "false"};
+    const AI_WIDTH_M = {float(terrain.get("ai_width_m") or 0.0):.3f};
+    const VE_SOURCE = {json.dumps(str(terrain.get("ve_source") or ""))};
+    window.AI_CURRENT = null;
     const ANALYSIS_PROFILES = {analysis_profiles_json};
 
     function base64ToUint8Array(base64) {{
@@ -2246,6 +2419,100 @@ def write_browser_cloud_viewer(
     camera.updateProjectionMatrix();
     controls.update();
 
+    const defaultLight = dir1.position.clone();
+    function goToAiView(index) {{
+      const v = AI_VIEWS[index];
+      if (!v) {{
+        window.AI_CURRENT = null;
+        dir1.position.copy(defaultLight);
+        controls.target.set(0, 0, 0);
+        camera.position.set(radius * 1.22, -radius * 1.18, radius * 0.92);
+        controls.update();
+        if (typeof viewerDirty !== 'undefined') viewerDirty = true;
+        return;
+      }}
+      const t = new THREE.Vector3(v.target[0] - centerX, v.target[1] - centerY, v.target[2] * Z_EXAGGERATION - centerZ);
+      if (typeof viewerDisplay !== 'undefined') t.z *= viewerDisplay.verticalExaggeration / Z_EXAGGERATION;
+      const d = v.distance;
+      const elev = Math.PI * 35 / 180;
+      controls.target.copy(t);
+      camera.position.set(t.x + v.side[0] * d * Math.cos(elev), t.y + v.side[1] * d * Math.cos(elev), t.z + d * Math.sin(elev));
+      dir1.position.set(v.light[0], v.light[1], v.light[2]).normalize().multiplyScalar(2);
+      window.AI_CURRENT = {{ id: v.id, label: v.label, light_azimuth: v.light_azimuth, note: v.note }};
+      controls.update();
+      if (typeof viewerDirty !== 'undefined') viewerDirty = true;
+    }}
+    const aiCallouts = document.getElementById('ai-callouts');
+    const aiHoverInfo = document.getElementById('ai-hover-info');
+    const aiLinks = [];
+    function showAiInfo(index) {{
+      const v = AI_VIEWS[index];
+      if (!aiHoverInfo || !v) return;
+      aiHoverInfo.querySelector('h3').textContent = v.label;
+      aiHoverInfo.querySelector('.ai-observation').textContent = v.note;
+      aiHoverInfo.querySelector('.ai-interpretation').textContent = v.interpretation;
+      aiHoverInfo.querySelector('.ai-dimensions').textContent = `${{v.length_m.toFixed(1)}} × ${{v.width_m.toFixed(1)}} m · Local relief ${{v.relief_m.toFixed(2)}} m`;
+      aiHoverInfo.hidden = false;
+    }}
+    function hideAiInfo() {{ if (aiHoverInfo) aiHoverInfo.hidden = true; }}
+    for (const button of document.querySelectorAll('.ai-view-btn')) {{
+      button.addEventListener('click', () => goToAiView(Number(button.dataset.aiView)));
+      const index = Number(button.dataset.aiView);
+      if (index < 0 || !aiCallouts) continue;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('r', '6');
+      dot.setAttribute('tabindex', '0');
+      dot.setAttribute('role', 'button');
+      dot.setAttribute('aria-label', AI_VIEWS[index].label);
+      dot.addEventListener('click', () => goToAiView(index));
+      dot.addEventListener('keydown', e => {{ if (e.key === 'Enter' || e.key === ' ') {{e.preventDefault();goToAiView(index);}} }});
+      for (const element of [button, dot]) {{
+        element.addEventListener('mouseenter', () => showAiInfo(index));
+        element.addEventListener('focus', () => showAiInfo(index));
+        element.addEventListener('mouseleave', hideAiInfo);
+        element.addEventListener('blur', hideAiInfo);
+      }}
+      aiCallouts.append(line, dot);
+      aiLinks.push({{button, line, dot, view: AI_VIEWS[index]}});
+    }}
+    function updateAiCallouts() {{
+      if (!aiCallouts) return;
+      camera.updateMatrixWorld();
+      const ratio = typeof viewerDisplay === 'undefined' ? 1 : viewerDisplay.verticalExaggeration / Z_EXAGGERATION;
+      const placed = [];
+      for (const link of aiLinks) {{
+        const v = link.view;
+        const p = new THREE.Vector3(v.target[0] - centerX, v.target[1] - centerY, (v.target[2] * Z_EXAGGERATION - centerZ) * ratio).project(camera);
+        const visible = p.z >= -1 && p.z <= 1 && Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1;
+        link.line.style.display = link.dot.style.display = visible ? '' : 'none';
+        link.button.style.display = visible ? '' : 'none';
+        if (!visible) continue;
+        const x = (p.x + 1) * window.innerWidth / 2, y = (1 - p.y) * window.innerHeight / 2;
+        const w = link.button.offsetWidth, h = link.button.offsetHeight;
+        let best = null;
+        for (const gap of [14, 36, 60, 84]) {{
+          for (const offset of [[gap, -h - gap], [gap, gap], [-w - gap, -h - gap], [-w - gap, gap], [gap, -h / 2], [-w - gap, -h / 2], [-w / 2, -h - gap], [-w / 2, gap]]) {{
+            const left = Math.max(4, Math.min(window.innerWidth - w - 4, x + offset[0]));
+            const top = Math.max(4, Math.min(window.innerHeight - h - 4, y + offset[1]));
+            let penalty = Math.hypot(left + w / 2 - x, top + h / 2 - y);
+            for (const box of placed) {{
+              penalty += Math.max(0, Math.min(left + w + 5, box.right) - Math.max(left - 5, box.left)) *
+                         Math.max(0, Math.min(top + h + 5, box.bottom) - Math.max(top - 5, box.top)) * 100;
+            }}
+            if (!best || penalty < best.penalty) best = {{left, top, penalty}};
+          }}
+        }}
+        link.button.style.left = best.left + 'px';link.button.style.top = best.top + 'px';
+        placed.push({{left:best.left,top:best.top,right:best.left + w,bottom:best.top + h}});
+        const anchorX = Math.max(best.left, Math.min(best.left + w, x));
+        const anchorY = Math.max(best.top, Math.min(best.top + h, y));
+        link.line.setAttribute('x1', anchorX);link.line.setAttribute('y1', anchorY);
+        link.line.setAttribute('x2', x);link.line.setAttribute('y2', y);
+        link.dot.setAttribute('cx', x);link.dot.setAttribute('cy', y);
+      }}
+    }}
+
     function onResize() {{
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -2256,6 +2523,7 @@ def write_browser_cloud_viewer(
     function animate() {{
       requestAnimationFrame(animate);
       controls.update();
+      updateAiCallouts();
       renderer.render(scene, camera);
     }}
     animate();

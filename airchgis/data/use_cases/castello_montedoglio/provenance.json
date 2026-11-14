@@ -1,0 +1,23 @@
+{
+  "source": "User-provided DTM archive",
+  "archive": "DTM_CastelloDiMontedoglio.zip",
+  "archive_sha256": "b68a77bed9200b5d6260fa704000da63e07eecae2693b7a7d2140b1233732f50",
+  "tiles": [
+    "toscana_140_D43581205_0101_DTM.tiff",
+    "toscana_140_D43581206_0101_DTM.tiff"
+  ],
+  "tile_selection_csv": "idSessione;canale;prodotto;layer;fid;tavola;regione;contratto;orientation\r\n0e5829e9b5944148a2b292640491cece;PST2;LIDAR_2014;dtm_1x1;153803;D43581205_0101;Toscana;140;\r\n0e5829e9b5944148a2b292640491cece;PST2;LIDAR_2014;dtm_1x1;153804;D43581206_0101;Toscana;140;\r\n",
+  "source_metadata_note": "Uno o pi\u00f9 metadati richiesti non sono disponibili.\n- URN: urn:li:dataset:(urn:li:dataPlatform:postgres,gis.pst.toscana_griglia_1x1_dtm,PROD)@sim_catalog - errore: DAB ha restituito HTTP 403 - risposta: <html>  <head>     <meta http-equiv=\"Content-Type\" content=\"text/html; charset=windows-1252\">      <title>Fortinet Secure DNS Service Portal</title> </head>  <body>     <center>         <h2>Web Page Blocked!</h2>         You have tried to access a web page which belongs to a category that is blocked\n",
+  "license": "Not specified in supplied archive",
+  "crs": "EPSG:4326",
+  "resolution_degrees": [
+    1e-05,
+    1e-05
+  ],
+  "shape": [
+    1000,
+    2000
+  ],
+  "processing": "Native grid retained; adjacent tiles mosaicked without resampling; original NoData retained; lossless compression. Reprojected to metric coordinates by the app on load.",
+  "sha256": "dafb0dff880b5e05acc9789edb7c0dc48c9a2ed9af957a249bc87e4b6853399d"
+}

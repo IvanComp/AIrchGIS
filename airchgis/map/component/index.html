@@ -23,6 +23,13 @@
     <div class="map-compass"><button type="button" class="terrain-toggle" aria-pressed="true"><b>3D</b><small>Relief on</small></button></div>
     <aside id="workbench-tools" class="exact-layer-panel" aria-label="Tools and layers">
       <div class="wb-message" hidden></div>
+      <details class="wb-site" hidden>
+        <summary>Site &amp; references <span aria-hidden="true">›</span></summary>
+        <h3 class="wb-site-title"></h3>
+        <p class="wb-site-summary"></p>
+        <p class="wb-site-terrain"></p>
+        <div class="wb-site-references"></div>
+      </details>
       <details class="wb-layers" open>
         <summary><span>Layers</span><span class="wb-layers-chevron" aria-hidden="true">›</span></summary>
         <div class="layer-cards"></div>
@@ -39,9 +46,9 @@
 <div class="wb-modal" role="dialog" aria-modal="true" aria-labelledby="wb-3d-title" hidden>
   <div class="wb-modal-box">
     <div class="wb-modal-header"><h3 id="wb-3d-title">3D Analysis</h3><button type="button" class="wb-modal-close" title="Close 3D Analysis" aria-label="Close 3D Analysis">×</button></div>
-    <div class="wb-3d-toolbar" aria-label="3D view and downloads"></div>
     <div class="wb-modal-content">
       <iframe title="3D terrain viewer"></iframe>
+      <div class="wb-3d-toolbar" aria-label="3D display controls"></div>
       <div class="wb-3d-message wb-message" hidden></div>
       <div class="wb-3d-busy" role="status" hidden>Preparing export…</div>
     </div>
