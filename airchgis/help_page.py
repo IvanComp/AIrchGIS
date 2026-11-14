@@ -94,7 +94,7 @@ SECTIONS = [
         <details><summary>Does AIrchGIS identify archaeological sites?</summary><p>No. Relief views help you inspect terrain forms. Interpret anomalies alongside other evidence and, where appropriate, field observations.</p></details>
         <details><summary>Do uploaded data leave my computer?</summary><p>Terrain processing runs locally. Internet access is needed for basemap imagery, geographic labels and global terrain tiles. Opening Google Earth passes the selected coordinates to that service.</p></details>
         <details><summary>Why does a file fail to open?</summary><p>Check its coordinate system, georeferencing and file contents. For large terrain models, try fewer tiles or a smaller area. Available memory can limit the size of an analysis.</p></details>
-        <details><summary>Are the use cases available?</summary><p>England · 1 m opens the native Environment Agency DTM from the LidarMap UK comparison area, licensed under OGL v3.0. The two TODO buttons are disabled placeholders.</p></details>
+        <details><summary>Are the use cases available?</summary><p>Betterton, Oxfordshire, UK opens the native Environment Agency DTM from the LidarMap UK comparison area, licensed under OGL v3.0. Colle San Mauro is the first placeholder; the Romania TODO is the final placeholder. Both are disabled.</p></details>
         </div>"""),
 ]
 
