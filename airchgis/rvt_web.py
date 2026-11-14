@@ -128,7 +128,8 @@ def workbench_tools(core):
         "original": "Terrain surface without additional relief enhancement.",
         "cloud1": "Terrain samples rendered as points.",
         "cloud2": "Continuous surface with wireframe and point overlays.",
-        "cloud3": "Enhanced local relief. Displayed elevations are modified to emphasize small terrain forms.",
+        "cloud3": "Enhanced local relief at a %g m scale. Displayed elevations are modified to emphasize small terrain "
+                  "forms." % core.CLOUD_PREPROCESS_PROFILES.get("cloud3", {}).get("relief_sigma_m", 18.0),
     }
     profiles = [{"id": key, "name": core.CLOUD_PREPROCESS_PROFILES[key]["label"], "description": description}
                 for key, description in descriptions.items() if key in core.CLOUD_PREPROCESS_PROFILES]

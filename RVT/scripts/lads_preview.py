@@ -42,7 +42,7 @@ except Exception:
     ndi_label = None
     ndi_distance_transform = None
 
-LADS_TARGET_CRS = "EPSG:32632"
+LADS_TARGET_CRS = None  # None: the DTM's own CRS when projected in metres, otherwise the UTM zone of its centroid
 LADS_MAX_POINTS = 85000
 LADS_BROWSER_MAX_SIDE = 1400
 LADS_ANALYSIS_MAX_SIDE = 720
@@ -59,7 +59,7 @@ CLOUD_PREPROCESS_PROFILES = {
         "flat_shading": False,
         "wireframe_overlay": False,
         "mesh_opacity": 1.0,
-        "relief_sigma": 0.0,
+        "relief_sigma_m": 0.0,
         "relief_gain": 1.0,
         "show_points": False,
         "point_stride": 1,
@@ -77,7 +77,7 @@ CLOUD_PREPROCESS_PROFILES = {
         "flat_shading": False,
         "wireframe_overlay": False,
         "mesh_opacity": 0.0,
-        "relief_sigma": 0.0,
+        "relief_sigma_m": 0.0,
         "relief_gain": 1.0,
         "show_points": True,
         "point_stride": 1,
@@ -95,7 +95,7 @@ CLOUD_PREPROCESS_PROFILES = {
         "flat_shading": True,
         "wireframe_overlay": True,
         "mesh_opacity": 0.92,
-        "relief_sigma": 0.0,
+        "relief_sigma_m": 0.0,
         "relief_gain": 1.0,
         "show_points": True,
         "point_stride": 2,
@@ -104,7 +104,7 @@ CLOUD_PREPROCESS_PROFILES = {
     },
     "cloud3": {
         "label": "Cloud 3",
-        "description": "Emphasises hollows, bumps and small terrain marks. Useful to look for anomalies, but it can slightly distort the real shape.",
+        "description": "Emphasises hollows, bumps and small terrain marks narrower than about 18 m. Useful to look for anomalies, but it can slightly distort the real shape.",
         "sanitize": True,
         "sigma": 0.0,
         "blend": 0.0,
@@ -113,7 +113,7 @@ CLOUD_PREPROCESS_PROFILES = {
         "flat_shading": False,
         "wireframe_overlay": False,
         "mesh_opacity": 1.0,
-        "relief_sigma": 18.0,
+        "relief_sigma_m": 18.0,
         "relief_gain": 4.0,
         "show_points": True,
         "point_stride": 2,
@@ -130,6 +130,70 @@ def _as_crs_text(crs):
         return crs.to_string()
     except Exception:
         return str(crs)
+
+
+def _crs_is_metric(crs):
+    if pyproj is None or crs is None:
+        return False
+    try:
+        c = pyproj.CRS.from_user_input(crs.to_wkt() if hasattr(crs, "to_wkt") else crs)
+        if c.is_compound and c.sub_crs_list:
+            c = c.sub_crs_list[0]
+        if not c.is_projected:
+            return False
+        units = {str(a.unit_name).lower() for a in c.axis_info[:2]}
+        return bool(units) and units <= {"metre", "meter", "m"}
+    except Exception:
+        return False
+
+
+def utm_crs_for_lonlat(lon, lat):
+    """WGS 84 / UTM zone, north or south, that contains a longitude/latitude point."""
+    if pyproj is not None:
+        try:
+            from pyproj.aoi import AreaOfInterest
+            from pyproj.database import query_utm_crs_info
+
+            info = query_utm_crs_info(datum_name="WGS 84", area_of_interest=AreaOfInterest(lon, lat, lon, lat))
+            if info:
+                return f"EPSG:{info[0].code}"
+        except Exception:
+            pass
+    zone = int(np.clip(np.floor((float(lon) + 180.0) / 6.0) + 1, 1, 60))
+    return f"EPSG:{(32600 if float(lat) >= 0 else 32700) + zone}"
+
+
+def metric_crs_for(src_crs, transform, shape):
+    """CRS of the 3D scene: the DTM's own CRS when it is projected in metres, otherwise the UTM zone (north or
+    south) of the centroid of the data, as in the pre-processing."""
+    if _crs_is_metric(src_crs):
+        return src_crs
+    h, w = shape
+    cx, cy = rasterio.transform.xy(transform, (h - 1) / 2.0, (w - 1) / 2.0, offset="center")
+    lon, lat = rasterio.warp.transform(src_crs, "EPSG:4326", [float(cx)], [float(cy)])
+    return utm_crs_for_lonlat(float(lon[0]), float(lat[0]))
+
+
+def _metric_cell_size(x, y):
+    """Cell size in metres of a grid of metric coordinates (float64: UTM northings exceed float32 precision)."""
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    steps = []
+    for axis in (1, 0):
+        if x.shape[axis] < 2:
+            continue
+        d = np.hypot(np.diff(x, axis=axis), np.diff(y, axis=axis))
+        d = d[np.isfinite(d) & (d > 1e-9)]
+        if d.size:
+            steps.append(float(np.median(d)))
+    return float(np.sqrt(np.prod(steps))) if len(steps) == 2 else (steps[0] if steps else 1.0)
+
+
+def relief_sigma_cells(sigma_m, cell_size_m):
+    """Gaussian sigma of the Cloud 3 trend in grid cells, from a scale in metres and the 3D grid cell size."""
+    if not sigma_m or sigma_m <= 0:
+        return 0.0
+    return max(0.5, float(sigma_m) / max(float(cell_size_m), 1e-6))
 
 
 def _sanitize_surface_for_lads(dtm):
@@ -1117,7 +1181,7 @@ def build_lads_point_cloud(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS, ma
     ys = np.asarray(ys, dtype=np.float64)
     zs = arr[rows, cols].astype(np.float32)
 
-    dst_crs = target_crs or src_crs
+    dst_crs = target_crs or metric_crs_for(src_crs, profile["transform"], arr.shape)
     if _as_crs_text(src_crs) != _as_crs_text(dst_crs):
         tx, ty = rasterio.warp.transform(src_crs, dst_crs, xs.tolist(), ys.tolist())
         xs = np.asarray(tx, dtype=np.float64)
@@ -1396,10 +1460,26 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
     rr, cc = np.meshgrid(rows, cols, indexing="ij")
     surface = _browser_terrain_surface(source[np.ix_(rows, cols)], profile)
     z_source = apply_cloud_preprocessing(surface, cloud_preprocess_key=cloud_preprocess_key)
-    if cfg.get("render_mode") == "relief_mesh":
+
+    xs, ys = rasterio.transform.xy(profile["transform"], rr.ravel().tolist(), cc.ravel().tolist(), offset="center")
+    x = np.asarray(xs, dtype=np.float64).reshape(z_source.shape)
+    y = np.asarray(ys, dtype=np.float64).reshape(z_source.shape)
+
+    dst_crs = target_crs or metric_crs_for(src_crs, profile["transform"], (h, w))
+    if _as_crs_text(src_crs) != _as_crs_text(dst_crs):
+        tx, ty = rasterio.warp.transform(src_crs, dst_crs, x.ravel().tolist(), y.ravel().tolist())
+        x = np.asarray(tx, dtype=np.float64).reshape(z_source.shape)
+        y = np.asarray(ty, dtype=np.float64).reshape(z_source.shape)
+
+    # Cloud 3 works at a physical scale: sigma in metres, converted with the cell size of this 3D grid.
+    cell_size_m = _metric_cell_size(x, y)
+    relief = cfg.get("render_mode") == "relief_mesh"
+    sigma_m = float(cfg.get("relief_sigma_m", 0.0) or 0.0) if relief else 0.0
+    sigma_cells = relief_sigma_cells(sigma_m, cell_size_m)
+    if relief and sigma_cells > 0:
         z_render, _residual = _enhance_local_relief(
             z_source,
-            sigma=float(cfg.get("relief_sigma", 12.0) or 12.0),
+            sigma=sigma_cells,
             gain=float(cfg.get("relief_gain", 3.0) or 3.0),
         )
     else:
@@ -1408,16 +1488,6 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
     valid = np.isfinite(surface) & np.isfinite(z_render)
     if not valid.any():
         raise RuntimeError("No valid cell for the 3D viewer.")
-
-    xs, ys = rasterio.transform.xy(profile["transform"], rr.ravel().tolist(), cc.ravel().tolist(), offset="center")
-    x = np.asarray(xs, dtype=np.float64).reshape(z_render.shape)
-    y = np.asarray(ys, dtype=np.float64).reshape(z_render.shape)
-
-    dst_crs = target_crs or src_crs
-    if _as_crs_text(src_crs) != _as_crs_text(dst_crs):
-        tx, ty = rasterio.warp.transform(src_crs, dst_crs, x.ravel().tolist(), y.ravel().tolist())
-        x = np.asarray(tx, dtype=np.float64).reshape(z_render.shape)
-        y = np.asarray(ty, dtype=np.float64).reshape(z_render.shape)
 
     origin_x = float(np.nanmin(x[valid]))
     origin_y = float(np.nanmin(y[valid]))
@@ -1475,6 +1545,9 @@ def build_browser_terrain_grid(dtm, profile, src_crs, target_crs=LADS_TARGET_CRS
         "source_crs": _as_crs_text(src_crs),
         "target_crs": _as_crs_text(dst_crs),
         "sample_step": int(step),
+        "cell_size_m": cell_size_m,
+        "relief_sigma_m": sigma_m,
+        "relief_sigma_cells": float(sigma_cells),
         "preview_points": int(valid.sum()),
         "total_points": int(valid.sum()),
         "z_scale": float(z_scale),
@@ -1544,6 +1617,16 @@ def write_browser_cloud_viewer(
     valid_b64 = _encode_u8_base64(valid.reshape(-1))
     exag = float(z_scale)
     analysis_profiles_json = json.dumps(analysis_profiles, ensure_ascii=False)
+    view_crs = str(terrain.get("target_crs") or "")
+    cell_size_m = float(terrain.get("cell_size_m") or 0.0)
+    relief_scale_m = float(terrain.get("relief_sigma_m") or 0.0)
+    info_parts = [f"CRS {view_crs}"] if view_crs else []
+    if cell_size_m > 0:
+        info_parts.append(f"3D grid cell {cell_size_m:.2f} m")
+    if relief_scale_m > 0:
+        info_parts.append(f"local relief scale {relief_scale_m:g} m")
+    info_parts.append(f"vertical exaggeration x{float(z_scale):.2f}")
+    view_info_html = f'<div class="toolbar-help" id="view-info">{escape(" · ".join(info_parts))}</div>'
     las_button = ""
     if las_href:
         las_button = f'<a class="toolbar-btn" href="{las_href}" download>Export .LAS</a>'
@@ -1756,7 +1839,7 @@ def write_browser_cloud_viewer(
   </style>
 </head>
 <body>
-  <div id="toolbar">{las_button}{analysis_button_html}{variant_html}{cloud_preprocess_html}{cloud_preprocess_desc_html}</div>
+  <div id="toolbar">{las_button}{analysis_button_html}{variant_html}{cloud_preprocess_html}{cloud_preprocess_desc_html}{view_info_html}</div>
   <div id="app"></div>
   <aside id="analysis-panel">
     <h3 id="analysis-title">Analysis</h3>
@@ -1807,6 +1890,9 @@ def write_browser_cloud_viewer(
     const FLAT_SHADING = {"true" if flat_shading else "false"};
     const WIREFRAME_OVERLAY = {"true" if wireframe_overlay else "false"};
     const MESH_OPACITY = {mesh_opacity:.6f};
+    const VIEW_CRS = {json.dumps(view_crs)};
+    const CELL_SIZE_M = {cell_size_m:.6f};
+    const RELIEF_SCALE_M = {relief_scale_m:.6f};
     const ANALYSIS_PROFILES = {analysis_profiles_json};
 
     function base64ToUint8Array(base64) {{
@@ -2215,7 +2301,7 @@ def export_lads_las(
     header.scales = np.array([0.001, 0.001, 0.001], dtype=np.float64)
     header.offsets = np.array([float(np.nanmin(xs)), float(np.nanmin(ys)), float(np.nanmin(zs))], dtype=np.float64)
     try:
-        header.add_crs(pyproj.CRS.from_user_input(target_crs or src_crs))
+        header.add_crs(pyproj.CRS.from_user_input(target_crs or cloud["target_crs"]))
     except Exception:
         pass
 
@@ -2245,7 +2331,7 @@ def _load_raster_for_cli(path):
 def main():
     parser = argparse.ArgumentParser(description="LADS 3D preview from a DTM raster.")
     parser.add_argument("raster_path", help="Path of the DTM raster to convert to a point cloud")
-    parser.add_argument("--target-crs", default=LADS_TARGET_CRS, help="Metric target CRS for the 3D preview")
+    parser.add_argument("--target-crs", default=LADS_TARGET_CRS, help="Metric target CRS for the 3D preview (default: the DTM's own metric CRS, otherwise its UTM zone)")
     parser.add_argument("--max-points", type=int, default=LADS_MAX_POINTS, help="Maximum number of points to plot in the preview")
     parser.add_argument("--output", default="", help="Optional output PNG; nothing is saved if omitted")
     args = parser.parse_args()

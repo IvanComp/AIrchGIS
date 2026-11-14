@@ -81,7 +81,10 @@ window.addEventListener('message', event => {
       viewport: [originalSize.x, originalSize.y], pixels: [width, height],
       render_mode: RENDER_MODE, vertical_exaggeration: Z_EXAGGERATION,
       background: viewerDisplay.background, contrast: viewerDisplay.contrast,
-      brightness: viewerDisplay.brightness, display_quality: viewerDisplay.quality
+      brightness: viewerDisplay.brightness, display_quality: viewerDisplay.quality,
+      crs: typeof VIEW_CRS === 'undefined' ? null : VIEW_CRS,
+      cell_size_m: typeof CELL_SIZE_M === 'undefined' ? null : CELL_SIZE_M,
+      relief_scale_m: typeof RELIEF_SCALE_M === 'undefined' ? null : RELIEF_SCALE_M
     };
     renderer.setPixelRatio(1);
     renderer.setSize(width, height, false);
