@@ -17,6 +17,12 @@ from pathlib import Path
 import numpy as np
 
 from .paths import PROJECT_ROOT
+from .rvt_runtime import APPLIED_FIXES, ensure_runtime, ensure_scaling, ensure_tiled_mstp
+
+
+ensure_runtime()
+ensure_scaling()
+ensure_tiled_mstp()
 
 
 MODULES = ("vis", "blend", "blend_func", "default", "tile")
@@ -25,7 +31,7 @@ SETTINGS = Path(__file__).with_name("data") / "rvt" / "settings"
 ARRAY_PARAMS = {
     "dem", "dem_arr", "dem_fine", "height_arr", "data", "image", "gray_scale", "active", "background",
     "img", "r", "g", "b", "c", "float_arr", "out_raster_arr", "dem_i_nr_pixels", "dem_i1", "dem_i2",
-    "idx_min_lt_zero", "idx_max_c_gt_one", "lum_c", "min_c", "max_c", "slope", "aspect", "array",
+    "idx_min_lt_zero", "idx_max_c_gt_one", "lum_c", "min_c", "max_c", "slope", "aspect", "array", "numeric_value",
 }
 CHOICES = {
     "sky_model": ["overcast", "uniform"], "output_units": ["degree", "radian", "percent"],
@@ -40,6 +46,14 @@ LABELS = {
     "sky_view_factor": "Sky-view factor and openness", "shadow_horizon": "Shadow and horizon",
     "multi_hillshade": "Hillshade from multiple directions", "byte_scale": "Convert to 8-bit",
 }
+
+LIVE_OPERATIONS = {
+    "vis.byte_scale", "vis.slope_aspect", "vis.hillshade", "vis.multi_hillshade", "vis.mean_filter", "vis.slrm",
+    "vis.sky_view_factor", "vis.local_dominance", "vis.sky_illumination", "vis.shadow_horizon", "vis.msrm", "vis.mstp",
+    "blend.color_relief_image_map", "blend.e3mstp", "blend.e4mstp", "blend.BlenderCombination.render_all_images",
+} | {"default.DefaultValues." + name for name in (
+    "get_slope", "get_shadow", "get_hillshade", "get_multi_hillshade", "get_slrm", "get_sky_view_factor",
+    "get_neg_opns", "get_sky_illumination", "get_local_dominance", "get_msrm", "get_mstp", "calculate_visualization")}
 
 
 def plain(value):
@@ -105,7 +119,7 @@ def parameters(obj, operation):
             kind = "mapping"
         elif isinstance(default, (tuple, list)):
             kind = "sequence"
-        elif isinstance(default, bool):
+        elif isinstance(default, bool) or p.annotation is bool:
             kind = "boolean"
         elif isinstance(default, (int, float)) or p.name in {"resolution", "resolution_x", "resolution_y", "x_res", "y_res", "dem_resolution", "feature_min", "feature_max", "scaling_factor", "overlap", "tile_size_x", "tile_size_y", "kernel_radius", "minimum", "maximum", "min_norm", "max_norm", "numeric_value", "pyramid_scale", "conv_from", "conv_to", "max_radius", "num_directions", "shift", "axis"}:
             kind = "number"
@@ -144,6 +158,7 @@ def registry():
         value["id"] = key
         value["parameters"] = parameters(value["callable"], key)
         value["help"] = help_text(value["callable"])
+        value["preview"] = key in LIVE_OPERATIONS
     return entries
 
 
@@ -151,7 +166,7 @@ def registry():
 def catalog():
     operations = [{k: v for k, v in entry.items() if k != "callable"} for entry in registry().values()]
     return {"version": importlib.metadata.version("rvt-py"), "upstream_commit": UPSTREAM_COMMIT,
-            "operations": operations, "count": len(operations),
+            "operations": operations, "count": len(operations), "compatibility_fixes": list(APPLIED_FIXES),
             "visualizations": [v.name for v in importlib.import_module("rvt.default").RVTVisualization],
             "presets": [d["combination"]["name"] for d in json.loads((SETTINGS / "default_blender_combinations.json").read_text())["combinations"]],
             "terrains": [d["terrain_settings"]["name"] for d in json.loads((SETTINGS / "default_terrains_settings.json").read_text())["terrains_settings"]]}
@@ -175,6 +190,8 @@ class RVTWorkspace:
         self.add("Default settings", self.defaults, "settings")
         self.add("Terrain", wb.dem.copy(), "terrain")
         self.add("Terrain GeoTIFF", self.input_file, "terrain_file")
+        for preset in sorted(SETTINGS.glob("*.json")):
+            self.add("RVT configuration · " + preset.stem, preset, "config_" + preset.stem)
         self.current_run = self.folder
         self.last_operation = None
 
@@ -182,7 +199,7 @@ class RVTWorkspace:
         if key is None:
             self.counter += 1
             key = f"result{self.counter}"
-        self.items[key] = {"label": str(label), "value": value}
+        self.items[key] = {"label": str(label), "value": value, "summary": self._brief(value)}
         if isinstance(value, np.ndarray) and value.ndim in {2, 3}:
             self.items[key]["profile"] = dict(self.active_profile)
         return key
@@ -192,7 +209,7 @@ class RVTWorkspace:
         array = np.asarray(value)
         source_profile = profile or self.wb.profile
         shape = (source_profile.get("height", self.active_dem.shape[0]), source_profile.get("width", self.active_dem.shape[1]))
-        if array.ndim == 2:
+        if array.ndim == 2 and array.shape == shape:
             bands = array[np.newaxis]
         elif array.ndim == 3 and array.shape[-2:] == shape:
             bands = array
@@ -214,6 +231,12 @@ class RVTWorkspace:
         return isinstance(value, np.ndarray) and (value.shape == self.wb.dem.shape or
             (value.ndim == 3 and (value.shape[-2:] == self.wb.dem.shape or value.shape[:2] == self.wb.dem.shape)))
 
+    def is_rgb(self, value):
+        if not self._mapable(value) or value.ndim != 3:
+            return False
+        channels = value.shape[0] if value.shape[-2:] == self.wb.dem.shape else value.shape[-1]
+        return channels in {3, 4}
+
     def _brief(self, value, depth=0):
         if isinstance(value, np.ndarray):
             finite = value[np.isfinite(value)] if np.issubdtype(value.dtype, np.number) else value.ravel()
@@ -221,7 +244,7 @@ class RVTWorkspace:
                     "minimum": plain(float(np.min(finite))) if finite.size else None,
                     "maximum": plain(float(np.max(finite))) if finite.size else None}
         if isinstance(value, Path):
-            return {"type": "file", "name": value.name, "exists": value.exists()}
+            return {"type": "file", "name": value.name, "location": str(value), "exists": value.exists()}
         if isinstance(value, enum.Enum):
             return {"type": type(value).__name__, "value": value.value}
         if depth > 2:
@@ -245,10 +268,10 @@ class RVTWorkspace:
                         fields.append({"name": name, "value": plain(field), "summary": self._brief(field)})
             profile = item.get("profile", self.wb.profile)
             same_grid = profile.get("transform") == self.wb.profile.get("transform") and str(profile.get("crs")) == str(self.wb.profile.get("crs"))
-            artifacts.append({"id": key, "label": item["label"], "summary": self._brief(value), "mapable": same_grid and self._mapable(value),
+            artifacts.append({"id": key, "label": item["label"], "summary": item["summary"], "mapable": same_grid and self._mapable(value),
                               "class": type(value).__module__.removeprefix("rvt.") + "." + type(value).__name__, "fields": fields})
         return {"catalog": catalog(), "artifacts": artifacts, "latest": self.latest, "history": self.history[-30:],
-                "last_operation": self.last_operation, "default_object": "settings"}
+                "last_operation": self.last_operation, "preview_status": getattr(self, "preview_status", None), "default_object": "settings"}
 
     def _nested(self, value):
         if isinstance(value, dict):
@@ -260,15 +283,17 @@ class RVTWorkspace:
         return value
 
     def _is_output(self, operation, name):
-        return name.startswith(("out_", "output_", "save_render")) or name == "custom_dir" or (
+        return name in {"out_raster_path", "output_dir_path", "custom_dir", "save_render_path", "render_path"} or (
             name == "file_path" and any(s in operation.rsplit(".", 1)[-1] for s in ("save", "create")))
 
     def _auto(self, operation, p):
         name = p.name
         if name in {"default", "rvt_default"}:
             return self.defaults
-        if name in {"resolution", "resolution_x", "resolution_y", "x_res", "y_res", "dem_resolution"}:
-            return self.active_res
+        if name in {"resolution_y", "y_res"}:
+            return abs(self.active_profile["transform"].e)
+        if name in {"resolution", "resolution_x", "x_res", "dem_resolution"}:
+            return abs(self.active_profile["transform"].a)
         if name in {"dem_path", "raster_path", "src_raster_path"}:
             return self.input_file
         if self._is_output(operation, name):
@@ -280,6 +305,8 @@ class RVTWorkspace:
             return registry()["vis.hillshade"]["callable"]
         if name == "function_parameters":
             return {"resolution_x": None, "resolution_y": None, "no_data": None}
+        if name == "dem_arr" and p.default is None and self.input_file != self.folder / "terrain.tif":
+            return inspect.Parameter.empty
         if name in ARRAY_PARAMS and (p.default is p.empty or name in {"dem", "dem_arr", "dem_fine", "height_arr"}):
             return self.active_dem.copy()
         if name == "rvt_visualization" or (name == "visualization" and operation.startswith(("default.", "tile."))):
@@ -329,7 +356,11 @@ class RVTWorkspace:
                     member = descriptor["member"]
                     value = value[member] if isinstance(value, dict) else value[int(member)]
             elif binding == "auto":
-                value = self._auto(operation, p)
+                if p.name == "function_parameters" and "visualization_function" in result:
+                    value = {name: None for name in inspect.signature(result["visualization_function"]).parameters
+                             if name in {"resolution", "resolution_x", "resolution_y", "no_data"}}
+                else:
+                    value = self._auto(operation, p)
             elif binding == "none":
                 value = None
             else:
@@ -357,11 +388,45 @@ class RVTWorkspace:
                     keys.extend(self._capture(label + f" · {i + 1}", value))
         return keys
 
-    def execute(self, operation, supplied=None, instance=None):
+    def execute(self, operation, supplied=None, instance=None, preview=False):
+        original = self.active_dem, self.active_profile, self.active_res, self.input_file
+        try:
+            for name in ("dem_path", "raster_path", "src_raster_path"):
+                descriptor = (supplied or {}).get(name, {})
+                if not isinstance(descriptor, dict):
+                    continue
+                if descriptor.get("binding") == "artifact":
+                    source = self.items[descriptor["id"]]["value"]
+                elif descriptor.get("binding") == "value":
+                    source = descriptor.get("value")
+                else:
+                    continue
+                if isinstance(source, (str, Path)) and Path(source).is_file():
+                    import rasterio
+                    with rasterio.open(source) as src:
+                        self.active_profile = src.profile.copy()
+                        self.active_res = abs(src.transform.a)
+                    self.input_file = Path(source)
+                    break
+            for name in ("dem", "dem_arr", "height_arr", "dem_fine", "image", "gray_scale", "active", "float_arr"):
+                descriptor = (supplied or {}).get(name, {})
+                if isinstance(descriptor, dict) and descriptor.get("binding") == "artifact":
+                    item = self.items[descriptor["id"]]
+                    if "profile" in item:
+                        self.active_profile = item["profile"].copy()
+                        self.active_res = abs(self.active_profile["transform"].a)
+                        break
+            return self._execute(operation, supplied, instance, preview)
+        finally:
+            self.active_dem, self.active_profile, self.active_res, self.input_file = original
+
+    def _execute(self, operation, supplied=None, instance=None, preview=False):
         entry = registry().get(operation)
         if entry is None:
             raise ValueError("Unknown RVT operation.")
-        self.current_run = self.folder / f"run_{len(self.history) + 1:04d}_{uuid.uuid4().hex[:6]}"
+        if preview and operation not in LIVE_OPERATIONS:
+            raise ValueError("This operation requires an explicit run.")
+        self.current_run = self.folder / ("live" if preview else f"run_{len(self.history) + 1:04d}_{uuid.uuid4().hex[:6]}")
         self.current_run.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
         if entry["kind"] == "method":
@@ -379,11 +444,43 @@ class RVTWorkspace:
             function = entry["callable"]
         supplied = supplied or {}
         if inspect.isclass(function) and issubclass(function, enum.Enum):
-            descriptor = supplied.get("value", {"value": list(function)[0].value})
-            result = function(descriptor.get("value"))
+            descriptor = supplied.get("value", {"binding": "auto"})
+            binding = descriptor.get("binding", "value")
+            if binding in {"auto", "default"}:
+                value = list(function)[0].value
+            elif binding == "artifact":
+                value = self.items[descriptor["id"]]["value"]
+            elif binding == "none":
+                value = None
+            else:
+                value = self._nested(descriptor.get("value"))
+            result = function(value)
         else:
             args = self.arguments(operation, supplied, function)
+            if preview and operation == "blend.BlenderCombination.render_all_images":
+                args.update(save_render_path=None, save_visualizations=False)
             result = function(**args)
+        if preview:
+            def first_spatial(value):
+                if self._mapable(value):
+                    return value
+                children = value.values() if isinstance(value, dict) else value if isinstance(value, (tuple, list)) else []
+                for child in children:
+                    found = first_spatial(child)
+                    if found is not None:
+                        return found
+                return None
+
+            array = first_spatial(result)
+            if array is None:
+                raise ValueError("No spatial result is available for this preview.")
+            if self.active_profile.get("transform") != self.wb.profile.get("transform") or str(self.active_profile.get("crs")) != str(self.wb.profile.get("crs")):
+                raise ValueError("This input uses a different raster grid; run it explicitly to retain and download the result.")
+            key = self.add(entry["label"] + " · live preview", array, "live_preview")
+            self.show(key, rgb=self.is_rgb(array))
+            self.latest = [key]
+            self.preview_status = {"operation": operation, "duration": round(time.perf_counter() - started, 2)}
+            return [key]
         self.latest = self._capture(entry["label"], result)
         if instance and instance not in self.latest:
             self.latest.append(instance)
@@ -396,8 +493,8 @@ class RVTWorkspace:
         return self.latest
 
     def save_manifest(self):
-        data = {"rvt_version": catalog()["version"], "upstream_commit": UPSTREAM_COMMIT, "history": self.history,
-                "artifacts": [{"id": key, "label": item["label"], "summary": self._brief(item["value"])} for key, item in self.items.items()]}
+        data = {"rvt_version": catalog()["version"], "upstream_commit": UPSTREAM_COMMIT, "compatibility_fixes": list(APPLIED_FIXES), "history": self.history,
+                "artifacts": [{"id": key, "label": item["label"], "summary": item["summary"]} for key, item in self.items.items()]}
         (self.folder / "session.json").write_text(json.dumps(data, indent=2, allow_nan=False), encoding="utf-8")
 
     def update_object(self, key, fields):
@@ -412,6 +509,7 @@ class RVTWorkspace:
                 value = tuple(value)
             setattr(obj, name, value)
         self.latest = [key]
+        self.history.append({"id": "update_object", "instance": key, "fields": fields})
         self.save_manifest()
 
     def upload(self, filename, encoded):
@@ -428,7 +526,10 @@ class RVTWorkspace:
                 value = src.read(masked=True).astype(np.float32).filled(np.nan)
                 if value.shape[0] == 1:
                     value = value[0]
-                self.latest.append(self.add(name + " · array", value))
+                array_key = self.add(name + " · array", value)
+                self.items[array_key]["profile"] = src.profile.copy()
+                self.items[key]["profile"] = src.profile.copy()
+                self.latest.append(array_key)
         elif path.suffix.lower() == ".json":
             self.latest.extend(self._capture(name + " · configuration", json.loads(path.read_text())))
         elif path.suffix.lower() in {".npy", ".npz"}:
@@ -442,7 +543,8 @@ class RVTWorkspace:
         self.save_manifest()
         return key
 
-    def preset(self, name, terrain="general", opacity=50):
+    def preset(self, name, terrain="general", opacity=50, preview=False):
+        started = time.perf_counter()
         from rvt.blend import BlenderCombination, TerrainSettings
         combinations = json.loads((SETTINGS / "default_blender_combinations.json").read_text())["combinations"]
         terrains = json.loads((SETTINGS / "default_terrains_settings.json").read_text())["terrains_settings"]
@@ -467,21 +569,30 @@ class RVTWorkspace:
             result = combination.render_all_images(no_data=np.nan)
         else:
             result = render(name, terrain)
+        if preview:
+            key = self.add(name + " · " + terrain + " · live preview", result, "live_preview")
+            self.show(key, rgb=self.is_rgb(result))
+            self.latest = [key]
+            self.preview_status = {"operation": "preset", "duration": round(time.perf_counter() - started, 2)}
+            return [key]
         self.latest = self._capture(name + " · " + terrain, result)
-        self.last_operation = {"id": "preset", "label": name, "duration": 0}
+        self.last_operation = {"id": "preset", "label": name, "duration": round(time.perf_counter() - started, 3)}
+        self.history.append({**self.last_operation, "inputs": {"name": name, "terrain": terrain, "opacity": opacity}, "outputs": list(self.latest)})
+        self.save_manifest()
         return self.latest
 
     def show(self, key, band=None, rgb=False):
         from .workbench import retain_layer
         value = self.items[key]["value"]
+        source_profile = self.items[key].get("profile", self.wb.profile)
         if isinstance(value, Path):
             import rasterio
             with rasterio.open(value) as src:
                 value = src.read(masked=True).astype(np.float32).filled(np.nan)
+                source_profile = src.profile.copy()
             if value.shape[0] == 1:
                 value = value[0]
         array = np.asarray(value)
-        source_profile = self.items[key].get("profile", self.wb.profile)
         if not self._mapable(array) or source_profile.get("transform") != self.wb.profile.get("transform") or str(source_profile.get("crs")) != str(self.wb.profile.get("crs")):
             raise ValueError("This result does not match the loaded terrain grid. It is available for download or as an input to another operation.")
         if array.ndim == 3:
@@ -546,7 +657,7 @@ class RVTWorkspace:
                     self.active_res = abs(src.transform.a)
                 self.input_file = path
                 produced = list(self.execute(operation, supplied, instance))
-                for item_key in produced:
+                for item_key in list(produced):
                     value = self.items[item_key]["value"]
                     self.items[item_key]["label"] = path.stem + " · " + self.items[item_key]["label"]
                     if isinstance(value, np.ndarray) and value.ndim in {2, 3}:
@@ -563,6 +674,31 @@ class RVTWorkspace:
         return outputs
 
     def package(self):
+        export_dir = self.folder / "artifacts"
+        export_dir.mkdir(exist_ok=True)
+        index = {}
+
+        def encode(value, stem):
+            if isinstance(value, np.ndarray):
+                path = export_dir / (stem + ".npy")
+                np.save(path, value, allow_pickle=False)
+                return {"array_file": str(path.relative_to(self.folder))}
+            if isinstance(value, Path):
+                return {"file": str(value.relative_to(self.folder)) if value.is_relative_to(self.folder) else str(value)}
+            if isinstance(value, dict):
+                return {str(k): encode(v, stem + "_" + str(i)) for i, (k, v) in enumerate(value.items())}
+            if isinstance(value, (list, tuple)):
+                return [encode(v, stem + "_" + str(i)) for i, v in enumerate(value)]
+            if hasattr(value, "__dict__") and type(value).__module__.startswith("rvt."):
+                return {"class": type(value).__module__ + "." + type(value).__name__, "fields": encode(vars(value), stem)}
+            return plain(value)
+
+        for key, item in self.items.items():
+            index[key] = {"label": item["label"], "value": encode(item["value"], key)}
+            if "profile" in item:
+                profile = item["profile"]
+                index[key]["grid"] = {"transform": list(profile["transform"]), "crs": str(profile.get("crs")), "width": profile.get("width"), "height": profile.get("height")}
+        (export_dir / "index.json").write_text(json.dumps(index, indent=2, allow_nan=False))
         self.save_manifest()
         path = self.folder.with_suffix(".zip")
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:

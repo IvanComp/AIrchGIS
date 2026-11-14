@@ -35,7 +35,9 @@ AIrchGIS is a local research application for examining digital terrain models an
 
 **RVT_py provides the underlying relief-visualization algorithms used by AIrchGIS.** The [Relief Visualization Toolbox in Python](https://github.com/EarthObservation/RVT_py) is developed in collaboration between ZRC SAZU and the University of Ljubljana for visualizing elevation models, including high-resolution LiDAR terrain.
 
-AIrchGIS calls RVT_py through `RVT/core.py`, using `rvt.vis` for methods such as hillshade, slope, sky-view factor, openness and local relief models, and `rvt.blend` for supported composite visualizations. The Python dependency is distributed as `rvt-py`.
+AIrchGIS provides a map interface to the public API of RVT_py: **148 operations across `rvt.vis`, `rvt.blend`, `rvt.blend_func`, `rvt.default` and `rvt.tile`**, with every operation parameter exposed. This includes the visualization algorithms, image transformations, composition objects, default settings, raster I/O and tiled processing. The existing quick relief controls also use `RVT/core.py`.
+
+The dependency is pinned to GitHub commit [`bab109c`](https://github.com/EarthObservation/RVT_py/tree/bab109c409fedf77ccec7de5fd84c48b791df3d2), package version 2.2.3. The [coverage inventory](docs/RVT_API_COVERAGE.md) lists every operation and parameter, the verification scope and local compatibility corrections. All 148 operations are exercised by an integration test on a synthetic terrain; this does not validate every possible input or parameter combination.
 
 | Component | Role in AIrchGIS |
 |---|---|
@@ -75,10 +77,19 @@ Use **Upload a terrain model or LiDAR point cloud** on the start page. Multiple 
 | Input | Preparation |
 |---|---|
 | GeoTIFF or ASCII grid | Requires georeferencing and a coordinate system to appear on the map |
-| ZIP archive of raster tiles | Raster files are extracted and checked before loading |
-| LAS/LAZ point cloud | Gridded at the selected cell size using classified ground points when available; otherwise all points are used |
+| ZIP archive of raster tiles | Tiles in the same coordinate system are joined; tiles in another system and smoothed copies (`*_prep*`) are left out with a note |
+| LAS/LAZ point cloud | Turned into a terrain model by the pre-processing below |
 
-Terrain in geographic coordinates is reprojected to a metric UTM coordinate system. The map opens automatically after loading with a **Hillshade (315°)** layer already applied. For large datasets, available memory may require fewer tiles or a smaller area.
+Terrain in geographic coordinates is reprojected to a metric UTM coordinate system. Surface models (DSM) are not used: AIrchGIS works on the bare-earth terrain.
+
+## Pre-processing
+
+Every loaded terrain goes through a short, recorded pre-processing, shown step by step in the **Pre-processing** card of the map panel (one line and a few measures per step) and saved in the session script:
+
+- **Point clouds** (`grid_point_cloud`): ground class (ASPRS class 2) used when present, with the share of ground points; statistical outlier removal; ground-point density and a *suggested cell size* (about one ground point per cell); interpolation by TIN (linear, default), IDW, mean per cell or lowest point; small gaps filled inside the data footprint. Without a ground class all points are used and the card says so; a ground filter (CSF, SMRF) is future work.
+- **Terrain rasters** (`prepare_dtm`): coordinate system and cell size, zero fill treated as no data, check of the elevation values, small interior voids filled, optional resampling to a coarser cell, and an artifact check (banding, spikes) that measures without changing the terrain.
+
+**Change the pre-processing** re-runs it with another interpolation, cell size or option, to compare how these choices change the relief views. The **Resolution check** card tells whether features of a given width can be seen at the cell size of the terrain. The map opens automatically after loading with a **Hillshade (315°)** layer already applied. For large datasets, available memory may require fewer tiles or a smaller area.
 
 The start page uses file upload. Public-source download helpers remain in the codebase but are not exposed in the current interface.
 
@@ -88,22 +99,48 @@ The start page uses file upload. Public-source download helpers remain in the co
 
 **Source Code v1.0.0**, beside the guide button, opens the [GitHub repository](https://github.com/IvanComp/AIrchGIS).
 
-The separate **Use cases** group contains three disabled placeholders:
+The **Use cases** group opens three bundled GeoTIFFs of the same 1 km² area at Vaassen, Netherlands, with ancient field systems and burial mounds recorded in the [Dutch monuments register](https://monumentenregister.cultureelerfgoed.nl/monumenten/45346):
 
-- 🇮🇹 **Colle San Mauro, L'Aquila, Italy**
-- 🏴󠁧󠁢󠁥󠁮󠁧󠁿 **TODO, TODO, UK**
-- 🇷🇴 **TODO, TODO, Romania**
+| Use case | Grid | Origin |
+|---|---|---|
+| 🇳🇱 **Vaassen · 0.5 m** | 2000 × 2000 | Native AHN4 DTM grid |
+| 🇳🇱 **Vaassen · 1 m** | 1000 × 1000 | Mean of valid 2 × 2 native cells |
+| 🇳🇱 **Vaassen · 5 m** | 200 × 200 | Mean of valid 10 × 10 native cells |
 
-These buttons do not load example datasets yet.
+Source: [AHN DTM via PDOK](https://data.overheid.nl/dataset/47567-actueel-hoogtebestand-nederland--ahn--dtm), CC0-1.0. The raster source has a native resolution of 0.5 m. The coarser files are derived from that raster to isolate the effect of resolution; they are not independent surveys. All three have the same bounds, EPSG:28992 coordinates and NAP elevations. Source voids remain NoData. Provenance, checksums and the download request are bundled in `airchgis/data/use_cases/vaassen/`. Reproduce the files with `python scripts/prepare_test_dtms.py`.
+
+For a fair comparison, keep the same area, zoom and lighting. Convert pixel-based radii to a common physical distance: 10 m is 20 pixels at 0.5 m, 10 pixels at 1 m and 2 pixels at 5 m.
 
 # Tools on the map
 
-The start page only asks for a terrain model or point cloud. Once it is loaded, the map opens with **Layers** first in the right panel, followed by **Relief Visualization Toolbox**, in the style of the DetectorLab map:
+The start page only asks for a terrain model or point cloud. Once it is loaded, the map opens with **Layers** first in the right panel, followed by **Visualization tools**, in the style of the DetectorLab map:
 
 1. **Relief types**: choose a view (hillshade, slope, sky-view factor, openness, local relief model, MSRM…) and its main setting, then **Add to the map**. Hillshade and anisotropic sky-view factor use a **Light direction (°)** slider with a live degree readout. Applying a new type replaces the previous relief and any contrast version; Layers contains a single **Relief view** alongside Place and Base map.
 2. **3D Analysis**: the button at the top right opens the terrain viewer and its Export panel, which provides a high-quality image (PDF or PNG, 300 dpi by default) with the top layer draped on the terrain, and open 3D data (LAZ/LAS, PLY, glTF) for QGIS, CloudCompare or Blender.
 
-Layers can be switched on and off, faded, shown with stronger contrast (display only) or removed. Single-band result layers can be downloaded as GeoTIFF. Layers opens and closes as one section. Place, Base map and the current relief view have visibility switches and opacity sliders, displayed directly inside the section. Disabling Base map also disables Place. The arrow on the panel edge hides or restores the panel. **Home** (house icon in the top bar) goes back to the start page. Terrain models in longitude/latitude are reprojected to their UTM zone, so that all sizes are in metres. There is no super-resolution.
+Layers can be switched on and off, faded or shown with stronger contrast (display only). Result layers can be downloaded as GeoTIFF, including multiband RVT outputs. Layers opens and closes as one section. Place, Base map and the current relief view have visibility switches and opacity sliders, displayed directly inside the section. Disabling Base map also disables Place. The arrow on the panel edge hides or restores the panel. **Home** (house icon in the top bar) goes back to the start page. Terrain models in longitude/latitude are reprojected to their UTM zone, so that all sizes are in metres. There is no super-resolution.
+
+## Full RVT workspace
+
+Choose **Open RVT workspace** in Visualization tools. The tools dock beside the map, which remains visible and interactive. Layers are available at the top of the dock. On narrow screens the dock sits below the map.
+
+**Live preview** updates the relief automatically after parameter changes, including light-direction sliders. Changes are combined while typing or dragging; if a calculation is running, the latest change runs next. Preview calculations use the loaded terrain grid without reducing its resolution. Their duration depends on the method and terrain size. A single temporary preview is replaced rather than accumulating intermediate results. **Keep result** runs the operation and retains its outputs; file and object actions use **Run operation**. Preset composition changes also support live preview.
+
+The workspace has five sections:
+
+| Section | Actions |
+|---|---|
+| **Operations** | Search all 148 operations, choose their parameters and input results, create RVT objects, run methods and display outputs |
+| **Settings** | Edit every public field on RVT default, terrain and composition objects |
+| **Compositions** | Render VAT, Combined VAT, Prismatic openness and City with RVT terrain profiles; custom blends use BlenderCombination operations |
+| **Inputs & results** | Import GeoTIFF/ASCII, JSON, NPY/NPZ or text files; inspect results; export GeoTIFF, NPY, CSV, JSON or a session archive |
+| **Batch** | Apply the selected operation to multiple raster files, preserving each grid; use the Tiled processing group for RVT block processing |
+
+Each parameter can use an automatic input, its library default, a custom value, None, or a previous result. A mapping or multiband result can also supply a selected member. Structured inputs accept nested references such as `{"$ref":"settings"}`. Operations retain intermediate arrays and objects for later calculations.
+
+Display a single band or RGB result on the map. Applying a result replaces the current Relief view; intermediate results remain in the workspace. A raster on a different grid remains available for processing and download. Session archives contain managed input/output files, arrays, object fields, grid metadata and operation history. They do not automatically restore an interactive session.
+
+Processing runs synchronously on the local computer. Large arrays can exhaust memory; choose the tiled operations for large rasters. The browser download limit is 200 MB; larger files remain at the local location reported by the app.
 
 Terrain cleaning (banding, spikes and pits, voids, noise) and the automatic best view are available in scripts through `airchgis/gis/tools.py` (`clean_terrain`, `best_view`); they are not in the interface for now.
 
@@ -140,11 +177,15 @@ Linux and Windows:
 ```bash
 python -m venv .venv_airchgis
 source .venv_airchgis/bin/activate    # Windows: .venv_airchgis\Scripts\activate
-pip install -r requirements.txt
+python scripts/install_dependencies.py
 streamlit run airchgis_app.py
 ```
 
 The app opens at [localhost:8501](http://localhost:8501). QGIS is optional.
+
+The installer fetches the pinned RVT source without its optional notebook dependencies, then installs the application dependencies. RVT declares Python `<3.12`; the installer bypasses that restriction for RVT only. The application and integration tests are verified locally with Python 3.12. Installing GDAL may require matching system GDAL libraries, depending on the platform. Git is required to fetch RVT from GitHub.
+
+The map display allows raster images up to 4096 pixels per side and uses nearest-neighbour texture sampling when zooming. This display limit does not change the terrain calculations or GeoTIFF exports.
 
 Terrain processing runs locally. Basemap imagery, geographic labels and global terrain tiles require internet access. Opening Google Earth shares the selected coordinates with that service.
 
@@ -161,6 +202,8 @@ Terrain processing runs locally. Basemap imagery, geographic labels and global t
 │   ├── help_page.css          # guide layout, index, cards and FAQ
 │   ├── ui.py                  # shared theme, navigation and upload styling
 │   ├── assets/logo.svg        # animated terrain logo
+│   ├── rvt_api.py             # complete RVT operation registry and workspace
+│   ├── rvt_runtime.py         # documented library compatibility corrections
 │   ├── workbench.py           # map events, analysis state and exports
 │   ├── map/                   # MapLibre map (interface adapted from DetectorLab, Apache-2.0)
 │   ├── data_input.py          # loaders: rasters, LAS/LAZ, site lists

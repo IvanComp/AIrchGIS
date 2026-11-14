@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-MAX_SIDE = 1600
+MAX_SIDE = 4096
 DEM_SIDE = 300
 
 

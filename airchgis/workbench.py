@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 import numpy as np
 
@@ -21,16 +22,15 @@ MAX_DOWNLOAD_MB = 200
 class Workbench:
 
 
-    def __init__(self, dem, transform, crs, profile, name="terrain"):
-        from airchgis.enhance.metrics import zero_nodata
+    def __init__(self, dem, transform, crs, profile, name="terrain", log=None, source=None, notes=None):
         from airchgis.gis.provenance import ProvenanceLog
 
-        dem, transform, crs, profile = to_metric(np.asarray(dem, dtype=np.float32), transform, crs, dict(profile))
-        self.dem, self.n_zero = zero_nodata(dem)
-        self.dem = self.dem.astype(np.float32)
-        self.transform, self.crs, self.profile = transform, crs, dict(profile)
-        self.res = float(abs(transform.a))
         self.name = name
+        self.log = log or ProvenanceLog(f"AIrchGIS · {name}")
+        self.source = source or {"kind": "raster"}
+        self.prep = {"steps": [], "params": {"fill_voids": True, "cell_m": 0.0}}
+        self.resolution = None
+        self.harmonize(dem, transform, crs, profile, notes)
         self.layers = []
         self.arrays = {}
         self.message = ""
@@ -42,12 +42,55 @@ class Workbench:
         self.rvt_workspace = None
         self.done_nonce = None
         self.counter = 0
-        self.log = ProvenanceLog(f"AIrchGIS · {name}")
         self.src_path = None
         self.clean_path = None
         self.sites = None
         self.paths = {}
 
+
+    def harmonize(self, dem, transform, crs, profile, notes=None):
+        """Bring the loaded terrain to metres and a clear no-data convention, and record what was done."""
+        from rasterio.crs import CRS
+
+        from airchgis.enhance.metrics import zero_nodata
+        from airchgis.preprocess import step
+
+        steps = [step("input", n) for n in (notes or [])]
+        c = CRS.from_user_input(crs) if crs is not None else None
+        h0, w0 = np.shape(dem)
+        dem, transform, crs, profile = to_metric(np.asarray(dem, dtype=np.float32), transform, crs, dict(profile))
+        if c is not None and c.is_geographic:
+            steps.append(step("crs", f"Coordinates in degrees ({c.to_string()}) reprojected to {CRS.from_user_input(crs).to_string()} "
+                              f"so that sizes are in metres; cell {abs(transform.a):.2f} m.", cell_m=round(abs(transform.a), 3)))
+        else:
+            steps.append(step("crs", f"Coordinate system {c.to_string() if c else 'unknown'}, cell {abs(transform.a):.2f} m.",
+                              cell_m=round(abs(transform.a), 3)))
+        dem, n_zero = zero_nodata(dem)
+        steps.append(step("nodata", f"{n_zero:,} cells with elevation exactly 0 treated as no data (fill outside the survey)."
+                          if n_zero else "No-data cells read from the file; no zero fill found.", zero_cells=int(n_zero)))
+        self.base = (np.asarray(dem, dtype=np.float32), transform, crs, dict(profile))
+        self.base_steps = steps
+        self.base_path = None
+        self.set_dem(*self.base)
+
+    def set_dem(self, dem, transform, crs, profile):
+        self.dem = np.asarray(dem, dtype=np.float32)
+        self.transform, self.crs, self.profile = transform, crs, dict(profile)
+        self.profile.update(transform=transform, crs=crs, height=self.dem.shape[0], width=self.dem.shape[1])
+        self.res = float(abs(transform.a))
+        self.n_zero = 0
+        self.src_path = None
+        self.layers, self.arrays, self.paths = [], {}, {}
+        if hasattr(self, "_elev"):
+            del self._elev
+
+    def base_input(self):
+        if self.base_path is None or not Path(self.base_path).exists():
+            dem, transform, crs, profile = self.base
+            prof = dict(profile)
+            prof.update(transform=transform, crs=crs)
+            self.base_path = str(write_raster(dem, prof, crs, OUT_DIR / f"{self.name}_harmonized.tif"))
+        return self.base_path
 
     def input_path(self):
         if self.src_path is None or not Path(self.src_path).exists():
@@ -79,14 +122,21 @@ class Workbench:
         size = p.stat().st_size / 1e6
         if size > MAX_DOWNLOAD_MB:
             raise ValueError(f"The file is {size:.0f} MB, too large to send to the browser; it is saved in {p}.")
-        self.download = {"id": f"dl{self.counter}", "filename": filename or p.name, "mime": mime,
+        self.download = {"id": "dl" + uuid4().hex, "filename": filename or p.name, "mime": mime,
                          "b64": base64.b64encode(p.read_bytes()).decode("ascii")}
 
     def map_args(self, tools):
         return {"layers": self.layers, "message": self.message if self.message_level in {"warning", "error"} else "", "message_level": self.message_level, "details": self.details, "download": self.download,
-                "view3d": self.view3d, "cloud_key": self.cloud_key, "done_nonce": self.done_nonce, "tools": tools, "name": self.name,
+                "view3d": self.view3d, "prep": self.prep_view(), "resolution": self.resolution, "cloud_key": self.cloud_key, "done_nonce": self.done_nonce, "tools": tools, "name": self.name,
                 "elevation": self.elevation(), "sites": bool(self.sites),
                 "rvt_api": self.rvt_workspace.snapshot() if self.rvt_workspace is not None else None}
+
+    def prep_view(self):
+        p = dict(self.prep)
+        p["steps"] = list(self.prep.get("source_steps", [])) + list(self.base_steps) + list(self.prep.get("steps", []))
+        p["kind"] = self.source.get("kind", "raster")
+        p["cell_m"] = round(self.res, 3)
+        return p
 
     def elevation(self):
         if not hasattr(self, "_elev"):
@@ -170,6 +220,55 @@ def hillshade(dem, res):
     h = np.asarray(rvt.vis.hillshade(f.astype(np.float32), res, res, sun_azimuth=315, sun_elevation=35), dtype=np.float32)
     h[mask] = np.nan
     return h
+
+
+def run_preparation(wb, fill_voids=True, cell_m=0.0):
+    """Prepare the harmonized terrain (voids, optional coarser cell, artifact check) and reload the map."""
+    from airchgis.gis.tools import run_tool
+
+    out = run_tool("prepare_dtm", log=wb.log, input=wb.base_input(), output=str(OUT_DIR / f"{wb.name}_prepared.tif"),
+                   fill_voids=bool(fill_voids), cell_m=float(cell_m or 0.0))["outputs"]
+    import rasterio
+
+    with rasterio.open(out["output"]) as src:
+        dem = src.read(1).astype(np.float32)
+        dem[dem == -9999.0] = np.nan
+        transform, crs, profile = src.transform, src.crs, src.profile.copy()
+    wb.set_dem(dem, transform, crs, profile)
+    wb.prep["steps"] = out["steps"]
+    wb.prep["params"] = {"fill_voids": bool(fill_voids), "cell_m": float(cell_m or 0.0)}
+    run_relief(wb, None, "Hillshade", 315, replace=True)
+    wb.message = f"Terrain prepared: {wb.dem.shape[1]} × {wb.dem.shape[0]} cells of {wb.res:.2f} m."
+
+
+def run_regrid(wb, method="tin", cell_m=0.0, ground_only=True, remove_outliers=True, fill_voids=True):
+    """Grid the point cloud again with other choices, then prepare the terrain."""
+    from airchgis.gis.tools import run_tool
+
+    las = wb.source.get("path")
+    if wb.source.get("kind") != "points" or not las:
+        raise ValueError("This terrain did not come from a point cloud.")
+    out = run_tool("grid_point_cloud", log=wb.log, input=las, output=str(OUT_DIR / f"{wb.name}_{method}.tif"),
+                   method=method, cell_m=float(cell_m or 0.0), ground_only=bool(ground_only),
+                   remove_outliers=bool(remove_outliers))["outputs"]
+    import rasterio
+
+    with rasterio.open(out["output"]) as src:
+        dem = src.read(1).astype(np.float32)
+        dem[dem == -9999.0] = np.nan
+        wb.harmonize(dem, src.transform, src.crs, src.profile.copy())
+    wb.prep["source_steps"] = out["steps"]
+    wb.prep["grid"] = {"method": method, "cell_m": float(cell_m or 0.0), "ground_only": bool(ground_only),
+                       "remove_outliers": bool(remove_outliers)}
+    run_preparation(wb, fill_voids=fill_voids)
+
+
+def run_resolution(wb, width):
+    from airchgis.gis.tools import run_tool
+
+    r = run_tool("check_raster_resolvability", log=wb.log, input=wb.input_path(), feature_width_m=float(width))["outputs"]
+    wb.resolution = {"width": float(width), "verdict": r.get("verdict"), "message": r.get("message"),
+                     "cell_m": round(wb.res, 3)}
 
 
 def run_relief(wb, core, method, value, compute=None, replace=False):
@@ -307,6 +406,9 @@ def run_research_export(wb):
 
 
 def offer_layer(wb, layer_id):
+    if layer_id == "rvt_current" and wb.rvt_workspace is not None and getattr(wb, "rvt_current", None):
+        wb.offer(wb.rvt_workspace.download(wb.rvt_current, "geotiff"), mime="image/tiff")
+        return
     arr = wb.arrays.get(layer_id)
     if arr is None:
         raise ValueError("This layer cannot be downloaded.")
@@ -367,12 +469,16 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
             if wb.rvt_workspace is None:
                 wb.rvt_workspace = RVTWorkspace(wb)
             workspace = wb.rvt_workspace
-            if action == "rvt_run":
+            if action == "rvt_preview":
+                workspace.execute(event["operation"], event.get("parameters"), event.get("instance"), preview=True)
+            elif action == "rvt_preset_preview":
+                workspace.preset(event["preset"], event.get("terrain", "general"), event.get("opacity", 50), preview=True)
+            elif action == "rvt_run":
                 keys = workspace.execute(event["operation"], event.get("parameters"), event.get("instance"))
                 if event.get("show", True):
                     for key in keys:
                         if workspace._mapable(workspace.items[key]["value"]):
-                            workspace.show(key, rgb=np.ndim(workspace.items[key]["value"]) == 3 and 3 in workspace.items[key]["value"].shape)
+                            workspace.show(key, rgb=workspace.is_rgb(workspace.items[key]["value"]))
                             break
             elif action == "rvt_show":
                 workspace.show(event["artifact"], event.get("band"), event.get("rgb", False))
@@ -397,6 +503,12 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
                 raise ValueError("The 3D view is not available here.")
             wb.view3d = {"id": event.get("nonce"), "html": view3d()}
             wb.message = "3D view of your terrain: drag to rotate, scroll to zoom. Close it with ×."
+        elif action == "prepare":
+            run_preparation(wb, event.get("fill_voids", True), event.get("cell_m", 0.0))
+        elif action == "regrid":
+            run_regrid(wb, **{k: event[k] for k in ("method", "cell_m", "ground_only", "remove_outliers", "fill_voids") if k in event})
+        elif action == "resolution":
+            run_resolution(wb, float(event.get("width") or 2.0))
         elif action == "relief":
             run_relief(wb, core, event["method"], event.get("value"), compute, replace=event.get("replace", False))
         elif action == "best_view":

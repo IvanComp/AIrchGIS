@@ -780,6 +780,38 @@ register(Tool("fuse_layers", "Blend relief views of the same terrain into one im
               _native_fuse_layers, None, ("input",), tags=("lidar",)))
 
 
+def _native_grid_point_cloud(input, output, method="tin", cell_m=0.0, ground_only=True, remove_outliers=True):
+    from airchgis.preprocess import grid_point_cloud
+
+    out, steps = grid_point_cloud(input, output, method=method, cell=cell_m or None, ground_only=ground_only,
+                                  remove_outliers=remove_outliers)
+    return {"output": str(out), "steps": steps}
+
+
+def _native_prepare_dtm(input, output, fill_voids=True, cell_m=0.0):
+    from airchgis.preprocess import prepare_dtm
+
+    arr, prof = _read(input)
+    out, transform, steps = prepare_dtm(arr, prof["transform"], fill_voids=fill_voids, cell=cell_m or None)
+    prof = dict(prof)
+    prof.update(transform=transform, height=out.shape[0], width=out.shape[1])
+    return {"output": _write(output, out, prof), "steps": steps}
+
+
+register(Tool("grid_point_cloud", "Make a terrain model from a LAS/LAZ point cloud: use the ground class when present, remove isolated points, suggest a cell size from the ground-point density and interpolate (TIN, IDW, mean or lowest point).",
+              _schema(["input", "output"], input={"type": "string", "description": "Path of the .las or .laz file."}, output=_OUT,
+                      method={"type": "string", "enum": ["tin", "idw", "mean", "min"], "default": "tin", "description": "Interpolation method."},
+                      cell_m={"type": "number", "minimum": 0, "default": 0.0, "description": "Cell size in metres; 0 = suggested from the ground-point density."},
+                      ground_only={"type": "boolean", "default": True, "description": "Use only ground points (class 2) when the file has them."},
+                      remove_outliers={"type": "boolean", "default": True, "description": "Remove isolated points before gridding."}),
+              _native_grid_point_cloud, None, ("input",), tags=("lidar", "preprocessing")))
+register(Tool("prepare_dtm", "Prepare a raster terrain model for relief visualization: check the elevation values, fill small interior voids, optionally resample to a coarser cell, and measure artifacts (banding, spikes) without changing them.",
+              _schema(["input", "output"], input=_IN, output=_OUT,
+                      fill_voids={"type": "boolean", "default": True, "description": "Fill small voids inside the survey."},
+                      cell_m={"type": "number", "minimum": 0, "default": 0.0, "description": "Resample to this cell size in metres (coarser only); 0 = keep."}),
+              _native_prepare_dtm, None, ("input",), tags=("lidar", "preprocessing")))
+
+
 def _guard(tool, params):
     width = params.get("target_feature_width_m")
     if not width or "input" not in params:

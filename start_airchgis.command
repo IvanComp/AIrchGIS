@@ -31,8 +31,7 @@ if [ -f "$STAMP_FILE" ]; then
 fi
 
 if [ "$REQ_HASH" != "$INSTALLED_HASH" ]; then
-  "$VENV_DIR/bin/python" -m pip install --no-deps --ignore-requires-python rvt-py==2.2.3
-  "$VENV_DIR/bin/python" -m pip install -r "$REQUIREMENTS_FILE"
+  "$VENV_DIR/bin/python" scripts/install_dependencies.py
   print -r -- "$REQ_HASH" > "$STAMP_FILE"
 fi
 

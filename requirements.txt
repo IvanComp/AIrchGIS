@@ -10,6 +10,6 @@ rasterio==1.4.4
 GDAL==3.12.2
 matplotlib==3.9.2
 scipy==1.16.0
-rvt-py==2.2.3
+rvt-py @ git+https://github.com/EarthObservation/RVT_py.git@bab109c409fedf77ccec7de5fd84c48b791df3d2
 pyproj==3.7.1
 laspy==2.7.0

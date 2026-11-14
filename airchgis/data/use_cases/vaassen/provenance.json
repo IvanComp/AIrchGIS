@@ -1,0 +1,75 @@
+{
+  "area": "Vaassen, Gortelseweg, Netherlands; 1 km x 1 km",
+  "source": "AHN4 DTM via PDOK",
+  "source_grid_m": 0.5,
+  "source_url": "https://service.pdok.nl/rws/ahn/wcs/v1_0?service=WCS&version=2.0.1&request=GetCoverage&coverageId=dtm_05m&subset=x%28191650%2C192650%29&subset=y%28478100%2C479100%29&format=image%2Ftiff",
+  "crs": "EPSG:28992",
+  "vertical_datum": "NAP (EPSG:5709)",
+  "retrieved_utc": "2026-11-14T08:42:13.589146+00:00",
+  "license": "CC0-1.0",
+  "dataset_record": "https://data.overheid.nl/dataset/47567-actueel-hoogtebestand-nederland--ahn--dtm",
+  "archaeology_record": "https://monumentenregister.cultureelerfgoed.nl/monumenten/45346",
+  "method": "The 0.5 m raster retains the native grid and values. The 1 m and 5 m rasters are area means of valid native cells. All-NoData blocks remain NoData. These are not independent surveys.",
+  "files": [
+    {
+      "name": "Vaassen_AHN4_DTM_0p5m.tif",
+      "resolution_m": 0.5,
+      "native": true,
+      "shape": [
+        2000,
+        2000
+      ],
+      "bounds": [
+        191650.0,
+        478100.0,
+        192650.0,
+        479100.0
+      ],
+      "valid_fraction": 0.926177,
+      "elevation_min_m": 16.06999969482422,
+      "elevation_max_m": 26.493999481201172,
+      "bytes": 9301358,
+      "sha256": "f496596e7dbf4a25cbef5bf5a6091e7b13c1215caf6bac61a063c8caa4260f10"
+    },
+    {
+      "name": "Vaassen_AHN4_DTM_1m.tif",
+      "resolution_m": 1,
+      "native": false,
+      "shape": [
+        1000,
+        1000
+      ],
+      "bounds": [
+        191650.0,
+        478100.0,
+        192650.0,
+        479100.0
+      ],
+      "valid_fraction": 0.964223,
+      "elevation_min_m": 16.135074615478516,
+      "elevation_max_m": 26.4689998626709,
+      "bytes": 2368365,
+      "sha256": "cffed5158dfce7bd0bda6979174a72e06c267912c58a22f36baa1bd23d13e011"
+    },
+    {
+      "name": "Vaassen_AHN4_DTM_5m.tif",
+      "resolution_m": 5,
+      "native": false,
+      "shape": [
+        200,
+        200
+      ],
+      "bounds": [
+        191650.0,
+        478100.0,
+        192650.0,
+        479100.0
+      ],
+      "valid_fraction": 0.998175,
+      "elevation_min_m": 16.2010498046875,
+      "elevation_max_m": 26.35324478149414,
+      "bytes": 101825,
+      "sha256": "d4485ca6fea5a5b6a860af056fecaf415c2a4a40afd3ffcb4dc6c95e0c695e6e"
+    }
+  ]
+}

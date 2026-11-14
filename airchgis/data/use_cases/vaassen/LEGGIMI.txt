@@ -1,0 +1,25 @@
+DTM DI TEST — VAASSEN, PAESI BASSI
+
+Tre GeoTIFF sulla stessa area di 1 km x 1 km, pronti per AIrchGIS:
+- Vaassen_AHN4_DTM_0p5m.tif: 0,5 m, 2000 x 2000 pixel, griglia nativa AHN4.
+- Vaassen_AHN4_DTM_1m.tif: 1 m, 1000 x 1000 pixel, media di blocchi 2 x 2.
+- Vaassen_AHN4_DTM_5m.tif: 5 m, 200 x 200 pixel, media di blocchi 10 x 10.
+
+Fonte: Rijkswaterstaat / AHN4, servizio pubblico PDOK, licenza CC0-1.0.
+Coordinate: Amersfoort / RD New, EPSG:28992. Quote in metri rispetto a NAP.
+0,5 m e la massima risoluzione nativa del raster DTM di questa fonte; non e un limite globale dei DTM.
+Le tre versioni non sono rilievi indipendenti. Le versioni a 1 e 5 m sono derivate per isolare l'effetto della risoluzione.
+I vuoti del DTM originale sono conservati; nei blocchi aggregati si usano solo celle valide.
+Il registro nazionale documenta campi antichi e dieci tumuli nella zona di Gortelseweg (monumento 45346).
+
+CONFRONTO
+Caricare un file alla volta, mantenendo stessa area, zoom, direzione e altezza del sole.
+Per filtri con raggio in pixel, adattare il raggio alla risoluzione per confrontare la stessa scala fisica:
+un raggio di 10 m equivale a 20 pixel a 0,5 m, 10 pixel a 1 m e 2 pixel a 5 m.
+Aumentare lo zoom non crea nuovi dettagli. La risoluzione della griglia non equivale alla precisione verticale.
+L'anteprima PNG mostra hillshade senza interpolazione grafica; il GeoTIFF conserva i dati numerici.
+
+Fonte dati: https://data.overheid.nl/dataset/47567-actueel-hoogtebestand-nederland--ahn--dtm
+Contesto archeologico: https://monumentenregister.cultureelerfgoed.nl/monumenten/45346
+Richiesta di download: https://service.pdok.nl/rws/ahn/wcs/v1_0?service=WCS&version=2.0.1&request=GetCoverage&coverageId=dtm_05m&subset=x%28191650%2C192650%29&subset=y%28478100%2C479100%29&format=image%2Ftiff
+Dettagli e SHA-256: provenance.json

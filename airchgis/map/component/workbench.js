@@ -3,6 +3,7 @@
 function post(type,data){window.parent.postMessage(Object.assign({isStreamlitMessage:true,type},data),'*');}
 function setValue(value){post('streamlit:setComponentValue',{value,dataType:'json'});}
 function setHeight(h){post('streamlit:setFrameHeight',{height:h});}
+function fitHeight(){let height=ARGS?.height||760;try{const top=window.frameElement.getBoundingClientRect().top;height=Math.min(height,Math.max(420,window.parent.innerHeight-Math.max(0,top)-16));}catch{}setHeight(height);}
 
 let ARGS=null,map=null,initialized=false,pendingNonce=null,lastDownload=null,last3d=null,nonceCounter=0;
 let rvtWorkspace=null;
@@ -18,7 +19,7 @@ function send(event){
   event.nonce=`${Date.now()}-${nonceCounter}`;
   pendingNonce=event.nonce;
   busy.hidden=false;
-  rvtWorkspace?.setBusy(true);
+  rvtWorkspace?.setBusy(true,event.action);
   document.querySelector('.wb-3d-busy').hidden=document.querySelector('.wb-modal').hidden;
   document.querySelector('.wb-3d-busy').textContent=event.action==='view3d'?'Preparing 3D view…':'Preparing export…';
   document.querySelector('.wb-cloud').disabled=true;
@@ -30,12 +31,13 @@ window.addEventListener('message',ev=>{
   const d=ev.data||{};
   if(d.type!=='streamlit:render')return;
   ARGS=(d.args&&d.args.args)||d.args||{};
-  if(!initialized){initialized=true;setHeight(ARGS.height||760);init();}
+  if(!initialized){initialized=true;fitHeight();init();}
   update();
 });
+try{window.parent.addEventListener('resize',fitHeight);}catch{window.addEventListener('resize',fitHeight);}
 post('streamlit:componentReady',{apiVersion:1});
 
-let terrainEnabled=true,measurementActive=false,coordinateActive=false,measurementPoints=[],measurementMarkers=[],coordinateMarker=null,selectedEarthPoint=null;
+let terrainEnabled=true,measurementActive=false,coordinateActive=false,measurementPoints=[],measurementMarkers=[],coordinateMarker=null;
 const labelIds=['locality-cities','locality-towns','locality-villages'];
 
 function layerBounds(){
@@ -62,7 +64,7 @@ function initMap(){
   map.addControl(new maplibregl.ScaleControl({maxWidth:90,unit:'metric'}),'bottom-left');
   let ready=false;
   const onReady=()=>{if(ready)return;ready=true;
-    if(bounds){const el=map.getContainer();const right=document.querySelector('.exact-layer-panel').getBoundingClientRect().width+24;
+    if(bounds){const el=map.getContainer();const right=document.querySelector('.detector-map').classList.contains('rvt-open')?24:document.querySelector('.exact-layer-panel').getBoundingClientRect().width+24;
       map.fitBounds(bounds,{padding:{top:30,bottom:30,left:70,right},pitch:0,bearing:0,duration:0});map.jumpTo({pitch:40,bearing:-8});}
     addLabels();
     map.addSource('measurement',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
@@ -96,7 +98,7 @@ function syncLayers(){
       if(map.getLayer('wb-'+l.id))map.removeLayer('wb-'+l.id);
       if(map.getSource('wb-'+l.id))map.removeSource('wb-'+l.id);
       map.addSource('wb-'+l.id,{type:'image',url:l.image,coordinates:coords});
-      map.addLayer({id:'wb-'+l.id,type:'raster',source:'wb-'+l.id,paint:{'raster-opacity':l.opacity,'raster-fade-duration':0}},map.getLayer('locality-cities')?'locality-cities':'measurement-line');
+      map.addLayer({id:'wb-'+l.id,type:'raster',source:'wb-'+l.id,paint:{'raster-opacity':l.opacity,'raster-fade-duration':0,'raster-resampling':'nearest'}},map.getLayer('locality-cities')?'locality-cities':'measurement-line');
       mapLayerIds.set(l.id,l.image);
       shownLayers.set(l.id,{visible:l.visible,opacity:l.opacity});
     }else if(map.getLayer('wb-'+l.id)){
@@ -165,6 +167,37 @@ function el(html){const t=document.createElement('template');t.innerHTML=html.tr
 function buildTools(){
   const box=document.querySelector('.wb-tools');box.innerHTML='';
   const tools=ARGS.tools||{};
+  // pre-processing: what was done to reach the terrain on the map, and the choices to do it again
+  const prep=el(`<div class="wb-card primary wb-prep"><h4>Pre-processing</h4><p>From your file to the terrain on the map. Each step is recorded in the script.</p>
+    <ol class="wb-prep-steps"></ol>
+    <details class="wb-prep-options"><summary>Change the pre-processing</summary>
+      <div class="wb-pc-only">
+        <div class="wb-row"><label for="wb-pc-method">Interpolation</label><select id="wb-pc-method" class="wb-pc-method">
+          <option value="tin">TIN (linear)</option><option value="idw">IDW</option><option value="mean">Mean per cell</option><option value="min">Lowest point</option></select></div>
+        <div class="wb-row"><label for="wb-pc-cell">Cell size (m, 0 = suggested)</label><input id="wb-pc-cell" type="number" class="wb-pc-cell" min="0" step="0.25" value="0"></div>
+        <div class="wb-row"><label><input type="checkbox" class="wb-pc-ground" checked> Ground points only (class 2)</label></div>
+        <div class="wb-row"><label><input type="checkbox" class="wb-pc-outliers" checked> Remove isolated points</label></div>
+      </div>
+      <div class="wb-raster-only">
+        <div class="wb-row"><label for="wb-dtm-cell">Resample to (m, 0 = keep)</label><input id="wb-dtm-cell" type="number" class="wb-dtm-cell" min="0" step="0.5" value="0"></div>
+      </div>
+      <div class="wb-row"><label><input type="checkbox" class="wb-fill" checked> Fill small voids inside the survey</label></div>
+      <button type="button" class="wb-run secondary" data-act="reprocess">Run the pre-processing again</button>
+    </details></div>`);
+  prep.querySelector('[data-act=reprocess]').addEventListener('click',()=>{
+    const fill=prep.querySelector('.wb-fill').checked;
+    if((ARGS.prep||{}).kind==='points'){
+      send({action:'regrid',method:prep.querySelector('.wb-pc-method').value,cell_m:Number(prep.querySelector('.wb-pc-cell').value)||0,
+        ground_only:prep.querySelector('.wb-pc-ground').checked,remove_outliers:prep.querySelector('.wb-pc-outliers').checked,fill_voids:fill});
+    }else send({action:'prepare',fill_voids:fill,cell_m:Number(prep.querySelector('.wb-dtm-cell').value)||0});
+  });
+  box.appendChild(prep);
+  const reso=el(`<div class="wb-card wb-reso"><h4>Resolution check</h4><p>Can features of this width be seen at the cell size of your terrain?</p>
+    <div class="wb-row"><label for="wb-reso-width">Feature width (m)</label><input id="wb-reso-width" type="number" class="wb-reso-width" min="0.1" step="0.5" value="2"></div>
+    <p class="wb-reso-result" hidden></p>
+    <button type="button" class="wb-run secondary" data-act="resolution">Check</button></div>`);
+  reso.querySelector('[data-act=resolution]').addEventListener('click',()=>send({action:'resolution',width:Number(reso.querySelector('.wb-reso-width').value)}));
+  box.appendChild(reso);
   const launch=el('<button type="button" class="wb-run wb-api-open">Open RVT workspace</button>');
   launch.addEventListener('click',()=>rvtWorkspace.open());
   box.appendChild(launch);
@@ -219,12 +252,32 @@ function buildTools(){
       scale_bar:td.querySelector('.wb-sb').checked,north_arrow:td.querySelector('.wb-na').checked,drape:top?top.id:null});});
   td.querySelector('[data-act=research]').addEventListener('click',()=>send({action:'research'}));
   document.querySelector('.wb-3d-tools').appendChild(td);
+  const sc=el(`<div class="wb-card"><h4>Script</h4><p>Every step of this session (pre-processing, relief views, exports) with its settings and input checksums, as a Python script that repeats it.</p>
+    <button type="button" class="wb-run secondary" data-act="script">Download the steps as a Python script</button></div>`);
+  sc.querySelector('[data-act=script]').addEventListener('click',()=>send({action:'script'}));
+  box.appendChild(sc);
+  const credit=el('<p class="wb-credit">Visualizations computed with <a href="https://github.com/EarthObservation/RVT_py" target="_blank" rel="noopener">RVT_py</a> (Relief Visualization Toolbox, ZRC SAZU and University of Ljubljana).</p>');
+  box.appendChild(credit);
+}
+function fmtMeasure(v){if(typeof v!=='number')return String(v);if(Math.abs(v)>=1000)return v.toLocaleString('en');return Number(v.toPrecision(3)).toString();}
+function renderPrep(){
+  const p=ARGS.prep||{};const list=document.querySelector('.wb-prep-steps');if(!list)return;
+  list.innerHTML='';
+  (p.steps||[]).forEach(s=>{const li=document.createElement('li');const n=document.createElement('span');n.textContent=s.note;li.appendChild(n);
+    const m=Object.entries(s.measures||{});if(m.length){const small=document.createElement('small');small.textContent=m.map(([k,v])=>`${k.replace(/_/g,' ')}: ${fmtMeasure(v)}`).join(' · ');li.appendChild(small);}
+    list.appendChild(li);});
+  document.querySelector('.wb-pc-only').hidden=p.kind!=='points';
+  document.querySelector('.wb-raster-only').hidden=p.kind==='points';
+  const g=p.grid||{};if(p.kind==='points'){document.querySelector('.wb-pc-method').value=g.method||'tin';}
+  const r=ARGS.resolution,out=document.querySelector('.wb-reso-result');
+  if(r&&out){out.hidden=false;out.textContent=`${r.message} (cell ${r.cell_m} m)`;out.className='wb-reso-result '+(r.verdict||'');}
 }
 
 function update(){
   for(const box of [messageBox,document.querySelector('.wb-3d-message')]){box.hidden=!ARGS.message;box.textContent=ARGS.message||'';box.classList.toggle('error',ARGS.message_level==='error');}
   if(pendingNonce&&ARGS.done_nonce===pendingNonce){pendingNonce=null;busy.hidden=true;document.querySelector('.wb-3d-busy').hidden=true;document.querySelectorAll('.wb-run').forEach(b=>b.disabled=false);document.querySelector('.wb-cloud').disabled=false;rvtWorkspace?.setBusy(false);}
   syncLayers();
+  renderPrep();
   rvtWorkspace?.update(ARGS.rvt_api,ARGS.message);
   const cloud=document.querySelector('.wb-cloud');
   cloud.value=ARGS.cloud_key||'original';
@@ -235,7 +288,7 @@ function update(){
   const v3=ARGS.view3d;
   if(v3&&v3.id!==last3d){last3d=v3.id;const m=document.querySelector('.wb-modal');m.querySelector('iframe').srcdoc=v3.html;m.hidden=false;}
 }
-function init(){rvtWorkspace=new window.RVTWorkspace(send);initMap();buildTools();wireControls();renderLayerCards();}
+function init(){rvtWorkspace=new window.RVTWorkspace(send,fit=>{if(!map)return;map.resize();const docked=document.querySelector('.detector-map').classList.contains('rvt-open');const padding={top:24,bottom:24,left:64,right:docked?24:document.querySelector('.exact-layer-panel').getBoundingClientRect().width+24};map.setPadding(padding);if(fit&&layerBounds())map.fitBounds(layerBounds(),{padding,pitch:0,bearing:0,duration:0});});initMap();buildTools();wireControls();renderLayerCards();}
 
 function distanceBetween(a,b){const r=x=>x*Math.PI/180,R=6371000,dLat=r(b[1]-a[1]),dLng=r(b[0]-a[0]);const q=Math.sin(dLat/2)**2+Math.cos(r(a[1]))*Math.cos(r(b[1]))*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));}
 function formatDistance(m){return m<1000?`${m<10?m.toFixed(1):Math.round(m)} m`:`${(m/1000).toFixed(2)} km`;}
@@ -254,7 +307,7 @@ function elevationAt(lon,lat){const g=ARGS.elevation;if(!g)return null;const[w,s
 function earthUrl(lon,lat){return`https://earth.google.com/web/search/${encodeURIComponent(`${lat.toFixed(6)},${lon.toFixed(6)}`)}`;}
 function setCoord(a){if(a&&measurementActive)setMeasure(false);coordinateActive=a;document.querySelector('[data-map-action=coordinates]').classList.toggle('active',a);map.getCanvas().style.cursor=a||measurementActive?'crosshair':'';if(a)showToast('Select a point on the map');}
 async function handleCoordinateClick(e){
-  const lon=e.lngLat.lng,lat=e.lngLat.lat;selectedEarthPoint=[lon,lat];document.querySelector('[data-map-action=earth]').disabled=false;
+  const lon=e.lngLat.lng,lat=e.lngLat.lat;
   const utm=toUtm(lon,lat),z=elevationAt(lon,lat),hasZ=z!==null&&z!==undefined;
   const text=`${utm}${hasZ?` · elevation ${z.toFixed(2)} m`:''}`;
   let copied=false;try{await navigator.clipboard.writeText(text);copied=true;}catch(err){}
@@ -274,7 +327,6 @@ function wireControls(){
   document.querySelector('[data-map-action=zoom-out]').addEventListener('click',()=>map.zoomOut());
   document.querySelector('[data-map-action=measure]').addEventListener('click',()=>setMeasure(!measurementActive));
   document.querySelector('[data-map-action=coordinates]').addEventListener('click',()=>setCoord(!coordinateActive));
-  document.querySelector('[data-map-action=earth]').addEventListener('click',()=>{if(selectedEarthPoint)window.open(earthUrl(selectedEarthPoint[0],selectedEarthPoint[1]),'_blank','noopener');});
   const tb=document.querySelector('.terrain-toggle');const label=()=>{tb.querySelector('small').textContent=terrainEnabled?'Relief on':'Flat view';};
   tb.addEventListener('click',()=>{terrainEnabled=!terrainEnabled;map.setTerrain(terrainEnabled?{source:'terrain',exaggeration:1.35}:null);map.easeTo({pitch:terrainEnabled?50:0,bearing:terrainEnabled?-12:0,duration:700});label();});
   document.querySelector('.panel-handle').addEventListener('click',ev=>{const c=document.querySelector('.detector-map').classList.toggle('panel-collapsed');ev.currentTarget.textContent=c?'‹':'›';ev.currentTarget.title=c?'Show tools':'Hide tools';ev.currentTarget.setAttribute('aria-expanded',String(!c));});

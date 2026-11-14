@@ -4,13 +4,15 @@ const option=(value,label)=>{const e=make('option','',label);e.value=value;retur
 const parse=value=>{if(value.trim()==='')return null;try{return JSON.parse(value);}catch{return value;}};
 const summary=item=>{const s=item.summary;if(!s)return '';if(s.type==='array')return `${s.shape.join(' × ')} · ${s.dtype}`;if(s.type==='file')return s.name;return typeof s==='object'?s.type:String(s);};
 class Workspace{
-  constructor(send){
-    this.send=send;this.state=null;this.operation=null;this.fields=new Map();this.dirtyFields=new Map();this.busy=false;
-    this.root=make('div','rvt-workspace');this.root.hidden=true;this.root.setAttribute('role','dialog');this.root.setAttribute('aria-modal','true');this.root.setAttribute('aria-label','RVT workspace');
-    this.root.innerHTML=`<div class="rvt-window"><header class="rvt-header"><div><h2>RVT workspace</h2><p class="rvt-version"></p></div><button type="button" class="rvt-close" aria-label="Close RVT workspace">×</button></header><nav class="rvt-tabs" aria-label="Workspace sections"></nav><div class="rvt-feedback" role="status" hidden></div><div class="rvt-operation-layout"><aside class="rvt-operation-list"><input class="rvt-search" type="search" placeholder="Find a tool" aria-label="Find a tool"><select class="rvt-group" aria-label="Tool group"></select><select class="rvt-operations" size="16" aria-label="RVT operation"></select></aside><main class="rvt-operation-form"><h3 class="rvt-title"></h3><p class="rvt-operation-help"></p><p class="rvt-operation-id"></p><div class="rvt-instance-wrap"><label>Object instance<select class="rvt-instance"></select></label><button type="button" class="rvt-create-instance">Create an instance</button></div><div class="rvt-parameters"></div><div class="rvt-run-row"><label><input type="checkbox" class="rvt-auto-show" checked> Display spatial result on map</label><button type="button" class="rvt-run">Run operation</button></div></main><aside class="rvt-output-panel"><h3>Results</h3><div class="rvt-results"></div></aside></div><section class="rvt-settings-panel" hidden><label>Settings or composition object<select class="rvt-settings-object"></select></label><input type="search" class="rvt-settings-search" placeholder="Filter settings" aria-label="Filter settings"><div class="rvt-settings-fields"></div><button type="button" class="rvt-save-settings">Apply settings</button></section><section class="rvt-presets-panel" hidden><h3>RVT compositions</h3><label>Composition<select class="rvt-preset"></select></label><label>Terrain settings<select class="rvt-terrain"></select></label><label>General VAT opacity (%)<input type="number" class="rvt-vat-opacity" min="0" max="100" value="50"></label><button type="button" class="rvt-run-preset">Render composition</button><h3>Custom compositions</h3><p>Create a BlenderCombination object under Operations. Add layers with Create layer, set normalization, blend mode, opacity and colour map, then run Render all images. JSON compositions can be imported and exported through the library operations.</p></section><section class="rvt-files-panel" hidden><h3>Inputs and results</h3><label class="rvt-upload-label">Import rasters or configuration files<input type="file" class="rvt-upload" multiple accept=".tif,.tiff,.asc,.json,.npy,.npz,.txt"></label><div class="rvt-all-results"></div><button type="button" class="rvt-package">Download session package</button></section><section class="rvt-batch-panel" hidden><h3>Batch processing</h3><p>Select an operation and its parameters under Operations, then choose raster files below. Each input is processed with its own grid and resolution. For tiled processing, use the Tiled processing group in Operations.</p><div class="rvt-batch-files"></div><button type="button" class="rvt-run-batch">Run selected operation on files</button></section><footer class="rvt-footer"><span class="rvt-busy" role="status" hidden>Processing…</span><span>Inputs, settings and results remain available for subsequent operations.</span></footer></div>`;
-    document.body.appendChild(this.root);
+  constructor(send,onLayout){
+    this.send=send;this.onLayout=onLayout;this.pendingPreview=false;this.lastPreview=null;this.state=null;this.operation=null;this.fields=new Map();this.dirtyFields=new Map();this.busy=false;
+    this.root=make('div','rvt-workspace');this.root.hidden=true;this.root.setAttribute('role','region');this.root.setAttribute('aria-label','RVT visualization tools');
+    this.root.innerHTML=`<div class="rvt-window"><header class="rvt-header"><div><h2>Visualization tools</h2><p class="rvt-version"></p></div><button type="button" class="rvt-close" aria-label="Close RVT tools">×</button></header><nav class="rvt-tabs" aria-label="Workspace sections"></nav><div class="rvt-feedback" role="status" hidden></div><div class="rvt-map-layers"></div><div class="rvt-live-row"><label><input type="checkbox" class="rvt-live" checked> Live preview</label><span class="rvt-preview-status" role="status">Change a parameter to update the map.</span></div><div class="rvt-operation-layout"><aside class="rvt-operation-list"><input class="rvt-search" type="search" placeholder="Find a tool" aria-label="Find a tool"><select class="rvt-group" aria-label="Tool group"></select><select class="rvt-operations" aria-label="RVT operation"></select></aside><main class="rvt-operation-form"><h3 class="rvt-title"></h3><p class="rvt-operation-help"></p><p class="rvt-operation-id"></p><div class="rvt-instance-wrap"><label>Object instance<select class="rvt-instance"></select></label><button type="button" class="rvt-create-instance">Create an instance</button></div><div class="rvt-parameters"></div><div class="rvt-run-row"><label><input type="checkbox" class="rvt-auto-show" checked> Display spatial result on map</label><button type="button" class="rvt-run">Run operation</button></div></main><details class="rvt-output-panel"><summary>Results &amp; exports</summary><div class="rvt-results"></div></details></div><section class="rvt-settings-panel" hidden><label>Settings or composition object<select class="rvt-settings-object"></select></label><input type="search" class="rvt-settings-search" placeholder="Filter settings" aria-label="Filter settings"><div class="rvt-settings-fields"></div><button type="button" class="rvt-save-settings">Apply settings</button></section><section class="rvt-presets-panel" hidden><h3>RVT compositions</h3><label>Composition<select class="rvt-preset"></select></label><label>Terrain settings<select class="rvt-terrain"></select></label><label>General VAT opacity (%)<input type="number" class="rvt-vat-opacity" min="0" max="100" value="50"></label><button type="button" class="rvt-run-preset">Render composition</button><h3>Custom compositions</h3><p>Create a BlenderCombination object under Operations. Add layers with Create layer, set normalization, blend mode, opacity and colour map, then run Render all images. JSON compositions can be imported and exported through the library operations.</p></section><section class="rvt-files-panel" hidden><h3>Inputs and results</h3><label class="rvt-upload-label">Import rasters or configuration files<input type="file" class="rvt-upload" multiple accept=".tif,.tiff,.asc,.json,.npy,.npz,.txt"></label><div class="rvt-all-results"></div><button type="button" class="rvt-package">Download session package</button></section><section class="rvt-batch-panel" hidden><h3>Batch processing</h3><p>Select an operation and its parameters under Operations, then choose raster files below. Each input is processed with its own grid and resolution. For tiled processing, use the Tiled processing group in Operations.</p><div class="rvt-batch-files"></div><button type="button" class="rvt-run-batch">Run selected operation on files</button></section><footer class="rvt-footer"><span class="rvt-busy" role="status" hidden>Processing…</span><span>Inputs, settings and results remain available for subsequent operations.</span></footer></div>`;
+    document.querySelector('.map-stage').appendChild(this.root);
     this.$=s=>this.root.querySelector(s);
-    this.$('.rvt-close').onclick=()=>this.root.hidden=true;
+    this.$('.rvt-close').onclick=()=>this.close();
+    this.$('.rvt-live').onchange=()=>{this.lastPreview=null;this.queuePreview();};
+    this.$('.rvt-instance').onchange=()=>{this.lastPreview=null;this.queuePreview();};
     for(const [id,label] of [['operations','Operations'],['settings','Settings'],['presets','Compositions'],['files','Inputs & results'],['batch','Batch']]){const b=make('button','',label);b.type='button';b.dataset.tab=id;b.onclick=()=>this.tab(id);this.$('.rvt-tabs').appendChild(b);}
     for(const [id,label] of [['','All operations'],['vis','Visualizations'],['blend','Compositions & objects'],['blend_func','Image transformations'],['default','Defaults, files & output'],['tile','Tiled processing']])this.$('.rvt-group').appendChild(option(id,label));
     this.$('.rvt-search').oninput=()=>this.operationList();this.$('.rvt-group').onchange=()=>this.operationList();
@@ -19,17 +21,51 @@ class Workspace{
     this.$('.rvt-create-instance').onclick=()=>this.selectOperation(this.operation.class);
     this.$('.rvt-settings-object').onchange=()=>this.settingsFields();
     this.$('.rvt-settings-search').oninput=()=>this.filterSettings();
-    this.$('.rvt-save-settings').onclick=()=>this.send({action:'rvt_settings',artifact:this.$('.rvt-settings-object').value,fields:Object.fromEntries(this.dirtyFields)});
+    this.$('.rvt-save-settings').onclick=()=>{this.lastPreview=null;this.pendingPreview=true;this.send({action:'rvt_settings',artifact:this.$('.rvt-settings-object').value,fields:Object.fromEntries(this.dirtyFields)});};
     this.$('.rvt-run-preset').onclick=()=>this.send({action:'rvt_preset',preset:this.$('.rvt-preset').value,terrain:this.$('.rvt-terrain').value,opacity:Number(this.$('.rvt-vat-opacity').value)});
+    for(const selector of ['.rvt-preset','.rvt-terrain','.rvt-vat-opacity'])this.$(selector).addEventListener('change',()=>this.queuePreview());
+    this.$('.rvt-vat-opacity').addEventListener('input',()=>this.queuePreview());
     this.$('.rvt-upload').onchange=async ev=>{this.uploadQueue=[...ev.target.files];this.uploadNext();};
     this.$('.rvt-package').onclick=()=>this.send({action:'rvt_package'});
     this.$('.rvt-run-batch').onclick=()=>{if(!this.operation)return;const files=[...this.root.querySelectorAll('.rvt-batch-files input:checked')].map(e=>e.value);if(!files.length){this.feedback('Select at least one raster file.');return;}this.send({action:'rvt_batch',operation:this.operation.id,parameters:this.values(),instance:this.$('.rvt-instance').value||null,files});};
     this.tab('operations');
   }
-  open(){this.root.hidden=false;if(!this.state)this.send({action:'rvt_open'});}
-  tab(id){for(const b of this.root.querySelectorAll('.rvt-tabs button'))b.classList.toggle('active',b.dataset.tab===id);for(const [key,selector] of Object.entries({operations:'.rvt-operation-layout',settings:'.rvt-settings-panel',presets:'.rvt-presets-panel',files:'.rvt-files-panel',batch:'.rvt-batch-panel'}))this.$(selector).hidden=key!==id;}
+  open(){
+    this.root.hidden=false;document.querySelector('.detector-map').classList.add('rvt-open');
+    const layers=document.querySelector('.wb-layers');layers.open=false;this.$('.rvt-map-layers').appendChild(layers);
+    this.onLayout?.(!this.hasOpened);this.hasOpened=true;if(!this.state)this.send({action:'rvt_open'});else this.queuePreview();
+  }
+  close(){
+    this.root.hidden=true;this.pendingPreview=false;clearTimeout(this.previewTimer);
+    const panel=document.querySelector('.exact-layer-panel');panel.insertBefore(this.$('.wb-layers'),panel.querySelector('.wb-toolbox'));
+    document.querySelector('.detector-map').classList.remove('rvt-open');this.onLayout?.();
+  }
+  tab(id){this.currentTab=id;this.$('.rvt-live').disabled=id==='presets'?false:!this.operation?.preview;for(const b of this.root.querySelectorAll('.rvt-tabs button'))b.classList.toggle('active',b.dataset.tab===id);for(const [key,selector] of Object.entries({operations:'.rvt-operation-layout',settings:'.rvt-settings-panel',presets:'.rvt-presets-panel',files:'.rvt-files-panel',batch:'.rvt-batch-panel'}))this.$(selector).hidden=key!==id;}
   feedback(message,error=true){const e=this.$('.rvt-feedback');e.hidden=!message;e.textContent=message||'';e.classList.toggle('error',error);}
-  setBusy(value){this.busy=value;this.$('.rvt-busy').hidden=!value;this.root.querySelectorAll('button,input,textarea,select').forEach(e=>{if(!e.classList.contains('rvt-close'))e.disabled=value;});}
+  setBusy(value,action){
+    this.busy=value;this.$('.rvt-busy').hidden=!value;
+    for(const e of this.root.querySelectorAll('.rvt-run,.rvt-save-settings,.rvt-run-preset,.rvt-run-batch,.rvt-package,.rvt-result-actions button'))e.disabled=value;
+    if(value&&['rvt_preview','rvt_preset_preview'].includes(action))this.$('.rvt-preview-status').textContent='Updating map…';
+    if(!value&&this.pendingPreview){clearTimeout(this.previewTimer);this.previewTimer=setTimeout(()=>this.flushPreview(),80);}
+  }
+  queuePreview(){
+    clearTimeout(this.previewTimer);
+    if(this.root.hidden||!this.$('.rvt-live').checked||(!this.operation?.preview&&this.currentTab!=='presets')){this.pendingPreview=false;return;}
+    this.pendingPreview=true;this.previewTimer=setTimeout(()=>this.flushPreview(),650);
+  }
+  flushPreview(){
+    if(!this.pendingPreview||this.busy||this.root.hidden||!this.$('.rvt-live').checked||(!this.operation?.preview&&this.currentTab!=='presets'))return;
+    if(this.currentTab==='presets'){
+      const event={action:'rvt_preset_preview',preset:this.$('.rvt-preset').value,terrain:this.$('.rvt-terrain').value,opacity:Number(this.$('.rvt-vat-opacity').value)};
+      const signature=JSON.stringify(event);this.pendingPreview=false;if(signature===this.lastPreview)return;this.lastPreview=signature;this.send(event);return;
+    }
+    if(this.operation.kind==='method'&&!this.$('.rvt-instance').value)return;
+    const automatic=new Set(['dem','dem_arr','height_arr','dem_fine','data','image','gray_scale','float_arr','resolution','resolution_x','resolution_y','x_res','y_res','dem_resolution','visualization','rvt_visualization']);
+    for(const [name,f] of this.fields){if(f.p.required&&((f.binding.value==='auto'&&!automatic.has(name))||(f.binding.value==='value'&&f.value.value.trim()==='')||f.binding.value==='none')){this.$('.rvt-preview-status').textContent='Set the required inputs to preview.';return;}}
+    const event={action:'rvt_preview',operation:this.operation.id,parameters:this.values(),instance:this.$('.rvt-instance').value||null};
+    const signature=JSON.stringify(event);this.pendingPreview=false;if(signature===this.lastPreview)return;
+    this.lastPreview=signature;this.send(event);
+  }
   update(state,message){
     if(message)this.feedback(message);else this.feedback('');
     if(!state)return;
@@ -42,6 +78,7 @@ class Workspace{
     for(const item of state.artifacts.filter(a=>a.fields.length))objectSelect.appendChild(option(item.id,item.label+' · '+item.summary.type));
     if([...objectSelect.options].some(o=>o.value===oldSettings))objectSelect.value=oldSettings;
     this.settingsFields();this.results();this.batchFiles();
+    if(state.preview_status&&!this.busy)this.$('.rvt-preview-status').textContent=`Map updated · ${state.preview_status.duration.toFixed(2)} s`;
     if(this.uploadQueue&&this.uploadQueue.length&&!this.busy)this.uploadNext();
   }
   operationList(){
@@ -61,6 +98,10 @@ class Workspace{
     this.fields.clear();this.$('.rvt-parameters').replaceChildren();
     for(const p of this.operation.parameters)this.parameter(p);
     this.instances();this.tab('operations');
+    this.$('.rvt-live').disabled=!this.operation.preview;
+    this.$('.rvt-run').textContent=this.operation.preview?'Keep result':'Run operation';
+    this.$('.rvt-preview-status').textContent=this.operation.preview?'Change a parameter to update the map.':'Use Run operation for this action.';
+    this.queuePreview();
   }
   instances(){
     if(!this.operation)return;
@@ -93,13 +134,21 @@ class Workspace{
     else if(['mapping','sequence','array','object'].includes(p.kind)){value=make('textarea');value.rows=3;value.value=p.default==null?(p.kind==='mapping'?'{}':p.kind==='sequence'?'[]':''):JSON.stringify(p.default);value.placeholder=p.kind==='array'?'Choose an input array, or enter structured values':p.kind==='object'?'Choose an object from the input list':'Structured values';}
     else {value=make('input');value.type=p.kind==='number'?'number':'text';if(value.type==='number')value.step=p.integer?'1':'any';value.value=p.default??'';}
     value.className='rvt-param-value';value.setAttribute('aria-label',p.label+' value');value.hidden=true;wrapper.appendChild(value);
+    let slider=null;
+    const limits={sun_azimuth:[0,360,1],shadow_az:[0,360,1],asvf_dir:[0,360,1],a_main_direction:[0,360,1],sun_elevation:[1,90,1],shadow_el:[1,90,1],ve_factor:[.1,5,.1],radius_cell:[1,100,1],svf_r_max:[1,100,1]};
+    if(limits[p.name]&&typeof p.default==='number'){
+      binding.value='value';value.hidden=false;slider=make('input','rvt-slider');slider.type='range';[slider.min,slider.max,slider.step]=limits[p.name];slider.value=value.value;slider.setAttribute('aria-label',p.label+' slider');wrapper.appendChild(slider);
+      slider.oninput=()=>{value.value=slider.value;this.queuePreview();};value.addEventListener('input',()=>slider.value=value.value);
+    }
+
     const member=make('input','rvt-member');member.type='text';member.placeholder='Optional member key or band index';member.setAttribute('aria-label',p.label+' member');member.hidden=true;wrapper.appendChild(member);
     if(p.help)wrapper.appendChild(make('p','rvt-param-help',p.help));
-    binding.onchange=()=>{value.hidden=binding.value!=='value';member.hidden=!binding.value.startsWith('artifact:');};
+    binding.onchange=()=>{value.hidden=binding.value!=='value';member.hidden=!binding.value.startsWith('artifact:');if(slider)slider.hidden=binding.value!=='value';this.queuePreview();};
+    value.addEventListener('input',()=>this.queuePreview());value.addEventListener('change',()=>this.queuePreview());member.addEventListener('input',()=>this.queuePreview());
     this.$('.rvt-parameters').appendChild(wrapper);this.fields.set(p.name,{binding,value,member,p});
   }
   values(){const result={};for(const [name,f] of this.fields){const mode=f.binding.value;if(mode.startsWith('artifact:')){result[name]={binding:'artifact',id:mode.slice(9)};if(f.member.value!=='')result[name].member=f.member.value;}else if(mode==='value')result[name]={binding:'value',value:parse(f.value.value)};else result[name]={binding:mode};}return result;}
-  run(){if(this.operation)this.send({action:'rvt_run',operation:this.operation.id,parameters:this.values(),instance:this.$('.rvt-instance').value||null,show:this.$('.rvt-auto-show').checked});}
+  run(){this.pendingPreview=false;clearTimeout(this.previewTimer);if(this.operation)this.send({action:'rvt_run',operation:this.operation.id,parameters:this.values(),instance:this.$('.rvt-instance').value||null,show:this.$('.rvt-auto-show').checked});}
   settingsFields(){
     this.dirtyFields.clear();const area=this.$('.rvt-settings-fields');area.replaceChildren();const item=this.state?.artifacts.find(a=>a.id===this.$('.rvt-settings-object').value);if(!item)return;
     for(const field of item.fields){const row=make('label','rvt-setting-field');row.dataset.name=field.name;row.appendChild(make('span','',field.name.replaceAll('_',' ')));let input;
@@ -119,7 +168,8 @@ class Workspace{
       if(shape.length===3)button('Show RGB',()=>this.send({action:'rvt_show',artifact:item.id,rgb:true}));
       button('GeoTIFF',()=>this.send({action:'rvt_download',artifact:item.id,format:'geotiff'}));
     }
-    button('Download',()=>this.send({action:'rvt_download',artifact:item.id}));
+    if(item.summary?.type!=='file'||item.summary.exists)button('Download',()=>this.send({action:'rvt_download',artifact:item.id}));
+    if(item.summary?.type==='file')card.appendChild(make('p','rvt-result-location',item.summary.location));
     if(item.summary?.type==='array')button('CSV',()=>this.send({action:'rvt_download',artifact:item.id,format:'csv'}));
     if(item.fields.length)button('Edit',()=>{this.$('.rvt-settings-object').value=item.id;this.settingsFields();this.tab('settings');});
     card.appendChild(actions);

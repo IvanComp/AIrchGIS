@@ -88,16 +88,17 @@ def render_navbar():
     with cases_col:
         with st.container(key="nav_cases"):
             st.markdown('<div class="as-cases-heading"><span>Use cases</span></div>', unsafe_allow_html=True)
-            case_cols = st.columns([0.44, 0.27, 0.29], gap="small")
-            cases = (
-                ("Colle San Mauro, L'Aquila, Italy", "🇮🇹"),
-                ("TODO, TODO, UK", "🏴\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f"),
-                ("TODO, TODO, Romania", "🇷🇴"),
-            )
-            for col, (label, flag) in zip(case_cols, cases):
+            from airchgis.use_cases import CASES
+
+            case_cols = st.columns(3, gap="small")
+            for col, case in zip(case_cols, CASES):
                 with col:
-                    st.button(label, key=f"as_case_{label}", disabled=True, width="stretch",
-                              icon=flag, help=label)
+                    if st.button(case["label"], key="as_case_" + case["id"], width="stretch", icon="🇳🇱", help=case["help"]):
+                        st.session_state.as_use_case_path = str(case["path"])
+                        st.session_state.as_active_tool = "RVT"
+                        st.session_state.as_wb = None
+                        st.session_state.as_wb_data = None
+                        st.rerun()
     st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
     return tool
 

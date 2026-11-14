@@ -1,6 +1,6 @@
 html,body{margin:0;padding:0;background:transparent;font-family:Inter,system-ui,sans-serif}
 .detector-map{max-width:none}
-.map-stage{height:calc(100vh - 4px);min-height:560px}
+.map-stage{height:calc(100vh - 4px);min-height:0}
 .detector-map{--tools-width:345px}
 .exact-layer-panel{box-sizing:border-box;width:var(--tools-width);padding:18px 16px 24px}
 .panel-handle{box-sizing:border-box;right:var(--tools-width);top:18px;translate:none;width:32px;height:44px;border-width:1px;border-right:0;border-radius:9px 0 0 9px;font-size:24px}
@@ -104,3 +104,13 @@ select,select option{cursor:pointer}
 .wb-toolbox>summary{font-size:14px}
 .wb-layers .layer-cards{border:0;background:transparent;margin-top:8px}
 .wb-toolbox .wb-card{background:rgba(20,12,7,.4);border-color:#665033}
+
+.wb-prep-steps{margin:6px 0 4px;padding-left:18px;color:#eadcc4;font-size:11px;line-height:1.4}
+.wb-prep-steps li{margin-bottom:6px}
+.wb-prep-steps small{display:block;color:#a99479;font-size:10px;margin-top:2px}
+.wb-pc-only[hidden],.wb-raster-only[hidden]{display:none}
+.wb-reso-result{margin:6px 0;padding:7px 9px;border-radius:7px;font-size:11px;background:rgba(56,74,28,.55);color:#eaf3d2}
+.wb-reso-result.warn{background:rgba(120,90,20,.55);color:#fff1c8}
+.wb-reso-result.refuse{background:rgba(110,40,20,.55);color:#ffe2d2}
+.wb-credit{margin:14px 2px 4px;color:#a99479;font-size:10px;line-height:1.4}
+.wb-credit a{color:#e4bf6b}

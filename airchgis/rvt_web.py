@@ -66,6 +66,9 @@ def render_start_page(core):
         with st.container(key="terrain_upload"):
             st.session_state.as_rvt_source_mode = source_mode = "Upload"
             uploads = render_upload_controls(core)
+            example_path = st.session_state.pop("as_use_case_path", None)
+            if example_path:
+                uploads = {"DTM": [example_path]}
             st.markdown(
                 '<ol class="as-upload-steps" aria-label="Research workflow">'
                 '<li><span class="as-step-number" aria-hidden="true">01</span>'
@@ -93,9 +96,15 @@ def render_start_page(core):
         name = Path((uploads.get("DTM") or [payload.get("generated_dtm") or "terrain"])[0]).stem
         from airchgis.workbench import Workbench, handle_event
 
-        wb = Workbench(data.dtm, data.profile["transform"], data.crs, data.profile, name=clean_name(name))
-        with st.spinner("Preparing hillshade..."):
-            handle_event(wb, {"action": "relief", "method": "Hillshade", "value": 315, "nonce": "initial-hillshade", "replace": True}, core=core)
+        source = st.session_state.get("as_prep_source") or {"kind": "raster"}
+        wb = Workbench(data.dtm, data.profile["transform"], data.crs, data.profile, name=clean_name(name),
+                       log=st.session_state.get("as_prep_log") if source.get("kind") == "points" else None,
+                       source=source, notes=st.session_state.get("as_prep_notes"))
+        if source.get("kind") == "points":
+            wb.prep["source_steps"] = source.get("steps", [])
+            wb.prep["grid"] = {"method": "tin", "cell_m": 0.0, "ground_only": True, "remove_outliers": True}
+        with st.spinner("Preparing the terrain..."):
+            handle_event(wb, {"action": "prepare", "fill_voids": True, "cell_m": 0.0, "nonce": "initial-prepare"}, core=core)
         st.session_state.as_wb = wb
         st.session_state.as_wb_data = data
         st.rerun()
@@ -333,39 +342,46 @@ def render_upload_controls(core):
     uploads = {}
 
     def load_group(key, label):
+        from airchgis.gis.provenance import ProvenanceLog
+        from airchgis.gis.tools import run_tool
+
         exts = {".tif", ".tiff", ".asc", ".zip"} | ({".las", ".laz"} if key == "DTM" else set())
         paths = render_file_input(label, exts, f"as_rvt_in_{key}", f"terrain_{key}")
-        res = 1.0
-        if key == "DTM" and any(p.suffix.lower() in di.POINT_CLOUD_EXTS for p in paths):
-            res = st.number_input("Cell size of the terrain made from the point cloud (m)", 0.1, 10.0, 1.0, 0.1, key="as_rvt_las_res")
         out = []
         for p in paths:
             try:
                 if p.suffix.lower() == ".zip":
                     out.extend(extract_zip_rasters(core, p, key))
                 elif p.suffix.lower() in di.POINT_CLOUD_EXTS:
-                    tif = di.UPLOAD_DIR / "dtm_from_point_cloud" / f"{p.stem}_{res:g}m.tif"
-                    if not tif.exists():
+                    # point cloud -> DTM with the default pre-processing (ground class, outliers, density, TIN)
+                    tif = di.UPLOAD_DIR / "dtm_from_point_cloud" / f"{p.stem}_tin_auto.tif"
+                    cached = st.session_state.get("as_prep_source")
+                    if not (cached and cached.get("path") == str(p) and tif.exists()):
+                        log = ProvenanceLog(f"AIrchGIS · {p.stem}")
                         with st.spinner(f"Making a terrain model from {p.name}..."):
-                            di.rasterize_point_cloud(p, tif, resolution=res)
+                            r = run_tool("grid_point_cloud", log=log, input=str(p), output=str(tif))
+                        st.session_state.as_prep_log = log
+                        st.session_state.as_prep_source = {"kind": "points", "path": str(p), "steps": r["outputs"]["steps"]}
                     out.append(str(tif))
                 else:
                     out.append(str(p))
-                st.caption(f"{p.name}: {di.plain_description(di.describe_raster(out[-1]))}")
             except Exception as exc:
                 st.error(f"{p.name}: cannot be read ({exc}).")
+        if not any(Path(p).suffix.lower() in di.POINT_CLOUD_EXTS for p in paths):
+            st.session_state.as_prep_source = None
         uploads[key] = out
 
     load_group("DTM", "Upload a terrain model or LiDAR point cloud")
     if uploads.get("DTM"):
         keep, notes, error = usable_rasters(uploads["DTM"])
-        for n in notes:
-            st.caption(n)
         if error:
             st.error(error)
             keep = []
+        if len(keep) > 1:
+            notes = [f"{len(keep)} tiles in the same coordinate system joined into one terrain."] + notes
+        st.session_state.as_prep_notes = notes
         uploads["DTM"] = keep
-    uploads.setdefault("DSM_First", [])
+    uploads.setdefault("DSM_First", [])  # surface models are not offered in the interface
     uploads.setdefault("DSM_Last", [])
     return uploads
 
