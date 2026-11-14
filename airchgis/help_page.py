@@ -82,19 +82,19 @@ SECTIONS = [
         <div><h3>Distance and coordinates</h3><p>The left controls provide zoom, full screen and two-point distance measurement. Select a point to read UTM coordinates and terrain elevation, then open it in Google Earth.</p></div>
         <div><h3>Terrain relief</h3><p>The 3D toggle tilts the basemap over global terrain. Use 3D Analysis at the top right to inspect the uploaded terrain.</p></div></div>"""),
     ("export", "Export, compare and discover", """
-        <p><strong>3D Analysis</strong> includes Original, Cloud 1 (points), Cloud 2 (surface, wireframe and points), and Cloud 3 (enhanced local relief). Select the mode under Terrain rendering. Cloud 3 modifies displayed elevations; exports use the source terrain.</p>
+        <p><strong>3D Analysis</strong> includes Original, Cloud 1 (points), Cloud 2 (surface, wireframe and points), and Cloud 3 (enhanced local relief). Select the mode under Terrain rendering. Cloud 3 modifies displayed elevations; image downloads reproduce the selected rendering; 3D data downloads retain the current terrain grid.</p>
         <ul><li><strong>GeoTIFF:</strong> download individual result layers from their layer options.</li>
-        <li><strong>PDF or PNG figure:</strong> open 3D Analysis and choose Download high-quality image in its Export panel. Image options control resolution, width, camera, vertical exaggeration, scale bar and north arrow.</li>
-        <li><strong>Open 3D data:</strong> in 3D Analysis, download a package with a point cloud, terrain mesh and georeferencing metadata for use in other research software.</li></ul>
-        <p>3D exports include LAZ/LAS, PLY and glTF. LAZ requires compression support; otherwise the point cloud is written as LAS.</p>
-        <p>For a figure, check which visible layer is on top: it is used as the terrain drape.</p>"""),
+        <li><strong>PDF or PNG figure:</strong> position the terrain in 3D Analysis and press PDF or PNG in the toolbar. The image keeps the current rotation, zoom, pan and rendering mode, at high resolution. No camera or export-quality settings are required. No background gives PNG a transparent background and preserves an alpha mask in PDF. Contrast and Brightness beside View run from 0 to 100, with defaults of 50 and 40, without changing terrain data. Rendering quality is set automatically to the highest supported resolution; higher rendering resolution does not create additional terrain detail.</li>
+        <li><strong>Open 3D data:</strong> press LAZ, PLY or glTF in the 3D toolbar. Each download uses the full current terrain grid without point subsampling or mesh decimation.</li></ul>
+        <p>LAZ compression is included. glTF downloads as a binary .glb. Georeferencing metadata remains available in the generated files or their sidecars.</p>
+        <p>For a figure, position the terrain as needed before downloading: PDF and PNG capture the interactive scene itself. Images render up to an 8192-pixel longest side, subject to graphics-device limits and a 32-million-pixel budget; the viewer’s terrain grid still determines geometric detail.</p>"""),
     ("questions", "Practical questions and limits", """
         <div class="ag-faq">
         <details><summary>Which visualization should I start with?</summary><p>The initial Hillshade uses 315°. There is no universally best light direction: features parallel to illumination may be hidden. Compare several directions, Multi-Hillshade, sky-view factor or a local relief model. Change the light direction to check features that may be hidden by directional shading.</p></details>
         <details><summary>Does AIrchGIS identify archaeological sites?</summary><p>No. Relief views help you inspect terrain forms. Interpret anomalies alongside other evidence and, where appropriate, field observations.</p></details>
         <details><summary>Do uploaded data leave my computer?</summary><p>Terrain processing runs locally. Internet access is needed for basemap imagery, geographic labels and global terrain tiles. Opening Google Earth passes the selected coordinates to that service.</p></details>
         <details><summary>Why does a file fail to open?</summary><p>Check its coordinate system, georeferencing and file contents. For large terrain models, try fewer tiles or a smaller area. Available memory can limit the size of an analysis.</p></details>
-        <details><summary>Are the use cases available?</summary><p>The three buttons load Vaassen, Netherlands, at 0.5 m, 1 m and 5 m. The native 0.5 m AHN4 DTM is open data under CC0; the 1 m and 5 m versions are averages of valid native cells over the same area. They provide a controlled comparison of resolution, rather than independent surveys. NoData is preserved. Adapt pixel-based search radii to the same physical distance when comparing them.</p></details>
+        <details><summary>Are the use cases available?</summary><p>England · 1 m opens the native Environment Agency DTM from the LidarMap UK comparison area, licensed under OGL v3.0. The two TODO buttons are disabled placeholders.</p></details>
         </div>"""),
 ]
 

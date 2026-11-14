@@ -104,11 +104,11 @@ class Workbench:
         return a
 
     def add_layer(self, layer_id, name, description, array, visible=True, opacity=1.0, cmap="gray", raw=None,
-                  hide_others=True):
+                  hide_others=True, display_range=None):
         from airchgis.map.view import georeference
 
         layer = georeference(self.mask_outside(array), self.transform, self.crs, layer_id, name, description,
-                             cmap=cmap, visible=visible, opacity=opacity)
+                             cmap=cmap, visible=visible, opacity=opacity, display_range=display_range)
         if hide_others and visible:
             for l in self.layers:
                 l["visible"] = False
@@ -276,7 +276,7 @@ def run_relief(wb, core, method, value, compute=None, replace=False):
     from airchgis.gis.tools import run_tool
     from airchgis.rvt_web import RADIUS_TOOLS, TOOL_HELP
 
-    params = {}
+    params = {"altitude": 45.0} if method == "Hillshade" else {}
     if value is not None:
         if method in ("Hillshade", "Anisotropic Sky-View Factor"):
             params["azimuth"] = float(value)
@@ -295,11 +295,14 @@ def run_relief(wb, core, method, value, compute=None, replace=False):
     if out["bands"] == 1:
         a = arr[0]
         a[a == -9999.0] = np.nan
-        wb.add_layer(lid, label, TOOL_HELP.get(method, ""), a, raw=a)
+        wb.add_layer(lid, label, TOOL_HELP.get(method, ""), a, raw=a, display_range=(0, 1) if method == "Hillshade" else None)
     else:
         rgb = np.moveaxis(arr[:3], 0, -1)
-        lo, hi = np.nanpercentile(rgb, [1, 99]) if np.isfinite(rgb).any() else (0, 1)
-        rgb = np.clip((rgb - lo) / max(hi - lo, 1e-9), 0, 1)
+        if method == "Multi-Hillshade":
+            rgb = np.clip(rgb, 0, 1)
+        else:
+            lo, hi = np.nanpercentile(rgb, [1, 99]) if np.isfinite(rgb).any() else (0, 1)
+            rgb = np.clip((rgb - lo) / max(hi - lo, 1e-9), 0, 1)
         wb.add_layer(lid, label, TOOL_HELP.get(method, ""), rgb, raw=rgb)
     wb.paths[lid] = out["output"]
     if replace:
@@ -393,13 +396,20 @@ def run_figure(wb, fmt="pdf", dpi=300, width_mm=190.0, azimuth=-44.0, elevation=
     wb.message = r["note"]
 
 
-def run_research_export(wb):
+def run_research_export(wb, format=None):
     from airchgis.terrain.export3d import export_terrain_3d, zip_package
 
     stem = f"{wb.name}__3D__{datetime.now():%Y%m%d_%H%M%S}"
     out_dir = OUT_DIR / "3d_research" / stem
     meta = export_terrain_3d(wb.dem, wb.transform, wb.crs, out_dir, stem=stem, nodata=None, vertical_exaggeration=1.0,
-                             visualization="DTM (no relief visualization)", source=wb.name)
+                             visualization="DTM (no relief visualization)", source=wb.name,
+                             formats=(format,) if format else ("laz", "ply", "glb"), max_points=None, mesh_max_side=None)
+    if format:
+        key = {"laz": "point_cloud", "las": "point_cloud", "ply": "ply", "glb": "mesh"}.get(format)
+        if key is None:
+            raise ValueError("Unknown 3D data format.")
+        wb.offer(meta["paths"][key], mime="model/gltf-binary" if format == "glb" else "application/octet-stream")
+        return
     z = zip_package(meta, out_dir.with_suffix(".zip"))
     wb.offer(z, mime="application/zip")
     wb.message = "Open 3D data (LAZ/LAS, PLY, glTF and a metadata file) packed in one archive."
@@ -515,11 +525,20 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
             run_best_view(wb, float(event.get("width") or 4.0))
         elif action == "fused":
             run_fused(wb, event.get("width"))
+        elif action == "capture3d":
+            from airchgis.terrain.view_export import save_current_view
+
+            fmt = event.get("fmt", "png")
+            if fmt not in {"pdf", "png"}:
+                raise ValueError("Choose PDF or PNG.")
+            path = OUT_DIR / "3d_figures" / f"{wb.name}_{uuid4().hex[:12]}.{fmt}"
+            save_current_view(event["b64"], path, event.get("view"))
+            wb.offer(path, mime="application/pdf" if fmt == "pdf" else "image/png")
         elif action == "figure":
             run_figure(wb, **{k: event[k] for k in ("fmt", "dpi", "width_mm", "azimuth", "elevation", "ve", "drape",
                                                    "scale_bar", "north_arrow") if k in event})
         elif action == "research":
-            run_research_export(wb)
+            run_research_export(wb, event.get("format"))
         elif action == "download":
             offer_layer(wb, event["layer"])
         elif action == "contrast":

@@ -67,33 +67,18 @@ def render_navbar():
                         st.session_state.as_wb_nav_event = {"action": "view3d", "nonce": uuid4().hex}
         st.markdown('<div class="as-nav-rule"></div>', unsafe_allow_html=True)
         return tool
-    brand_col, links_col, cases_col = st.columns(
-        [0.30, 0.28, 0.42], gap="large", vertical_alignment="center",
-    )
+    brand_col, cases_col = st.columns([0.43, 0.57], gap="large", vertical_alignment="center")
     with brand_col:
         st.markdown(ui.brand_markup(), unsafe_allow_html=True)
-    with links_col:
-        help_col, source_col = st.columns([0.43, 0.57], gap="small", vertical_alignment="center")
-        with help_col:
-            with st.container(key="nav_guide"):
-                if st.button("How it Works?", key="as_nav_help", help="What AIrchGIS is and how it works",
-                             icon=":material/menu_book:",
-                             type="primary" if tool == "Help" else "secondary", width="stretch"):
-                    if tool != "Help":
-                        st.session_state.as_help_from = tool
-                    st.session_state.as_active_tool = "Help"
-                    st.rerun()
-        with source_col:
-            st.markdown(ui.source_code_markup(), unsafe_allow_html=True)
     with cases_col:
         with st.container(key="nav_cases"):
             st.markdown('<div class="as-cases-heading"><span>Use cases</span></div>', unsafe_allow_html=True)
             from airchgis.use_cases import CASES
 
-            case_cols = st.columns(3, gap="small")
+            case_cols = st.columns(len(CASES), gap="small")
             for col, case in zip(case_cols, CASES):
                 with col:
-                    if st.button(case["label"], key="as_case_" + case["id"], width="stretch", icon="🇳🇱", help=case["help"]):
+                    if st.button(case["label"], key="as_case_" + case["id"], width="stretch", icon=case["flag"], help=case["help"], disabled=case.get("disabled", False)):
                         st.session_state.as_use_case_path = str(case["path"])
                         st.session_state.as_active_tool = "RVT"
                         st.session_state.as_wb = None

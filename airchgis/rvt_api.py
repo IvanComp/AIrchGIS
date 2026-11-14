@@ -443,6 +443,7 @@ class RVTWorkspace:
         else:
             function = entry["callable"]
         supplied = supplied or {}
+        args = {}
         if inspect.isclass(function) and issubclass(function, enum.Enum):
             descriptor = supplied.get("value", {"binding": "auto"})
             binding = descriptor.get("binding", "value")
@@ -460,6 +461,9 @@ class RVTWorkspace:
             if preview and operation == "blend.BlenderCombination.render_all_images":
                 args.update(save_render_path=None, save_visualizations=False)
             result = function(**args)
+        visualization = getattr(args.get("visualization", args.get("rvt_visualization")), "value", None)
+        natural_shade = operation in {"vis.hillshade", "vis.multi_hillshade", "default.DefaultValues.get_hillshade", "default.DefaultValues.get_multi_hillshade"} or (
+            operation in {"default.DefaultValues.calculate_visualization", "default.DefaultValues.float_to_8bit", "tile.save_rvt_visualization_tile_by_tile"} and visualization in {"hs", "mhs"})
         if preview:
             def first_spatial(value):
                 if self._mapable(value):
@@ -477,11 +481,14 @@ class RVTWorkspace:
             if self.active_profile.get("transform") != self.wb.profile.get("transform") or str(self.active_profile.get("crs")) != str(self.wb.profile.get("crs")):
                 raise ValueError("This input uses a different raster grid; run it explicitly to retain and download the result.")
             key = self.add(entry["label"] + " · live preview", array, "live_preview")
+            self.items[key]["natural_hillshade"] = natural_shade
             self.show(key, rgb=self.is_rgb(array))
             self.latest = [key]
             self.preview_status = {"operation": operation, "duration": round(time.perf_counter() - started, 2)}
             return [key]
         self.latest = self._capture(entry["label"], result)
+        for key in self.latest:
+            self.items[key]["natural_hillshade"] = natural_shade
         if instance and instance not in self.latest:
             self.latest.append(instance)
         for path in sorted(self.current_run.rglob("*")):
@@ -603,6 +610,8 @@ class RVTWorkspace:
                 display = np.moveaxis(bands[:3], 0, -1).astype(np.float32)
                 if np.issubdtype(array.dtype, np.integer):
                     display /= np.iinfo(array.dtype).max
+                elif self.items[key].get("natural_hillshade"):
+                    display = np.clip(display, 0, 1)
                 elif np.nanmax(display) > 1 or np.nanmin(display) < 0:
                     lo, hi = np.nanpercentile(display, [1, 99])
                     display = np.clip((display - lo) / max(hi - lo, 1e-9), 0, 1)
@@ -614,7 +623,8 @@ class RVTWorkspace:
         else:
             display = array
         lid = "rvt_current"
-        self.wb.add_layer(lid, self.items[key]["label"], self.items[key]["label"], display, raw=display)
+        display_range = (0, 255 if np.issubdtype(array.dtype, np.integer) else 1) if self.items[key].get("natural_hillshade") else None
+        self.wb.add_layer(lid, self.items[key]["label"], self.items[key]["label"], display, raw=display, display_range=display_range)
         retain_layer(self.wb, lid)
         path = self.folder / "current_relief.tif"
         self._write_raster(path, array)

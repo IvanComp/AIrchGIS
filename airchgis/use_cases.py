@@ -3,10 +3,10 @@ from pathlib import Path
 
 FOLDER = Path(__file__).with_name("data") / "use_cases" / "vaassen"
 CASES = (
-    {"id": "vaassen_05", "label": "Vaassen · 0.5 m", "path": FOLDER / "Vaassen_AHN4_DTM_0p5m.tif",
-     "help": "Netherlands · AHN4 native DTM · 0.5 m cells · 1 km² · CC0"},
-    {"id": "vaassen_1", "label": "Vaassen · 1 m", "path": FOLDER / "Vaassen_AHN4_DTM_1m.tif",
-     "help": "Netherlands · Mean of 2 × 2 native AHN4 cells · 1 km² · CC0"},
-    {"id": "vaassen_5", "label": "Vaassen · 5 m", "path": FOLDER / "Vaassen_AHN4_DTM_5m.tif",
-     "help": "Netherlands · Mean of 10 × 10 native AHN4 cells · 1 km² · CC0"},
+    {"id": "england_1", "label": "England · 1 m", "path": FOLDER.parent / "england" / "England_EA_DTM_1m.tif",
+     "flag": "🇬🇧", "help": "England · Environment Agency native 1 m DTM · Same area as LidarMap UK comparison · OGL v3.0"},
+    {"id": "todo_uk", "label": "TODO, TODO, UK", "path": None, "disabled": True,
+     "flag": "🏴\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f", "help": "Use case not configured."},
+    {"id": "todo_ro", "label": "TODO, TODO, Romania", "path": None, "disabled": True,
+     "flag": "🇷🇴", "help": "Use case not configured."},
 )

@@ -99,24 +99,18 @@ The start page uses file upload. Public-source download helpers remain in the co
 
 **Source Code v1.0.0**, beside the guide button, opens the [GitHub repository](https://github.com/IvanComp/AIrchGIS).
 
-The **Use cases** group opens three bundled GeoTIFFs of the same 1 km² area at Vaassen, Netherlands, with ancient field systems and burial mounds recorded in the [Dutch monuments register](https://monumentenregister.cultureelerfgoed.nl/monumenten/45346):
+**How it Works?** and **Source Code v1.0.0** appear below the three workflow stages on the upload page.
 
-| Use case | Grid | Origin |
-|---|---|---|
-| 🇳🇱 **Vaassen · 0.5 m** | 2000 × 2000 | Native AHN4 DTM grid |
-| 🇳🇱 **Vaassen · 1 m** | 1000 × 1000 | Mean of valid 2 × 2 native cells |
-| 🇳🇱 **Vaassen · 5 m** | 200 × 200 | Mean of valid 10 × 10 native cells |
+The **Use cases** group contains one active example, **England · 1 m**, and two disabled placeholders, **TODO, TODO, UK** and **TODO, TODO, Romania**. The English example is the native Environment Agency DTM from the area used for the LidarMap UK comparison, licensed under OGL v3.0. Its source request, coordinates and checksum are bundled with the raster in `airchgis/data/use_cases/england/`.
 
-Source: [AHN DTM via PDOK](https://data.overheid.nl/dataset/47567-actueel-hoogtebestand-nederland--ahn--dtm), CC0-1.0. The raster source has a native resolution of 0.5 m. The coarser files are derived from that raster to isolate the effect of resolution; they are not independent surveys. All three have the same bounds, EPSG:28992 coordinates and NAP elevations. Source voids remain NoData. Provenance, checksums and the download request are bundled in `airchgis/data/use_cases/vaassen/`. Reproduce the files with `python scripts/prepare_test_dtms.py`.
-
-For a fair comparison, keep the same area, zoom and lighting. Convert pixel-based radii to a common physical distance: 10 m is 20 pixels at 0.5 m, 10 pixels at 1 m and 2 pixels at 5 m.
+The Vaassen rasters remain available as test data under `airchgis/data/use_cases/vaassen/`, with their source metadata and reproduction script `scripts/prepare_test_dtms.py`.
 
 # Tools on the map
 
 The start page only asks for a terrain model or point cloud. Once it is loaded, the map opens with **Layers** first in the right panel, followed by **Visualization tools**, in the style of the DetectorLab map:
 
 1. **Relief types**: choose a view (hillshade, slope, sky-view factor, openness, local relief model, MSRM…) and its main setting, then **Add to the map**. Hillshade and anisotropic sky-view factor use a **Light direction (°)** slider with a live degree readout. Applying a new type replaces the previous relief and any contrast version; Layers contains a single **Relief view** alongside Place and Base map.
-2. **3D Analysis**: the button at the top right opens the terrain viewer and its Export panel, which provides a high-quality image (PDF or PNG, 300 dpi by default) with the top layer draped on the terrain, and open 3D data (LAZ/LAS, PLY, glTF) for QGIS, CloudCompare or Blender.
+2. **3D Analysis**: the button at the top right opens the terrain viewer with direct PDF, PNG, LAZ, PLY and glTF download buttons. Images match the current 3D view; data exports retain the full terrain grid for QGIS, CloudCompare or Blender.
 
 Layers can be switched on and off, faded or shown with stronger contrast (display only). Result layers can be downloaded as GeoTIFF, including multiband RVT outputs. Layers opens and closes as one section. Place, Base map and the current relief view have visibility switches and opacity sliders, displayed directly inside the section. Disabling Base map also disables Place. The arrow on the panel edge hides or restores the panel. **Home** (house icon in the top bar) goes back to the start page. Terrain models in longitude/latitude are reprojected to their UTM zone, so that all sizes are in metres. There is no super-resolution.
 
@@ -138,7 +132,7 @@ The workspace has five sections:
 
 Each parameter can use an automatic input, its library default, a custom value, None, or a previous result. A mapping or multiband result can also supply a selected member. Structured inputs accept nested references such as `{"$ref":"settings"}`. Operations retain intermediate arrays and objects for later calculations.
 
-Display a single band or RGB result on the map. Applying a result replaces the current Relief view; intermediate results remain in the workspace. A raster on a different grid remains available for processing and download. Session archives contain managed input/output files, arrays, object fields, grid metadata and operation history. They do not automatically restore an interactive session.
+Display a single band or RGB result on the map. Applying a result replaces the current Relief view; intermediate results remain in the workspace. Hillshade uses its fixed 0–1 brightness range, avoiding automatic percentile contrast that can exaggerate terrain grain and change brightness between datasets. Multi-hillshade results follow the same display rule. The initial quick Hillshade uses azimuth 315° and sun elevation 45°; the RVT parameter form starts at the same elevation, while Library default remains available. Contrast remains an explicit layer action. Terrain and numerical exports retain their computed values. A raster on a different grid remains available for processing and download. Session archives contain managed input/output files, arrays, object fields, grid metadata and operation history. They do not automatically restore an interactive session.
 
 Processing runs synchronously on the local computer. Large arrays can exhaust memory; choose the tiled operations for large rasters. The browser download limit is 200 MB; larger files remain at the local location reported by the app.
 
@@ -160,9 +154,15 @@ log.save_scripts("outputs/")
 
 # 3D export for research
 
-**3D Analysis** includes the original terrain rendering modes: **Original** (surface), **Cloud 1** (points), **Cloud 2** (surface with wireframe and points), and **Cloud 3** (enhanced local relief). Select a mode in **Terrain rendering** to rebuild the interactive view. Cloud 3 changes displayed elevations to emphasize small terrain forms. NoData and large boundary-connected zero-fill regions are omitted from the interactive surface; the initial framing uses the remaining terrain footprint. These display masks leave the source files unchanged. Rendering modes affect the viewer; figure and open-data exports use the source terrain.
+**3D Analysis** uses the full viewer width. A compact toolbar contains the terrain rendering selector, Contrast and Brightness sliders, a No background switch and individual **PDF**, **PNG**, **LAZ**, **PLY** and **glTF** download buttons.
 
-In **3D Analysis** (top right), the **Export** panel contains the image settings and both download actions. **Download high-quality image** saves the terrain in 3D as a PDF (default, 300 dpi, 190 mm wide, for a paper figure) or PNG, with the top layer draped on it, a scale bar and a north arrow; camera, size and resolution are under *Image options*. **Download open 3D data** writes a georeferenced point cloud (LAZ/LAS and PLY), a terrain mesh (glTF `.glb`) and a JSON sidecar (source, CRS, bounds, resolution, date, relief visualization, vertical exaggeration), zipped for archiving on Zenodo. The files open in QGIS 3D, CloudCompare and Blender. LAZ needs `pip install lazrs`; without it the cloud is written as LAS.
+PDF and PNG capture the actual interactive scene: rotation, pan, zoom, perspective, rendering mode and vertical exaggeration match the view at the moment the download button is pressed. The viewer renders a lossless image up to 8192 pixels on its longest side, bounded by the graphics device and 32 million pixels. The PDF embeds that image without JPEG compression; it is a high-resolution raster figure, not vector terrain geometry. No camera or export-quality settings need to be entered. Black remains the default background. No background exports true transparency in PNG and an alpha mask in PDF, without an opaque rectangular backdrop. Contrast and Brightness use a 0–100 scale, starting at 50 and 40 respectively. They affect the viewer and image exports only. Filmic tone mapping reduces highlight clipping in bright terrain colours.
+
+The interactive canvas automatically uses the highest supported supersampling resolution up to an 8192-pixel longest edge, within the graphics-device and 32-million-pixel limits. There is no quality selector or lower-quality interaction mode. Unchanged frames are not continuously redrawn. Higher rendering resolution sharpens edges without increasing the DTM’s resolution.
+
+Terrain rendering retains **Original**, **Cloud 1** (points), **Cloud 2** (surface with wireframe and points), and **Cloud 3** (enhanced local relief). Image exports reproduce the selected rendering. NoData and large boundary-connected zero-fill regions are omitted from the interactive surface. The viewer uses a bounded grid for interactive performance; a larger image does not add elevations absent from that grid.
+
+LAZ, PLY and glTF exports use every valid sample of the current terrain grid, with no point subsampling or mesh decimation. The data keep their georeferencing and terrain elevations; camera orientation is a property of the image view. LAZ compression is included through `lazrs`. PLY stores double-precision coordinates and its CRS in the header. glTF downloads as a binary `.glb` with its CRS, local origin and axes embedded in metadata. Additional export metadata is saved beside the generated files.
 
 # Quick start
 

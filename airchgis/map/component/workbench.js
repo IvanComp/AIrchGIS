@@ -6,7 +6,12 @@ function setHeight(h){post('streamlit:setFrameHeight',{height:h});}
 function fitHeight(){let height=ARGS?.height||760;try{const top=window.frameElement.getBoundingClientRect().top;height=Math.min(height,Math.max(420,window.parent.innerHeight-Math.max(0,top)-16));}catch{}setHeight(height);}
 
 let ARGS=null,map=null,initialized=false,pendingNonce=null,lastDownload=null,last3d=null,nonceCounter=0;
-let rvtWorkspace=null;
+let rvtWorkspace=null,captureRequest=null,captureTimeout=null,viewerReady=false;
+const display3D={background:'black',contrast:50,brightness:40};
+function update3DDisplay(){const toolbar=document.querySelector('.wb-3d-toolbar');if(!toolbar)return;display3D.background=toolbar.querySelector('.wb-no-background').checked?'none':'black';display3D.contrast=Number(toolbar.querySelector('.wb-contrast-3d').value);display3D.brightness=Number(toolbar.querySelector('.wb-brightness-3d').value);toolbar.querySelector('.wb-contrast-readout').textContent=Math.round(display3D.contrast)+'%';toolbar.querySelector('.wb-brightness-readout').textContent=Math.round(display3D.brightness)+'%';if(viewerReady)document.querySelector('.wb-modal iframe').contentWindow.postMessage({type:'airchgis:3d-options',...display3D},'*');}
+function sync3DButtons(){for(const b of document.querySelectorAll('[data-3d-export]'))b.disabled=Boolean(pendingNonce||captureRequest)||(['pdf','png'].includes(b.dataset['3dExport'])&&!viewerReady);}
+function capture3D(format){if(pendingNonce||captureRequest||!viewerReady)return;const id=String(Date.now())+'-'+(++nonceCounter);captureRequest={id,format};document.querySelector('.wb-3d-busy').hidden=false;document.querySelector('.wb-3d-busy').textContent='Preparing '+format.toUpperCase()+'…';sync3DButtons();document.querySelector('.wb-modal iframe').contentWindow.postMessage({type:'airchgis:capture3d',id},'*');captureTimeout=setTimeout(()=>{captureRequest=null;document.querySelector('.wb-3d-busy').hidden=true;showToast('Image export timed out. Try again.');sync3DButtons();},60000);}
+window.addEventListener('message',ev=>{const frame=document.querySelector('.wb-modal iframe');if(!frame||ev.source!==frame.contentWindow)return;const d=ev.data||{};if(d.type==='airchgis:3d-ready'){viewerReady=true;sync3DButtons();update3DDisplay();}else if(d.type==='airchgis:3d-capture'&&captureRequest&&d.id===captureRequest.id){const request=captureRequest;captureRequest=null;clearTimeout(captureTimeout);if(d.error){document.querySelector('.wb-3d-busy').hidden=true;showToast(d.error);sync3DButtons();return;}send({action:'capture3d',fmt:request.format,b64:d.png.split(',')[1],view:d.view});}});
 const shownLayers=new Map();
 const toast=document.querySelector('.toast');
 const busy=document.querySelector('.wb-busy');
@@ -20,6 +25,7 @@ function send(event){
   pendingNonce=event.nonce;
   busy.hidden=false;
   rvtWorkspace?.setBusy(true,event.action);
+  sync3DButtons();
   document.querySelector('.wb-3d-busy').hidden=document.querySelector('.wb-modal').hidden;
   document.querySelector('.wb-3d-busy').textContent=event.action==='view3d'?'Preparing 3D view…':'Preparing export…';
   document.querySelector('.wb-cloud').disabled=true;
@@ -227,31 +233,16 @@ function buildTools(){
   box.appendChild(rel);
 
   const profiles=tools.cloud_profiles||[];
-  const rendering=el(`<div class="wb-card"><h4>Terrain rendering</h4>
-    <div class="wb-row"><label for="wb-cloud-mode">Mode</label><select id="wb-cloud-mode" class="wb-cloud">${profiles.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
-    <p class="wb-cloud-help"></p><p>Rendering modes affect the interactive view. Exports use the source terrain.</p></div>`);
-  rendering.querySelector('.wb-cloud').addEventListener('change',ev=>send({action:'view3d',cloud_key:ev.target.value}));
-  document.querySelector('.wb-3d-tools').appendChild(rendering);
-
-  const td=el(`<div class="wb-card"><h4>Export</h4><p>Save a terrain figure or download georeferenced 3D data.</p>
-    <div class="wb-row"><label>High-quality image</label><select class="wb-fmt"><option value="pdf">PDF</option><option value="png">PNG</option></select></div>
-    <details><summary>Image options</summary>
-      <div class="wb-row"><label>Resolution (dpi)</label><select class="wb-dpi"><option>300</option><option>600</option><option>150</option></select></div>
-      <div class="wb-row"><label>Width (mm)</label><input type="number" class="wb-wmm" value="190" min="40" max="500" step="5"></div>
-      <div class="wb-row"><label>Camera direction (°)</label><input type="number" class="wb-az" value="-44" min="-180" max="180"></div>
-      <div class="wb-row"><label>Camera height (°)</label><input type="number" class="wb-el" value="29" min="5" max="90"></div>
-      <div class="wb-row"><label>Vertical exaggeration (0 = auto)</label><input type="number" class="wb-ve" value="0" min="0" max="20" step="0.1"></div>
-      <div class="wb-row"><label><input type="checkbox" class="wb-sb" checked> Scale bar</label><label><input type="checkbox" class="wb-na" checked> North arrow</label></div>
-    </details>
-    <button type="button" class="wb-run secondary" data-act="figure">Download high-quality image</button>
-    <button type="button" class="wb-run secondary" data-act="research">Download open 3D data (LAZ, PLY, glTF)</button></div>`);
-  td.querySelector('[data-act=figure]').addEventListener('click',()=>{
-    const top=(ARGS.layers||[]).find(l=>(shownLayers.get(l.id)||l).visible);
-    send({action:'figure',fmt:td.querySelector('.wb-fmt').value,dpi:Number(td.querySelector('.wb-dpi').value),width_mm:Number(td.querySelector('.wb-wmm').value),
-      azimuth:Number(td.querySelector('.wb-az').value),elevation:Number(td.querySelector('.wb-el').value),ve:Number(td.querySelector('.wb-ve').value),
-      scale_bar:td.querySelector('.wb-sb').checked,north_arrow:td.querySelector('.wb-na').checked,drape:top?top.id:null});});
-  td.querySelector('[data-act=research]').addEventListener('click',()=>send({action:'research'}));
-  document.querySelector('.wb-3d-tools').appendChild(td);
+  const toolbar=document.querySelector('.wb-3d-toolbar');
+  toolbar.innerHTML=`<div class="wb-3d-look"><label class="wb-3d-mode">View <select id="wb-cloud-mode" class="wb-cloud" aria-label="Terrain rendering">${profiles.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select><span class="wb-cloud-help"></span></label><label class="wb-3d-adjust">Contrast <input class="wb-contrast-3d" aria-label="3D contrast" type="range" min="0" max="100" step="1" value="${display3D.contrast}"><output class="wb-contrast-readout">50%</output></label><label class="wb-3d-adjust">Brightness <input class="wb-brightness-3d" aria-label="3D brightness" type="range" min="0" max="100" step="1" value="${display3D.brightness}"><output class="wb-brightness-readout">40%</output></label></div><div class="wb-3d-display"><label class="wb-3d-mode"><input type="checkbox" class="wb-no-background" ${display3D.background==='none'?'checked':''}>No background</label></div><div class="wb-3d-downloads" role="group" aria-label="Download 3D"><span>Download</span><button type="button" data-3d-export="pdf" title="High-resolution PDF of the current view">PDF</button><button type="button" data-3d-export="png" title="High-resolution PNG of the current view">PNG</button><button type="button" data-3d-export="laz" title="Full-resolution georeferenced point cloud">LAZ</button><button type="button" data-3d-export="ply" title="Full-resolution point data">PLY</button><button type="button" data-3d-export="glb" title="Full-resolution terrain mesh">glTF</button></div>`;
+  for(const element of toolbar.querySelectorAll('.wb-contrast-3d,.wb-brightness-3d'))element.addEventListener('input',update3DDisplay);
+  for(const element of toolbar.querySelectorAll('.wb-no-background'))element.addEventListener('change',update3DDisplay);
+  toolbar.querySelector('.wb-cloud').addEventListener('change',ev=>send({action:'view3d',cloud_key:ev.target.value}));
+  for(const button of toolbar.querySelectorAll('[data-3d-export]'))button.onclick=()=>{
+    const format=button.dataset['3dExport'];
+    if(format==='pdf'||format==='png')capture3D(format);else send({action:'research',format});
+  };
+  sync3DButtons();
   const sc=el(`<div class="wb-card"><h4>Script</h4><p>Every step of this session (pre-processing, relief views, exports) with its settings and input checksums, as a Python script that repeats it.</p>
     <button type="button" class="wb-run secondary" data-act="script">Download the steps as a Python script</button></div>`);
   sc.querySelector('[data-act=script]').addEventListener('click',()=>send({action:'script'}));
@@ -275,7 +266,7 @@ function renderPrep(){
 
 function update(){
   for(const box of [messageBox,document.querySelector('.wb-3d-message')]){box.hidden=!ARGS.message;box.textContent=ARGS.message||'';box.classList.toggle('error',ARGS.message_level==='error');}
-  if(pendingNonce&&ARGS.done_nonce===pendingNonce){pendingNonce=null;busy.hidden=true;document.querySelector('.wb-3d-busy').hidden=true;document.querySelectorAll('.wb-run').forEach(b=>b.disabled=false);document.querySelector('.wb-cloud').disabled=false;rvtWorkspace?.setBusy(false);}
+  if(pendingNonce&&ARGS.done_nonce===pendingNonce){pendingNonce=null;busy.hidden=true;document.querySelector('.wb-3d-busy').hidden=true;document.querySelectorAll('.wb-run').forEach(b=>b.disabled=false);document.querySelector('.wb-cloud').disabled=false;rvtWorkspace?.setBusy(false);sync3DButtons();}
   syncLayers();
   renderPrep();
   rvtWorkspace?.update(ARGS.rvt_api,ARGS.message);
@@ -286,7 +277,7 @@ function update(){
   const dl=ARGS.download;
   if(dl&&dl.id!==lastDownload){lastDownload=dl.id;const bytes=Uint8Array.from(atob(dl.b64),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:dl.mime}));const a=document.createElement('a');a.href=url;a.download=dl.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);showToast(`Saved: ${dl.filename}`);}
   const v3=ARGS.view3d;
-  if(v3&&v3.id!==last3d){last3d=v3.id;const m=document.querySelector('.wb-modal');m.querySelector('iframe').srcdoc=v3.html;m.hidden=false;}
+  if(v3&&v3.id!==last3d){last3d=v3.id;const m=document.querySelector('.wb-modal');viewerReady=false;sync3DButtons();m.querySelector('iframe').srcdoc=v3.html;m.hidden=false;}
 }
 function init(){rvtWorkspace=new window.RVTWorkspace(send,fit=>{if(!map)return;map.resize();const docked=document.querySelector('.detector-map').classList.contains('rvt-open');const padding={top:24,bottom:24,left:64,right:docked?24:document.querySelector('.exact-layer-panel').getBoundingClientRect().width+24};map.setPadding(padding);if(fit&&layerBounds())map.fitBounds(layerBounds(),{padding,pitch:0,bearing:0,duration:0});});initMap();buildTools();wireControls();renderLayerCards();}
 
@@ -331,6 +322,6 @@ function wireControls(){
   tb.addEventListener('click',()=>{terrainEnabled=!terrainEnabled;map.setTerrain(terrainEnabled?{source:'terrain',exaggeration:1.35}:null);map.easeTo({pitch:terrainEnabled?50:0,bearing:terrainEnabled?-12:0,duration:700});label();});
   document.querySelector('.panel-handle').addEventListener('click',ev=>{const c=document.querySelector('.detector-map').classList.toggle('panel-collapsed');ev.currentTarget.textContent=c?'‹':'›';ev.currentTarget.title=c?'Show tools':'Hide tools';ev.currentTarget.setAttribute('aria-expanded',String(!c));});
   document.querySelector('.map-fullscreen').addEventListener('click',()=>{const e=document.querySelector('.detector-map');if(!document.fullscreenElement&&e.requestFullscreen)e.requestFullscreen();else if(document.exitFullscreen)document.exitFullscreen();setTimeout(()=>map.resize(),300);});
-  document.querySelector('.wb-modal-close').addEventListener('click',()=>{const m=document.querySelector('.wb-modal');m.hidden=true;m.querySelector('iframe').srcdoc='';});
+  document.querySelector('.wb-modal-close').addEventListener('click',()=>{const m=document.querySelector('.wb-modal');m.hidden=true;m.querySelector('iframe').srcdoc='';viewerReady=false;captureRequest=null;clearTimeout(captureTimeout);sync3DButtons();});
 }
 })();

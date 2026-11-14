@@ -39,13 +39,15 @@ def _valid(dtm, nodata):
     return z, mask
 
 
-def write_ply(path, xs, ys, zs):
+def write_ply(path, xs, ys, zs, crs=None):
     n = xs.size
     header = (
         "ply\nformat binary_little_endian 1.0\n"
         "comment AIrchGIS 3D export; coordinates in the CRS given in the sidecar JSON\n"
         f"element vertex {n}\nproperty double x\nproperty double y\nproperty double z\nend_header\n"
     )
+    if crs is not None:
+        header = header.replace("element vertex", "comment CRS " + str(crs).replace("\n", " ").replace("\r", " ") + "\nelement vertex", 1)
     data = np.empty(n, dtype=[("x", "<f8"), ("y", "<f8"), ("z", "<f8")])
     data["x"], data["y"], data["z"] = xs, ys, zs
     with open(path, "wb") as f:
@@ -195,7 +197,7 @@ def export_terrain_3d(
     if wanted & {"laz", "las"}:
         files["point_cloud"] = str(write_las(output_dir / f"{stem}.{'laz' if 'laz' in wanted else 'las'}", px, py, pz, crs_wkt or crs_text))
     if "ply" in wanted:
-        files["ply"] = str(write_ply(output_dir / f"{stem}.ply", px, py, pz))
+        files["ply"] = str(write_ply(output_dir / f"{stem}.ply", px, py, pz, crs_text))
     triangles = 0
     mesh_step = 1
     if wanted & {"glb", "gltf"}:

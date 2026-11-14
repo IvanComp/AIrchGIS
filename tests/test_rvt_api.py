@@ -269,6 +269,19 @@ class RVTAPITests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.w.execute("vis.msrm", {"feature_min": {"binding": "default"}})
 
+    def test_hillshade_display_uses_physical_range_for_saved_and_live_results(self):
+        from unittest import mock
+
+        with mock.patch.object(self.wb, "add_layer", wraps=self.wb.add_layer) as add:
+            key = self.w.execute("vis.hillshade")[0]
+            self.w.show(key)
+            self.assertEqual(add.call_args.kwargs["display_range"], (0, 1))
+            self.w.execute("vis.hillshade", preview=True)
+            self.assertEqual(add.call_args.kwargs["display_range"], (0, 1))
+            key = self.w.execute("default.DefaultValues.float_to_8bit", values(float_arr=self.dem.tolist(), visualization="hs"), "settings")[0]
+            self.w.show(key)
+            self.assertEqual(add.call_args.kwargs["display_range"], (0, 255))
+
     def test_live_preview_replaces_transient_result_and_preserves_history(self):
         self.wb.rvt_workspace = self.w
         history = list(self.w.history)

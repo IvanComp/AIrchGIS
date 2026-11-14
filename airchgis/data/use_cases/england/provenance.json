@@ -1,0 +1,23 @@
+{
+  "source": "Environment Agency LIDAR Composite DTM 1m",
+  "source_url": "https://environment.data.gov.uk/spatialdata/lidar-composite-digital-terrain-model-dtm-1m/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=13787b9a-26a4-4775-8523-806d13af58fc__Lidar_Composite_Elevation_DTM_1m&subset=E%28443000%2C444000%29&subset=N%28187100%2C188100%29&format=image%2Ftiff",
+  "license": "Open Government Licence v3.0",
+  "license_url": "https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
+  "attribution": "Contains public sector information licensed under the Open Government Licence v3.0. \u00a9 Environment Agency.",
+  "reference_map": "https://lidarmap.uk/#16/51.5854/-1.3733/dtm",
+  "resolution_m": 1,
+  "native": true,
+  "crs": "EPSG:27700",
+  "bounds": [
+    443000,
+    187100,
+    444000,
+    188100
+  ],
+  "shape": [
+    1000,
+    1000
+  ],
+  "processing": "Native 1 m grid retained; NoData represented as NaN; lossless compression.",
+  "sha256": "f5eae7adc5c2c17828862a4216350aad3d179af287a0d030157954f8b76a9d39"
+}

@@ -25,7 +25,7 @@ from .paths import RVT_DIR
 RVT_UPLOAD_DIR = RVT_DIR / ".streamlit_uploads"
 RVT_OUTPUT_DIR = RVT_DIR / "output_rvt_gui"
 WEB_3D_LAS_MAX_POINTS = 500_000
-WEB_3D_BROWSER_MAX_SIDE = 950
+WEB_3D_BROWSER_MAX_SIDE = 1400
 
 
 PERSISTENT_KEYS = ("as_rvt_source_mode", "as_rvt_place", "as_rvt_tool", "as_rvt_azimuth", "as_rvt_radius", "as_rvt_dataset",
@@ -62,7 +62,7 @@ def render_rvt_web():
 def render_start_page(core):
 
     _, mid, _ = st.columns([0.12, 0.76, 0.12])
-    with mid:
+    with mid, st.container(key="home_layout"):
         with st.container(key="terrain_upload"):
             st.session_state.as_rvt_source_mode = source_mode = "Upload"
             uploads = render_upload_controls(core)
@@ -79,6 +79,9 @@ def render_start_page(core):
                 '<h3>Export, compare and<br>discover</h3><p>Compare layers on the map and export GeoTIFFs, figures or 3D data.</p></li></ol>',
                 unsafe_allow_html=True,
             )
+        from . import ui
+
+        ui.render_reference_links()
         payload = {"uploads": uploads}
         if not uploads.get("DTM"):
             return
@@ -169,8 +172,14 @@ def render_workbench(core, wb):
         cloud_key = event.get("cloud_key", wb.cloud_key)
         if cloud_key not in core.CLOUD_PREPROCESS_PROFILES:
             raise ValueError("Unknown terrain rendering mode.")
-        html_path, _las, _meta = build_3d_cloud(core, data, {"source_mode": "Upload", "source_payload": {}}, cloud_key)
+        from types import SimpleNamespace
+
+        terrain = SimpleNamespace(dtm=wb.dem, profile=wb.profile, crs=wb.crs)
+        html_path, _las, _meta = build_3d_cloud(core, terrain, {"source_mode": "Upload", "source_payload": {}}, cloud_key)
         html = Path(html_path).read_text(encoding="utf-8")
+        capture = (Path(__file__).with_name("terrain") / "viewer_capture.js").read_text(encoding="utf-8")
+        html = html.replace("      renderer.render(scene, camera);", "      renderInteractive();")
+        html = html.replace("    function animate() {", capture + "\n    function animate() {", 1)
         wb.cloud_key = cloud_key
 
 

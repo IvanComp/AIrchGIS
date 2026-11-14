@@ -1819,7 +1819,7 @@ def write_browser_cloud_viewer(
     }}
 
     const root = document.getElementById('app');
-    const renderer = new THREE.WebGLRenderer({{ antialias: true, powerPreference: 'high-performance' }});
+    const renderer = new THREE.WebGLRenderer({{ alpha: true, antialias: true, powerPreference: 'high-performance' }});
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(0x000000, 1);
@@ -1838,6 +1838,7 @@ def write_browser_cloud_viewer(
     scene.add(dir2);
 
     const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, Math.max(50000, DEFAULT_RADIUS * 20));
+    camera.up.set(0, 0, 1);
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;

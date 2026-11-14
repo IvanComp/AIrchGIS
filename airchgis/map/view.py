@@ -68,7 +68,7 @@ def _png_b64(rgba):
 
 
 def georeference(array, transform, crs, layer_id, name, description="", cmap="gray", visible=True, opacity=1.0,
-                 p_low=2.0, p_high=98.0):
+                 p_low=2.0, p_high=98.0, display_range=None):
 
     import matplotlib
 
@@ -83,13 +83,17 @@ def georeference(array, transform, crs, layer_id, name, description="", cmap="gr
         (dst,), bounds = _to_lonlat([a], transform, crs)
         valid = np.isfinite(dst)
         finite = dst[valid]
-        lo, hi = np.percentile(finite, [p_low, p_high]) if finite.size else (0.0, 1.0)
-        if finite.size:
-
-            med = float(np.median(finite))
-            sigma = 1.4826 * float(np.median(np.abs(finite - med)))
-            if sigma > 0:
-                lo, hi = max(lo, med - 3.5 * sigma), min(hi, med + 3.5 * sigma)
+        if display_range is not None:
+            lo, hi = map(float, display_range)
+            if not np.isfinite([lo, hi]).all() or hi <= lo:
+                raise ValueError("The display range must contain two finite increasing values.")
+        else:
+            lo, hi = np.percentile(finite, [p_low, p_high]) if finite.size else (0.0, 1.0)
+            if finite.size:
+                med = float(np.median(finite))
+                sigma = 1.4826 * float(np.median(np.abs(finite - med)))
+                if sigma > 0:
+                    lo, hi = max(lo, med - 3.5 * sigma), min(hi, med + 3.5 * sigma)
         norm = np.clip((dst - lo) / max(hi - lo, 1e-12), 0, 1)
         rgba = (matplotlib.colormaps[cmap](np.nan_to_num(norm)) * 255).astype(np.uint8)
     rgba[..., 3] = np.where(valid, 255, 0)

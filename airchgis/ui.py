@@ -639,7 +639,7 @@ div[data-testid="stAlert"] {
 
 .st-key-terrain_upload { max-width: 960px; margin: .3rem auto 0; }
 .st-key-terrain_upload [data-testid="stFileUploader"] { width: 64%; margin-inline: auto; }
-.st-key-terrain_upload [data-testid="stFileUploader"] > label { justify-content: center; padding: .55rem 0 .65rem; margin-bottom: .4rem; }
+.st-key-terrain_upload [data-testid="stFileUploader"] > label { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; padding: 0; margin: 0; }
 .st-key-terrain_upload [data-testid="stFileUploader"] > label p { color: var(--as-gold-400); font-weight: 700; font-size: 1.05rem; line-height: 1.5; text-align: center; }
 .st-key-terrain_upload [data-testid="stFileUploaderDropzone"] {
     display: flex; flex-direction: column; justify-content: center; gap: .85rem;
@@ -655,7 +655,7 @@ div[data-testid="stAlert"] {
 }
 .st-key-terrain_upload [data-testid="stFileUploaderDropzoneInstructions"] { display: flex; flex-direction: column; gap: .6rem; margin: 0; }
 .st-key-terrain_upload [data-testid="stFileUploaderDropzoneInstructions"] svg { width: 44px; height: 44px; color: var(--as-gold-400); }
-.st-key-terrain_upload [data-testid="stFileUploaderDropzone"]::before { content: "Drop your files here"; color: var(--as-text); font-size: 1.15rem; font-weight: 600; }
+.st-key-terrain_upload [data-testid="stFileUploaderDropzone"]::before { content: "Upload a terrain model or LiDAR point cloud"; color: var(--as-gold-400); font-size: 1.05rem; font-weight: 700; line-height: 1.5; }
 .st-key-terrain_upload [data-testid="stFileUploaderDropzone"] > span { align-self: center; width: auto; }
 .st-key-terrain_upload [data-testid="stFileUploaderDropzone"] button { border-color: var(--as-gold-500); border-radius: 10px; padding: .55rem 1.4rem; }
 .st-key-terrain_upload ol.as-upload-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); position: relative; list-style: none; padding: 0; margin: 1.8rem 0 0; gap: 0; }
@@ -683,11 +683,14 @@ div[data-testid="stButton"] > button:disabled::after { display: none; }
 .st-key-nav_guide button[kind]:hover { background: rgba(212,175,55,.1); border-color: var(--as-gold-300); box-shadow: 0 8px 18px -16px #ffe9a8; transform: none; }
 .st-key-nav_guide button[kind]::after { display: none; }
 .st-key-nav_guide button[kind="primary"] { background: rgba(212,175,55,.13); border-color: var(--as-gold-300); }
-.st-key-nav_cases { padding: .65rem .85rem .75rem 1.25rem; border-left: 1px solid var(--as-line); background: rgba(33,23,15,.38); border-radius: 0 12px 12px 0; }
+.st-key-nav_cases { padding: .5rem .75rem .6rem; border: 1px solid rgba(167,121,53,.38); background: linear-gradient(140deg,rgba(48,32,20,.65),rgba(25,17,11,.5)); border-radius: 12px; }
 .st-key-nav_cases > div { gap: .5rem; }
-.as-cases-heading { display: flex; align-items: center; gap: .65rem; line-height: 1; margin-bottom: .1rem; }
-.as-cases-heading > span { color: var(--as-muted); font-size: .7rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-.st-key-nav_cases button[kind]:disabled { opacity: .65; background: transparent; border-color: rgba(199,184,153,.18); color: var(--as-muted); min-height: 3.4rem; font-weight: 500; }
+.as-cases-heading { display: flex; align-items: center; gap: .85rem; line-height: 1.4; margin: 0 0 .35rem; padding: 0 .1rem; }
+.as-cases-heading::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg,rgba(228,191,107,.38),transparent); }
+.as-cases-heading > span { color: var(--as-gold-300); font: 600 .82rem/1.4 Cinzel,serif; letter-spacing: .04em; }
+.st-key-home_references { margin-top: .85rem; padding-top: .7rem; border-top: 1px solid rgba(167,121,53,.18); }
+.st-key-nav_cases button[kind] { min-height: 40px; padding: .35rem .45rem; }
+.st-key-nav_cases button[kind]:disabled { opacity: .65; background: transparent; border-color: rgba(199,184,153,.18); color: var(--as-muted); min-height: 40px; font-weight: 500; }
 @media (max-width: 760px) { .st-key-nav_cases { border-left: 0; border-top: 1px solid var(--as-line); border-radius: 0 0 12px 12px; padding: 1rem .6rem .75rem; } }
 
 .as-logo { height: 58px; width: 58px; }
@@ -700,17 +703,37 @@ div[data-testid="stButton"] > button:disabled::after { display: none; }
     .as-brand-sub { font-size: .65rem; }
     .st-key-terrain_upload [data-testid="stFileUploader"] { width: 100%; }
 }
-@media (min-width: 761px) and (max-height: 740px) {
+@media (min-width: 761px) and (max-height: 780px) {
     .block-container { padding-bottom: 1rem; }
     .st-key-terrain_upload ol.as-upload-steps { margin-top: 1.2rem; }
-    .as-step-number { width: 64px; height: 64px; margin-bottom: 14px; font-size: 22px; }
-    .as-upload-steps::before,.as-upload-steps::after { top: 31px; }
+    .as-step-number { width: 56px; height: 56px; margin-bottom: 12px; font-size: 21px; }
+    .as-upload-steps::before,.as-upload-steps::after { top: 27px; }
+    .st-key-terrain_upload [data-testid="stFileUploaderDropzone"] { min-height: 145px; padding: .9rem 1.5rem; gap: .65rem; }
+    .st-key-terrain_upload .as-upload-steps h3 { min-height: 44px; font-size: 15px; margin-bottom: 8px; }
+    .st-key-terrain_upload .as-upload-steps p { font-size: 12px; line-height: 1.55; }
+    .st-key-home_references { margin-top: .4rem; padding-top: .45rem; }
+}
+@media (min-width: 761px) {
+    .block-container:has(.st-key-home_layout) { padding-bottom: 0; }
+    .st-key-home_layout { height: calc(100dvh - 158px); min-height: calc(100dvh - 158px); box-sizing: border-box; padding: clamp(40px,10vh,100px) 0 clamp(16px,3vh,32px); justify-content: flex-start; gap: 0; }
+    .st-key-home_layout > [data-testid="stLayoutWrapper"]:has(> .st-key-terrain_upload),
+    .st-key-home_layout .st-key-terrain_upload { display: contents; }
+    .st-key-home_layout .as-upload-steps { margin-block: 0 !important; }
+    .st-key-home_layout .stElementContainer:has(.as-upload-steps) { margin-top: clamp(20px,4vh,40px); }
+    .st-key-home_layout > [data-testid="stLayoutWrapper"]:has(> .st-key-home_references) { flex: 1; display: flex; min-height: 58px; }
+    .st-key-home_layout .st-key-home_references { margin-top: 18px; padding-top: 0; flex: 1; justify-content: flex-end; }
+}
+@media (min-width: 761px) and (max-height: 650px) {
+    .st-key-home_layout { padding-top: 26px; padding-bottom: 16px; }
+    .st-key-home_layout .stElementContainer:has(.as-upload-steps) { margin-top: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .as-upload-steps::after { animation: none; background-position: center; } }
-.st-key-nav_cases button[kind] p { white-space: normal; line-height: 1.4; font-size: .78rem; }
+.st-key-nav_cases button[kind] p { white-space: normal; line-height: 1.3; font-size: .72rem; }
 .st-key-nav_guide button[kind] { padding-inline: .5rem; }
 .st-key-nav_guide button[kind] p { white-space: nowrap; font-size: .78rem; }
 .stApp a.as-source-link { box-sizing: border-box; width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: .5rem; background: rgba(212,175,55,.04); border: 0; border-bottom: 2px solid #a77935; border-radius: 7px 7px 0 0; color: var(--as-gold-300); text-decoration: none; font-size: .78rem; font-weight: 500; white-space: nowrap; }
+.st-key-home_references a.as-source-link { width: fit-content; padding-inline: 1rem; }
+.st-key-home_references .st-key-nav_guide button[kind] { padding-inline: 1rem; }
 .stApp a.as-source-link svg { width: 17px; height: 17px; flex: 0 0 17px; }
 .stApp a.as-source-link:hover { color: var(--as-gold-300); background: rgba(212,175,55,.1); border-color: var(--as-gold-300); box-shadow: 0 8px 18px -16px #ffe9a8; }
 .stApp a.as-source-link:focus-visible { outline: 2px solid var(--as-gold-300); outline-offset: 3px; }
@@ -723,3 +746,15 @@ div[data-testid="stButton"] > button:disabled::after { display: none; }
 .st-key-nav_home button p{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .st-key-nav_home button[kind] [data-testid="stIconMaterial"]{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);margin:0;line-height:1}
 """
+
+
+def render_reference_links():
+    with st.container(key="home_references"):
+        with st.container(horizontal=True, horizontal_alignment="center", vertical_alignment="center", gap="medium"):
+            with st.container(key="nav_guide", width="content"):
+                if st.button("How it Works?", key="as_nav_help", help="What AIrchGIS is and how it works",
+                             icon=":material/menu_book:", width="content"):
+                    st.session_state.as_help_from = st.session_state.get("as_active_tool", "RVT")
+                    st.session_state.as_active_tool = "Help"
+                    st.rerun()
+            st.markdown(source_code_markup(), unsafe_allow_html=True, width="content")

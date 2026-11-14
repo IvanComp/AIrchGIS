@@ -133,6 +133,7 @@ class Workspace{
     }
     else if(['mapping','sequence','array','object'].includes(p.kind)){value=make('textarea');value.rows=3;value.value=p.default==null?(p.kind==='mapping'?'{}':p.kind==='sequence'?'[]':''):JSON.stringify(p.default);value.placeholder=p.kind==='array'?'Choose an input array, or enter structured values':p.kind==='object'?'Choose an object from the input list':'Structured values';}
     else {value=make('input');value.type=p.kind==='number'?'number':'text';if(value.type==='number')value.step=p.integer?'1':'any';value.value=p.default??'';}
+    if(this.operation.id==='vis.hillshade'&&p.name==='sun_elevation')value.value='45';
     value.className='rvt-param-value';value.setAttribute('aria-label',p.label+' value');value.hidden=true;wrapper.appendChild(value);
     let slider=null;
     const limits={sun_azimuth:[0,360,1],shadow_az:[0,360,1],asvf_dir:[0,360,1],a_main_direction:[0,360,1],sun_elevation:[1,90,1],shadow_el:[1,90,1],ve_factor:[.1,5,.1],radius_cell:[1,100,1],svf_r_max:[1,100,1]};
