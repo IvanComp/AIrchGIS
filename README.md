@@ -21,10 +21,8 @@ AIrchGIS is a local research application for examining digital terrain models an
 - [Quick start](#quick-start)
 - [Terrain workflow](#terrain-workflow)
 - [3D analysis and export](#3d-analysis-and-export)
-- [AI-assisted anomaly detection](#ai-assisted-anomaly-detection)
+- [How AI Relief works](#how-ai-relief-works-find-hidden-features)
 - [Use cases and references](#use-cases-and-references)
-- [Built on RVT_py](#built-on-rvt_py)
-- [Reproducibility and project structure](#reproducibility-and-project-structure)
 
 ## Quick start
 
@@ -103,15 +101,41 @@ Satellite imagery follows the terrain grid and is clipped to its valid triangles
 
 Rendering and image capture use the highest supported resolution up to an 8192-pixel longest edge, bounded by the graphics device and 32 million pixels. PDF embeds the captured image without JPEG compression; it is a raster figure. There is no quality selector. Image size does not add terrain detail: the interactive viewer uses a bounded terrain grid, while LAZ, PLY and glTF exports retain the full current grid without point subsampling or mesh decimation.
 
-## AI-assisted anomaly detection
+## How AI Relief works (Find hidden features)
 
-**Find hidden features (AI)** reads several RVT views together to identify terrain forms that differ from their surroundings. Feature width and sensitivity control the analysis; advanced settings include a random seed and known-feature inputs. The method uses local relief descriptors and a robust statistical model of usual terrain. It does not download a pretrained model or require a GPU for the analysis.
+**Find hidden features (AI)** in Visualization tools, and the **AI Relief** view in 3D, show the same analysis. It looks for places whose relief does not look like the rest of the same terrain, and for shapes that should not be there: rings, concentric bands, enclosures and curved lines. It only re-analyses the measured terrain. It adds no detail, generates no terrain and uses no data from other places. It runs on the computer with NumPy and SciPy: no GPU and no downloaded model.
 
-The result adds a score layer and anomaly outlines alongside the relief view. Selecting **AI Relief** in 3D runs the analysis automatically when needed and reuses existing results.
+Step by step:
 
-Anomaly labels sit near their terrain markers and follow camera rotation. Hover a label or marker to show its dimensions, local relief and a possible morphological interpretation. Click to focus the camera on it. Interpretations describe shapes compatible with the measured relief; they do not establish an archaeological origin. Modern earthworks, natural forms and data artifacts can also be anomalous.
+1. **Leave out what cannot be read.** Level water surfaces (lakes, the sea) and a strip along the edge of the data are not analysed and are shown grey. Water is found as large connected areas that are flat at a 15 m scale and keep the same elevation. The edge strip is twice the largest filter radius, at least 20 m, because clipped DTMs often carry stretched or interpolated data along their border.
+2. **Read the terrain through several RVT views.** These are sky-view factor, positive and negative openness, the local relief model and slope, computed at the feature width you type, plus the small- and medium-scale relief.
+3. **Compare each place with its neighbourhood.** Each view is expressed relative to the terrain around it, so the general shape of the landscape (a hill, a valley) does not count.
+4. **Learn the usual relief of this area.** A statistical model of what the views usually look like together is fitted on a random sample of the same terrain, with a fixed seed. The most unusual 10% is left out of the fit, so that features do not shape the idea of "usual".
+5. **Score every place.** The score is how far its combination of views is from the usual relief (dark = usual, bright = unusual). With **Also look for larger structures** (on by default), the same is done at three times the feature width on a coarser grid.
+6. **Find rings and concentric bands.** Every line of unusual relief "votes" for the points at distance R on both sides of it. A ring makes the votes meet at its centre. Each candidate is then checked by walking around the circle, and it is kept only if:
+   - a line of unusual relief follows the circle continuously, running along it;
+   - the inside is mostly usual;
+   - it beats every one of 100 random circles of the same size drawn on the same terrain.
 
-Known features can be loaded to compare results with individual RVT views and VAT/e3MSTP composites. Synthetic tests cover both favorable and difficult terrain; performance on a particular survey requires independent validation. Implementation and tests are in [`airchgis/ai/`](airchgis/ai/) and [`tests/test_unusual_relief.py`](tests/test_unusual_relief.py).
+   The last test makes the threshold adapt to busy terrain such as field systems.
+7. **Rank the priorities to check.** Rings and concentric bands, curved lines and compact forms are ranked by unusualness × (1 + geometry), so rings come first. Long straight lines rank last and are labelled "often a modern road, track, drain or field boundary". They are never removed, because a hidden road can matter too.
+
+The map shows the score, the outlines by kind (orange ring, green curved line, red compact form, grey straight line) and the area left out. Each one appears next to the relief view, never instead of it, with a **Before / after** switch. Each priority comes with one sentence, for example "A ring-shaped form about 64 m across, with 2 concentric bands (50, 64 m)…", and the RVT views that drive it.
+
+**Two settings.** The feature width, and the sensitivity, which is the largest share of the area to check (0.5, 1 or 2%; default 1%). A place is listed only if it is also clearly unusual, so a uniform natural terrain can give no priority at all. Under **Advanced** are:
+- larger structures on or off;
+- the water options (largest tilt, smallest area);
+- the random seed;
+- known features (CSV or GeoJSON) to measure, on your terrain, the AUC of the AI layer against each RVT view, VAT and e3MSTP.
+
+**In 3D.** **AI Relief** colours the true terrain by the score and outlines the priorities. Choosing it runs the analysis automatically when needed, with the card's settings, and reuses an existing result for the same terrain and settings. Labels can be hovered for size and shape, and clicked to move the camera there.
+
+**How much to trust it.** These are priorities to check, not sites. Modern earthworks, natural forms and data artefacts can be unusual too. Synthetic tests (`airchgis/ai/synthetic.py`, `tests/test_unusual_relief.py`) show:
+- a concentric ringwork on a hill ranks first, with nothing flagged in a lake or on a clipped edge;
+- natural terrain gives no priority at the default sensitivity;
+- on rough relief with terraces the layer does not beat the best single RVT view or VAT.
+
+Three real terrains were used to design the masks and the ring detector, so they do not count as an independent test ([`docs/evaluation/`](docs/evaluation/)). Performance on a new survey must be checked against known features.
 
 ## Use cases and references
 
@@ -132,31 +156,3 @@ The Italian datasets retain their original EPSG:4326 grid at 0.00001° spacing a
 
 All screenshots above show the current interface using the Colle San Mauro dataset, except the upload screen.
 
-## Built on RVT_py
-
-**RVT_py supplies the relief-visualization algorithms used by AIrchGIS.** The [Relief Visualization Toolbox in Python](https://github.com/EarthObservation/RVT_py) is developed in collaboration between ZRC SAZU and the University of Ljubljana.
-
-AIrchGIS adds file preparation, coordinate handling, map comparison, 3D inspection, anomaly analysis and research exports. Its docked workspace exposes **148 public operations and 468 parameters** across `rvt.vis`, `rvt.blend`, `rvt.blend_func`, `rvt.default` and `rvt.tile`, including visualization, normalization, blending, compositions, settings, raster I/O and tiled processing.
-
-The dependency is pinned to commit [`bab109c`](https://github.com/EarthObservation/RVT_py/tree/bab109c409fedf77ccec7de5fd84c48b791df3d2), package version 2.2.3. The [API coverage inventory](docs/RVT_API_COVERAGE.md) documents the operations and compatibility corrections. Integration tests exercise the listed operations on synthetic terrain; this does not validate every input or parameter combination.
-
-RVT_py uses the [Apache License 2.0](https://github.com/EarthObservation/RVT_py/blob/master/LICENSE). Research using its methods should acknowledge RVT_py and cite the relevant publications from its [References section](https://github.com/EarthObservation/RVT_py#references).
-
-## Reproducibility and project structure
-
-The map's **Script** card downloads the recorded processing steps as Python. Provenance records include parameters, input checksums and software versions. RVT workspace packages retain managed inputs, outputs, arrays, object fields and operation history; they do not automatically restore an interactive session.
-
-Processing runs synchronously on the local computer. Large rasters may require tiled operations or a smaller study area. Browser downloads are limited to 200 MB; larger outputs remain at the local location reported by the app. Map display limits do not change numerical relief calculations or GeoTIFF output.
-
-| Location | Contents |
-|---|---|
-| [`airchgis_app.py`](airchgis_app.py) | Application entry point |
-| [`airchgis/`](airchgis/) | Navigation, upload, map workbench and RVT integration |
-| [`airchgis/terrain/`](airchgis/terrain/) | 3D rendering controls, satellite draping and research exports |
-| [`airchgis/ai/`](airchgis/ai/) | Relief anomaly analysis and synthetic test terrains |
-| [`airchgis/data/use_cases/`](airchgis/data/use_cases/) | Bundled terrains and source metadata |
-| [`RVT/`](RVT/) | Terrain processing and browser viewer implementation |
-| [`scripts/`](scripts/) | Dependency installation and data-preparation scripts |
-| [`tests/`](tests/) | Processing, API, data and export checks |
-
-Third-party attribution is recorded in [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md). Further technical notes are in [`docs/AIRCHGIS_STRUCTURE.md`](docs/AIRCHGIS_STRUCTURE.md) and [`docs/RVT_API_COVERAGE.md`](docs/RVT_API_COVERAGE.md).

@@ -175,3 +175,7 @@ select,select option{cursor:pointer}
 .wb-ai-areas small{display:block;color:#a99479;font-size:10px;margin-top:2px}
 .wb-ai-advanced{margin:4px 0 6px;font-size:11px;color:#cdb994}
 .wb-ai-sites-state{font-size:10px;color:#a99479;margin:2px 0}
+.wb-ai-kinds{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10px;color:#cdb994;margin:2px 0 6px}
+.wb-ai-kinds span{display:inline-flex;align-items:center;gap:4px}
+.wb-ai-kinds b,.wb-ai-dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex:none}
+.wb-ai-dot{margin-right:5px;vertical-align:middle}

@@ -36,6 +36,38 @@ TRIM_PASSES = 5
 LOCAL_WINDOW = 8.0  # x s, neighbourhood used to standardize each view
 SMOOTH = 0.5  # x s, smoothing of the score
 MAX_AREAS = 50
+LARGE_FACTOR = 3.0  # "also look for larger structures": second pass at 3 x the feature width
+LARGE_OFFSET = 3.0  # the coarse pass has a heavier tail on natural relief (fewer, larger cells): it is lowered by this
+# level surfaces such as lakes: tilt at a 15 m scale below WATER_TILT_DEG, elevation spread within WATER_BAND_M,
+# connected over at least WATER_MIN_AREA_M2; a buffer of WATER_BUFFER_M is excluded around them
+WATER_TILT_DEG = 0.4
+WATER_BAND_M = 1.0
+WATER_MIN_AREA_M2 = 5000.0
+WATER_BUFFER_M = 5.0
+EDGE_SHARE = 0.25  # a priority area is dropped as a likely data-edge artefact if more than this share is in the edge band
+# geometry term: priority = unusualness x (1 + GEOMETRY_WEIGHT x g)
+GEOMETRY_WEIGHT = 1.0
+GEOMETRY = {"ring": 1.5, "line": 0.3, "compact": 0.0, "straight line": -0.2}
+STRAIGHT_MIN_M = 80.0
+STRAIGHT_TOL = 0.03
+RING_RADII_M = (12.0, 200.0)
+RING_HOLLOW = 0.7  # at least this share of the directions must be usual relief halfway to the centre
+RING_TANGENT = 0.9  # |cos| between the line's normal and the direction to the centre (about 25 degrees of tolerance)
+RING_BAND = 0.08  # radial tolerance as a share of the radius (ellipses up to about 0.85 axis ratio)
+RING_PEAKS = 8  # vote-map peaks checked per radius
+RING_Z = 6.0  # minimum strength of a ring centre, in robust standard deviations of the vote map
+RING_COVERAGE = 0.3  # minimum share of the circle followed continuously by a line of unusual relief
+RING_NULL = 100  # random circles per radius used for the site-adaptive threshold
+RING_MARGIN = 0.10  # a ring must beat the most continuous random circle by this share of the circle
+RING_ANGLES = 36
+UNUSUAL_PIXEL = 3.5  # minimum score of a pixel that counts as unusual for the ring detector
+RING_QUANTILE = 0.85  # ... and it must be in the top 15% of the fine-scale score
+RING_MIN_UNUSUAL = 4.0  # mean score along a ring; rings are faint lines, their evidence is mostly the geometry
+RING_MIN_EXCESS = 0.3  # share of the gap between the best random circle and a complete circle that a ring must close
+RING_EDGE_SHARE = 0.1  # share of a ring allowed in the edge band
+RING_SMALL_M = 20.0  # single rings smaller than this radius need stronger evidence:
+RING_SMALL_EXCESS = 0.5
+RING_SMALL_UNUSUAL = 5.0
 
 FEATURES = (
     ("svf", "Sky-view factor"),
@@ -169,15 +201,38 @@ def _area_shape(rows, cols, res):
 
 
 def _describe(area, res):
-    shape = "linear" if area["length_m"] >= 3 * area["width_m"] else "compact"
+    kind = area.get("kind") or ("line" if area["length_m"] >= 3 * area["width_m"] else "compact")
     form = "raised" if area["relief_m"] > 0 else "sunken"
-    size = (f"about {area['length_m']:.0f} m long and {area['width_m']:.0f} m wide" if shape == "linear"
+    linear = kind in ("line", "straight line")
+    size = (f"about {area['length_m']:.0f} m long and {area['width_m']:.0f} m wide" if linear
             else f"about {area['length_m']:.0f} × {area['width_m']:.0f} m")
     drivers = " and ".join(d["phrase"] for d in area["drivers"][:2])
-    return f"A {shape}, {form} form, {size}: {drivers} than the surrounding terrain."
+    shape = {"line": "curved line", "straight line": "straight line"}.get(kind, "compact form")
+    text = f"A {form} {shape}, {size}" + (f": {drivers} than the surrounding terrain." if drivers else ".")
+    if kind == "straight line":
+        text += " Long and straight: often a modern road, track, drain or field boundary, ranked lower."
+    return text
 
 
-def priority_areas(score, valid, contrib, z, slrm, res, width_m, transform=None, sensitivity="medium"):
+def _classify_shape(rr, cc, res, length, width, width_m):
+    """Kind of a priority area from its geometry: a curved line, a straight line or a compact form. Straight lines
+    are measured by the largest offset of the area's centre line from a straight axis."""
+    if length < 3 * width or length < 4 * width_m:
+        return "compact", 0.0, 0.0
+    pts = np.vstack([cc, -rr]).astype(np.float64)
+    pts -= pts.mean(axis=1, keepdims=True)
+    _, vecs = np.linalg.eigh(np.cov(pts) + 1e-9 * np.eye(2))
+    along, across = vecs[:, 1] @ pts, vecs[:, 0] @ pts
+    bins = np.linspace(along.min(), along.max() + 1e-9, 7)
+    idx = np.digitize(along, bins) - 1
+    offs = [across[idx == b].mean() for b in range(6) if np.any(idx == b)]
+    dev = float((max(offs) - min(offs)) * res) if offs else 0.0
+    if length >= STRAIGHT_MIN_M and dev <= max(3.0, STRAIGHT_TOL * length):
+        return "straight line", GEOMETRY["straight line"], dev
+    return "line", GEOMETRY["line"], dev
+
+
+def priority_areas(score, valid, contrib, z, slrm, res, width_m, transform=None, sensitivity="medium", edge_band=None):
     """Label the priority areas and describe each one in plain words."""
     share, area_floor = SENSITIVITY[sensitivity]
     floor = PIXEL_FLOOR
@@ -187,12 +242,18 @@ def priority_areas(score, valid, contrib, z, slrm, res, width_m, transform=None,
     labels, n = ndimage.label(cand, structure=np.ones((3, 3), dtype=bool))
     min_px = max(4, int(round(0.5 * (width_m / res) ** 2)))
     areas = []
+    n_edge = 0
     if n:
         idx = np.arange(1, n + 1)
         sizes = ndimage.sum(cand, labels, idx)
         means = ndimage.mean(score, labels, idx)
         peaks = ndimage.maximum(score, labels, idx)
-        order = [i for i in np.argsort(-means) if sizes[i] >= min_px and means[i] >= area_floor]
+        on_edge = (ndimage.mean(edge_band.astype(np.float64), labels, idx) if edge_band is not None
+                   else np.zeros(n))
+        big = [i for i in range(n) if sizes[i] >= min_px and means[i] >= area_floor]
+        n_edge = sum(1 for i in big if on_edge[i] > EDGE_SHARE)
+        order = [i for i in np.argsort(-means) if sizes[i] >= min_px and means[i] >= area_floor
+                 and on_edge[i] <= EDGE_SHARE]
         keep = np.zeros(n + 1, dtype=bool)
         names = dict(FEATURES)
         for rank, i in enumerate(order, 1):
@@ -221,10 +282,12 @@ def priority_areas(score, valid, contrib, z, slrm, res, width_m, transform=None,
                 drivers.append({"view": names[key], "share": round(float(c_mean[k]) / total, 2),
                                 "phrase": PHRASES[key][0 if z_mean[k] > 0 else 1]})
             row, col = float(rr.mean()), float(cc.mean())
+            kind, geom, dev = _classify_shape(rr, cc, res, length, width, width_m)
             area = {"id": rank, "row": row, "col": col, "pixels": int(rr.size), "area_m2": float(rr.size * res * res),
                     "mean_score": float(means[i]), "peak_score": float(peaks[i]), "length_m": length, "width_m": width,
                     "bearing_deg": bearing, "relief_m": float(np.nanmean(slrm[rr, cc])), "drivers": drivers,
-                    "bbox": [int(rr.min()), int(cc.min()), int(rr.max()), int(cc.max())]}
+                    "bbox": [int(rr.min()), int(cc.min()), int(rr.max()), int(cc.max())], "kind": kind,
+                    "geometry": geom, "axis_offset_m": dev, "label": lab}
             if transform is not None:
                 x, y = transform * (col + 0.5, row + 0.5)
                 area["x"], area["y"] = float(x), float(y)
@@ -238,10 +301,12 @@ def priority_areas(score, valid, contrib, z, slrm, res, width_m, transform=None,
         labels = remap[labels]
     flagged = float((labels > 0)[valid].mean()) if valid.any() else 0.0
     return labels.astype(np.int32), areas, {"share": share, "pixel_floor": floor, "area_floor": area_floor,
-                                            "cut": float(cut), "flagged_share": flagged, "min_area_px": min_px}
+                                            "cut": float(cut), "flagged_share": flagged, "min_area_px": min_px,
+                                            "edge_areas_dropped": int(n_edge)}
 
 
-def unusual_relief(dem, res, width_m, sensitivity="medium", seed=DEFAULT_SEED, transform=None):
+def _unusual_relief_single(dem, res, width_m, sensitivity="medium", seed=DEFAULT_SEED, transform=None):
+    """First version, one scale and no masks; kept for comparison in the evaluation."""
     """Run the whole method on a terrain array. Returns the score, the priority labels, the areas and a report."""
     if sensitivity not in SENSITIVITY:
         raise ValueError(f"Sensitivity must be one of {', '.join(SENSITIVITY)}.")
@@ -266,13 +331,420 @@ def unusual_relief(dem, res, width_m, sensitivity="medium", seed=DEFAULT_SEED, t
     return score, labels, areas, report
 
 
+def water_mask(dem, res, tilt_deg=WATER_TILT_DEG, band_m=WATER_BAND_M, min_area_m2=WATER_MIN_AREA_M2):
+    """Level surfaces such as lakes or the sea: large connected areas whose tilt at a 15 m scale is almost zero and
+    whose elevation stays within a narrow band. Gently sloping fields are kept because they tilt."""
+    filled, missing = metrics.finite_fill(dem)
+    g = ndimage.gaussian_filter(filled, max(1.0, 15.0 / res))
+    gy, gx = np.gradient(g, res)
+    cand = (np.degrees(np.arctan(np.hypot(gx, gy))) < tilt_deg) & ~missing
+    lab, n = ndimage.label(cand)
+    water = np.zeros(np.shape(dem), dtype=bool)
+    if not n:
+        return water
+    min_px = min_area_m2 / (res * res)
+    sizes = ndimage.sum(cand, lab, np.arange(1, n + 1))
+    for i, sl in enumerate(ndimage.find_objects(lab), 1):
+        if sl is None or sizes[i - 1] < min_px:
+            continue
+        m = lab[sl] == i
+        v = filled[sl][m]
+        if np.percentile(v, 98) - np.percentile(v, 2) <= band_m:
+            water[sl] |= m
+            # grow the water body up to its shore: neighbouring cells at the same level, within 40 m
+            level = float(np.median(v))
+            reach = int(round(40.0 / res))
+            r0, r1 = max(0, sl[0].start - reach), min(water.shape[0], sl[0].stop + reach)
+            c0, c1 = max(0, sl[1].start - reach), min(water.shape[1], sl[1].stop + reach)
+            seed_ = np.zeros((r1 - r0, c1 - c0), dtype=bool)
+            seed_[sl[0].start - r0: sl[0].stop - r0, sl[1].start - c0: sl[1].stop - c0] = m
+            same = (np.abs(filled[r0:r1, c0:c1] - level) <= band_m / 2) & ~missing[r0:r1, c0:c1]
+            near = ndimage.binary_dilation(seed_, iterations=reach)
+            water[r0:r1, c0:c1] |= ndimage.binary_propagation(seed_, mask=(same & near) | seed_)
+    return ndimage.binary_fill_holes(water) & ~missing
+
+
+def _block_mean(a, f):
+    h, w = (a.shape[0] // f) * f, (a.shape[1] // f) * f
+    blk = a[:h, :w].reshape(h // f, f, w // f, f)
+    with np.errstate(invalid="ignore"):
+        cnt = np.isfinite(blk).sum(axis=(1, 3))
+        out = np.nansum(blk, axis=(1, 3)) / np.maximum(cnt, 1)
+    out[cnt < f * f / 2] = np.nan
+    return out
+
+
+def _upsample(a, f, shape):
+    big = np.repeat(np.repeat(a, f, axis=0), f, axis=1)
+    out = np.full(shape, np.nan, dtype=big.dtype)
+    h, w = min(shape[0], big.shape[0]), min(shape[1], big.shape[1])
+    out[:h, :w] = big[:h, :w]
+    return out
+
+
+def _score_at(dem, res, width_m, seed):
+    X, valid, slrm = feature_stack(dem, res, width_m)
+    XL = local_standardize(X, valid, res, width_m)
+    mu, cov = fit_usual(XL, valid, seed=seed)
+    d, contrib, _ = mahalanobis(XL, mu, cov)
+    s, _ = scales(res, width_m)
+    score = _norm_conv(np.where(valid, d, 0.0), valid.astype(np.float64), SMOOTH * s)
+    return np.where(valid, score, np.nan), valid, contrib, X, slrm, (mu, cov)
+
+
+def _drivers(mask, around, contrib, X):
+    names = dict(FEATURES)
+    c_mean = contrib[mask].mean(axis=0)
+    z_mean = X[mask].mean(axis=0) - (X[around].mean(axis=0) if around.any() else 0.0)
+    total = float(np.clip(c_mean, 0, None).sum()) or 1.0
+    out = []
+    for k in np.argsort(-c_mean)[:3]:
+        if c_mean[k] <= 0:
+            continue
+        key = FEATURES[k][0]
+        out.append({"view": names[key], "share": round(float(c_mean[k]) / total, 2),
+                    "phrase": PHRASES[key][0 if z_mean[k] > 0 else 1]})
+    return out
+
+
+def _n_angles(radius, band):
+    return int(np.clip(2 * np.pi * radius / max(1.0, 1.5 * band), RING_ANGLES, 240))
+
+
+def _circle_samples(r0, c0, radius, band, shape, n=RING_ANGLES):
+    ang = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    offs = np.arange(-band, band + 1)
+    rr = np.rint(r0 + (radius + offs[None, :]) * np.cos(ang)[:, None]).astype(int)
+    cc = np.rint(c0 + (radius + offs[None, :]) * np.sin(ang)[:, None]).astype(int)
+    inb = (rr >= 0) & (rr < shape[0]) & (cc >= 0) & (cc < shape[1])
+    return np.clip(rr, 0, shape[0] - 1), np.clip(cc, 0, shape[1] - 1), inb
+
+
+def _ring_coverage(S, valid, edge, r0, c0, radius, band, u, normal=None):
+    """Share of the 36 directions with data, share of those crossed by unusual relief running along the circle,
+    their mean score, and the share of the circle in the edge band."""
+    n = _n_angles(radius, band)
+    rr, cc, inb = _circle_samples(r0, c0, radius, band, S.shape, n)
+    ok = inb & valid[rr, cc]
+    has = ok.sum(axis=1) >= max(1, ok.shape[1] // 2)
+    sv = np.where(ok, S[rr, cc], -np.inf)
+    if normal is not None:
+        # the line of unusual relief must run along the circle: its normal points to the centre
+        ang = np.linspace(0, 2 * np.pi, n, endpoint=False)[:, None]
+        along = np.abs(np.cos(normal[rr, cc] - ang)) >= RING_TANGENT
+        sv = np.where(along, sv, -np.inf)
+    vals = sv.max(axis=1)
+    off = sv.argmax(axis=1)
+    hit = has & (vals >= u)
+    inside = float(has.mean())
+    # continuity: neighbouring directions both crossed by the same line (similar distance from the centre)
+    nxt = np.roll(np.arange(n), -1)
+    cont = hit & hit[nxt] & (np.abs(off - off[nxt]) <= max(1, band))
+    cover = float(cont.sum() / max(1, has.sum()))
+    mean = float(vals[hit].mean()) if hit.any() else 0.0
+    on_edge = float((edge[rr, cc] & inb).any(axis=1)[has].mean()) if has.any() else 1.0
+    # a ring is hollow: halfway to the centre the relief must be mostly usual
+    ri, ci, inb_i = _circle_samples(r0, c0, 0.5 * radius, 0, S.shape, RING_ANGLES)
+    ok_i = inb_i[:, 0] & valid[ri[:, 0], ci[:, 0]]
+    hollow = 1.0 - float((S[ri[:, 0], ci[:, 0]][ok_i] >= u).mean()) if ok_i.any() else 0.0
+    if hollow < RING_HOLLOW:
+        cover = 0.0
+    return inside, cover, mean, on_edge
+
+
+def detect_rings(score, valid, edge, res, width_m, seed=DEFAULT_SEED):
+    """Rings, arcs and concentric bands of unusual relief. Every unusual pixel lying on a line of unusual relief votes
+    for the points at distance R on both sides, across the line; a ring makes the votes meet at its centre. Centres
+    are then checked by walking around the circle: the relief must be unusual along at least half of it."""
+    h, w = score.shape
+    s, _ = scales(res, width_m)
+    S = np.where(valid, score, 0.0).astype(np.float64)
+    vals = score[valid]
+    if vals.size < 100:
+        return []
+    u = max(float(np.quantile(vals, RING_QUANTILE)), UNUSUAL_PIXEL)
+    sig = max(1.0, s)
+    hrr = ndimage.gaussian_filter(S, sig, order=(2, 0))
+    hcc = ndimage.gaussian_filter(S, sig, order=(0, 2))
+    hrc = ndimage.gaussian_filter(S, sig, order=(1, 1))
+    lam_min = (hrr + hcc) / 2 - np.sqrt(((hrr - hcc) / 2) ** 2 + hrc ** 2)
+    theta = 0.5 * np.arctan2(2 * hrc, hrr - hcc) + np.pi / 2
+    vr, vc = np.nonzero(valid & (S >= u) & (lam_min < 0))
+    if vr.size < 20:
+        return []
+    if vr.size > 300_000:
+        pick = np.random.default_rng(seed).choice(vr.size, 300_000, replace=False)
+        vr, vc = vr[pick], vc[pick]
+    wv = S[vr, vc] - u + 1.0
+    dr, dc = np.cos(theta[vr, vc]), np.sin(theta[vr, vc])
+    rmin = RING_RADII_M[0] / res
+    rmax = min(RING_RADII_M[1] / res, 0.45 * min(h, w))
+    if rmax <= rmin:
+        return []
+    radii = np.geomspace(rmin, rmax, 24)
+    # candidate centres: the strongest vote peaks of each radius separately, so that small rings are not hidden by
+    # the votes of long lines at large radii
+    candidates = []
+    for k, radius in enumerate(radii):
+        acc = np.zeros((h, w))
+        for sign in (1.0, -1.0):
+            rr = np.rint(vr + sign * radius * dr).astype(int)
+            cc = np.rint(vc + sign * radius * dc).astype(int)
+            ok = (rr >= 0) & (rr < h) & (cc >= 0) & (cc < w)
+            np.add.at(acc, (rr[ok], cc[ok]), wv[ok])
+        acc = ndimage.gaussian_filter(acc, max(1.0, 0.08 * radius))
+        ref = acc[valid]
+        med = float(np.median(ref))
+        mad = 1.4826 * float(np.median(np.abs(ref - med))) or 1e-9
+        z = (acc - med) / mad
+        pk = (acc == ndimage.maximum_filter(acc, size=int(max(3, radius)) | 1)) & (z >= RING_Z) & valid
+        pr, pc = np.nonzero(pk)
+        for i in np.argsort(-z[pr, pc])[:RING_PEAKS]:
+            candidates.append((float(z[pr[i], pc[i]]), int(pr[i]), int(pc[i]), k))
+    candidates.sort(reverse=True)
+    band = int(max(2, round(0.6 * width_m / res)))
+    # site-adaptive threshold: a ring must be more continuous than every one of RING_NULL random circles of the
+    # same size drawn on this terrain
+    def best_fit(r0, c0, radius, b):
+        # the same small search around the centre for candidates and for random circles, so the test is fair
+        step = max(1, int(round(0.06 * radius)))
+        best_c = None
+        for dr in (-step, 0, step):
+            for dc in (-step, 0, step):
+                res_ = _ring_coverage(S, valid, edge, r0 + dr, c0 + dc, radius, b, u, theta)
+                if best_c is None or res_[1] > best_c[0][1]:
+                    best_c = (res_, r0 + dr, c0 + dc)
+        return best_c
+
+    rng = np.random.default_rng(seed)
+    vr_all, vc_all = np.nonzero(valid)
+    threshold, nullmax = {}, {}
+    for radius in radii:
+        b = int(max(band, round(RING_BAND * radius)))
+        if radius < 2.5 * b:
+            continue
+        null = []
+        for j in rng.choice(vr_all.size, min(vr_all.size, RING_NULL * 3), replace=False):
+            (ins, cov, _, _), _, _ = best_fit(int(vr_all[j]), int(vc_all[j]), radius, b)
+            if ins >= 0.7:
+                null.append(cov)
+            if len(null) >= RING_NULL:
+                break
+        nullmax[radius] = max(null) if null else 0.0
+        threshold[radius] = max(RING_COVERAGE, nullmax[radius] + RING_MARGIN)
+    rings = []
+
+    def passes(r0, c0, radius):
+        if radius not in threshold:
+            return None
+        b = int(max(band, round(RING_BAND * radius)))
+        (inside, cover, mean, on_edge), rc, cc_ = best_fit(r0, c0, radius, b)
+        if inside >= 0.7 and cover >= threshold[radius] and on_edge <= RING_EDGE_SHARE:
+            return (radius, cover, mean, b, rc, cc_)
+        return None
+
+    for zval, r0, c0, k in candidates:
+        if any(np.hypot(r0 - q["row"], c0 - q["col"]) < 0.3 * max(radii[k], q["radius_px"])
+               and max(radii[k], q["radius_px"]) / min(radii[k], q["radius_px"]) < 1.5 for q in rings):
+            continue
+        first = [p for p in (passes(r0, c0, radii[j]) for j in (k - 1, k, k + 1) if 0 <= j < len(radii)) if p]
+        if not first:
+            continue
+        r0, c0 = max(first, key=lambda t: t[1])[4:6]
+        found = [p for p in (passes(r0, c0, radius) for radius in radii) if p]
+        if not found:
+            continue
+        r0, c0 = max(found, key=lambda t: t[1])[4:6]
+        found = [f_[:4] for f_ in found]
+        top = max(found, key=lambda t: (t[1], t[2]))
+        found = [f_ for f_ in found if top[0] / 3.0 <= f_[0] <= top[0] * 3.0]
+        # merge neighbouring radii into bands: keep the best-covered radius of each run
+        bands, run = [], [found[0]]
+        for f_ in found[1:]:
+            if f_[0] - run[-1][0] <= max(run[-1][3], 2) * 1.5 + 1:
+                run.append(f_)
+            else:
+                bands.append(max(run, key=lambda t: (t[1], t[2])))
+                run = [f_]
+        bands.append(max(run, key=lambda t: (t[1], t[2])))
+        main = max(bands, key=lambda t: (t[1], t[2]))
+        outer = max(t[0] for t in bands)
+        if any(np.hypot(r0 - q["row"], c0 - q["col"]) < 0.3 * max(main[0], q["radius_px"])
+               and max(main[0], q["radius_px"]) / min(main[0], q["radius_px"]) < 1.5 for q in rings):
+            continue
+        # how far the ring beats the most continuous random circle of the same size (0 = equal, 1 = complete circle)
+        excess = max(0.0, (main[1] - nullmax[main[0]]) / max(1e-6, 1.0 - nullmax[main[0]]))
+        rings.append({"row": float(r0), "col": float(c0), "radius_px": float(main[0]), "outer_px": float(outer),
+                      "coverage": float(main[1]), "excess": float(excess), "random_best": float(nullmax[main[0]]),
+                      "unusual": float(np.mean([t[2] for t in bands])),
+                      "bands": [(float(t[0]), int(t[3])) for t in bands], "z": float(zval), "u": u})
+    # one structure, one ring: drop rings that overlap a stronger one
+    kept = []
+    for q in sorted(rings, key=lambda t: -(t["excess"] + 0.25 * len(t["bands"]))):
+        if any(np.hypot(q["row"] - p["row"], q["col"] - p["col"]) < max(q["outer_px"], p["outer_px"])
+               and max(q["radius_px"], p["radius_px"]) / min(q["radius_px"], p["radius_px"]) < 3.0 for p in kept):
+            continue
+        kept.append(q)
+    return kept
+
+
+def _ring_masks(ring, shape, S, u):
+    yy, xx = np.ogrid[:shape[0], :shape[1]]
+    dist = np.hypot(yy - ring["row"], xx - ring["col"])
+    line = np.zeros(shape, dtype=bool)
+    hit = np.zeros(shape, dtype=bool)
+    around = np.zeros(shape, dtype=bool)
+    for radius, b in ring["bands"]:
+        line |= np.abs(dist - radius) <= 1.0
+        near = np.abs(dist - radius) <= b
+        hit |= near & (S >= u)
+        around |= (np.abs(dist - radius) <= 3 * b) & ~near
+    return line, hit, around
+
+
+def _describe_ring(area):
+    diam = sorted(round(2 * r) for r in area["radii_m"])
+    text = f"A ring-shaped form about {diam[-1]:.0f} m across"
+    if len(diam) > 1:
+        text += f", with {len(diam)} concentric bands ({', '.join(f'{d:.0f}' for d in diam)} m)"
+    drivers = " and ".join(d["phrase"] for d in area["drivers"][:2])
+    return (f"{text}; the relief is unusual along {100 * area['coverage']:.0f}% of the circle"
+            + (f", {drivers} than the surrounding terrain." if drivers else "."))
+
+
+def unusual_relief(dem, res, width_m, sensitivity="medium", seed=DEFAULT_SEED, transform=None, larger=True,
+                   mask_water=True, water_tilt_deg=WATER_TILT_DEG, water_min_area_m2=WATER_MIN_AREA_M2):
+    """Run the whole method on a terrain array. Returns the score, the priority labels, the areas and a report.
+
+    1. Exclude level water surfaces and a buffer around missing data and the data boundary.
+    2. Score the unusualness at the feature width and, if `larger`, at 3x the width on a coarser grid; keep the higher.
+    3. Find rings and concentric bands of unusual relief, and the unusual areas, lines and straight lines.
+    4. Rank them by unusualness x (1 + geometry weight); drop areas that hug the edge of the data.
+    """
+    if sensitivity not in SENSITIVITY:
+        raise ValueError(f"Sensitivity must be one of {', '.join(SENSITIVITY)}.")
+    dem = np.asarray(dem, dtype=np.float64)
+    missing = ~np.isfinite(dem)
+    water = water_mask(dem, res, water_tilt_deg, WATER_BAND_M, water_min_area_m2) if mask_water else np.zeros_like(missing)
+    if water.any():
+        water = ndimage.binary_dilation(water, iterations=max(1, int(round(WATER_BUFFER_M / res)))) & ~missing
+    work = np.where(water, np.nan, dem)
+    if np.isfinite(work).sum() < 400:
+        raise ValueError("Almost all of this terrain is missing or level water: there is nothing to analyse.")
+    score, valid, contrib, X, slrm, model = _score_at(work, res, width_m, seed)
+    fine = score.copy()
+    scale_used = np.zeros(dem.shape, dtype=np.uint8)
+    if larger:
+        f = int(LARGE_FACTOR)
+        small = _block_mean(work, f)
+        if min(small.shape) >= 60:
+            try:
+                sc_l, valid_l, _, _, _, _ = _score_at(small, res * f, width_m * LARGE_FACTOR, seed)
+                big = _upsample(np.where(valid_l, sc_l, np.nan), f, dem.shape) - LARGE_OFFSET
+                better = valid & np.isfinite(big) & (big > score)
+                score = np.where(better, big, score)
+                scale_used[better] = 1
+            except ValueError:
+                pass
+    s, rho = scales(res, width_m)
+    # clipped DTMs often carry a strip of interpolated or stretched data along the boundary: the edge band reaches
+    # twice the largest filter radius (at least 20 m) beyond the analysed area
+    edge_px = int(2 * max(rho, np.ceil(3 * s), round(10.0 / res)))
+    edge = ndimage.binary_dilation(~valid, iterations=edge_px) & valid
+    score = np.where(valid, score, np.nan).astype(np.float32)
+    blob_labels, blobs, stats = priority_areas(score, valid, contrib, X, slrm, res, width_m, transform, sensitivity,
+                                               edge_band=edge)
+    share, area_floor = SENSITIVITY[sensitivity]
+    # rings are made of narrow ditches and banks: they are traced on the fine-scale score
+    S = np.where(valid, fine, 0.0)
+    rings_raw = detect_rings(np.where(valid, fine, np.nan), valid, edge, res, width_m, seed)
+    items = []
+    absorbed = set()
+    for ring in rings_raw:
+        if ring["unusual"] < RING_MIN_UNUSUAL or ring["excess"] < RING_MIN_EXCESS:
+            continue
+        if (len(ring["bands"]) == 1 and ring["radius_px"] * res < RING_SMALL_M
+                and (ring["excess"] < RING_SMALL_EXCESS or ring["unusual"] < RING_SMALL_UNUSUAL)):
+            continue  # small single rings must be clearly better than chance: natural bumps make many of them
+        line, hit, around = _ring_masks(ring, dem.shape, S, ring["u"])
+        line &= valid
+        hit &= valid
+        if not hit.any():
+            continue
+        radii_m = [r * res for r, _ in ring["bands"]]
+        g = min(2.0, GEOMETRY["ring"] * (0.3 + 2.0 * ring["excess"]) + 0.25 * (len(radii_m) - 1))
+        area = {"row": ring["row"], "col": ring["col"], "pixels": int(line.sum()),
+                "area_m2": float(np.pi * (ring["outer_px"] * res) ** 2), "mean_score": ring["unusual"],
+                "peak_score": float(S[hit].max()), "length_m": 2 * ring["outer_px"] * res,
+                "width_m": 2 * ring["outer_px"] * res, "bearing_deg": 0.0, "relief_m": float(np.nanmean(slrm[hit])),
+                "drivers": _drivers(hit, around & valid, contrib, X), "kind": "ring", "geometry": g,
+                "coverage": ring["coverage"], "radii_m": radii_m, "mask": line,
+                "bbox": [int(ring["row"] - ring["outer_px"]), int(ring["col"] - ring["outer_px"]),
+                         int(ring["row"] + ring["outer_px"]), int(ring["col"] + ring["outer_px"])]}
+        area["note"] = _describe_ring(area)
+        for b in blobs:
+            if np.hypot(b["row"] - ring["row"], b["col"] - ring["col"]) <= ring["outer_px"] + 2 * ring["bands"][-1][1]:
+                absorbed.add(b["label"])
+        items.append(area)
+    for b in blobs:
+        if b["label"] in absorbed:
+            continue
+        b = dict(b)
+        b["mask"] = blob_labels == b["id"]
+        b["note"] = _describe(b, res)
+        items.append(b)
+    for it in items:
+        it["priority"] = float(it["mean_score"] * (1.0 + GEOMETRY_WEIGHT * it["geometry"]))
+    items.sort(key=lambda a: -a["priority"])
+    labels = np.zeros(dem.shape, dtype=np.int32)
+    areas = []
+    for rank, it in enumerate(items[:MAX_AREAS], 1):
+        m = it.pop("mask") & (labels == 0)
+        labels[m] = rank
+        it.pop("label", None)
+        it["id"] = rank
+        if transform is not None:
+            x, y = transform * (it["col"] + 0.5, it["row"] + 0.5)
+            it["x"], it["y"] = float(x), float(y)
+        areas.append(it)
+    excluded = np.zeros(dem.shape, dtype=np.uint8)
+    excluded[(~valid | edge) & ~missing] = 2
+    excluded[water] = 1
+    data = ~missing
+    report = {
+        "method": "Unusual relief (one-class Gaussian model of the local terrain over RVT views, with ring detection)",
+        "target_width_m": float(width_m), "cell_m": float(res), "sensitivity": sensitivity, "seed": int(seed),
+        "larger_structures": bool(larger), "views": [n for _, n in FEATURES], "scale_cells": float(s),
+        "rvt_radius_cells": rho, "valid_share": float(valid.mean()), **stats,
+        "flagged_share": float((labels > 0)[valid].mean()) if valid.any() else 0.0,
+        "n_areas": len(areas), "n_rings": sum(1 for a in areas if a["kind"] == "ring"),
+        "water_share": float(water[data].mean()) if data.any() else 0.0,
+        "edge_share": float((excluded == 2)[data].mean()) if data.any() else 0.0,
+        "large_scale_share": float(scale_used[valid].mean()) if valid.any() else 0.0,
+        "model": {"mean": [float(v) for v in model[0]], "covariance": np.round(model[1], 6).tolist()},
+        "excluded_mask": excluded,
+    }
+    report["note"] = summary_sentence(report)
+    return score, labels, areas, report
+
+
 def summary_sentence(report):
     n = report["n_areas"]
-    what = (f"{n} priority area{'s' if n != 1 else ''} to check ({100 * report['flagged_share']:.2f}% of the area)"
+    rings = report.get("n_rings", 0)
+    what = (f"{n} priority area{'s' if n != 1 else ''} to check"
+            + (f", {rings} of them ring-shaped" if rings else "")
             if n else "no priority area: nothing in this terrain is clearly more unusual than the rest")
-    return (f"Unusual relief for features about {report['target_width_m']:g} m wide: {what}. "
-            "Bright places do not look like the rest of this terrain when several RVT views are read together. "
-            "They are priorities to check, not sites: modern features and data artefacts can show up too.")
+    excl = []
+    if report.get("water_share", 0) >= 0.001:
+        excl.append(f"{100 * report['water_share']:.1f}% level water surface")
+    if report.get("edge_share", 0) >= 0.001:
+        excl.append(f"{100 * report['edge_share']:.1f}% data edge")
+    return (f"Unusual relief for features about {report['target_width_m']:g} m wide"
+            + (" and larger structures" if report.get("larger_structures") else "") + f": {what}. "
+            "Bright places do not look like the rest of this terrain when several RVT views are read together; "
+            "rings and curved lines rank first, long straight lines last. "
+            + (f"Not analysed (shown grey): {' and '.join(excl)}. " if excl else "")
+            + "These are priorities to check, not sites: modern features and data artefacts can show up too.")
 
 
 # ---------------------------------------------------------------- comparison with RVT views and known features

@@ -68,6 +68,46 @@ def terrain(kind="easy", n=500, res=1.0, features=True, seed=0):
     return z.astype(np.float32), truth, nuisance
 
 
+def ringwork_site(n=600, res=1.0, seed=0, rings=True):
+    """A hill with a concentric ringwork (three ditches 4 m wide, 0.4 m deep, at radii 35, 55 and 75 m, slightly
+    elliptic and with gaps) under smooth natural relief and noise, plus things that must not become priorities:
+    a lake (a level water surface with LiDAR noise), a clipped edge with missing data and an artefact step along it,
+    and a modern road (straight, 6 m wide, graded, with sharp edges).
+    Returns (dem, masks) with masks 'ring', 'lake', 'edge', 'road'."""
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:n, 0:n] * res
+    z = 300 + 0.02 * xx
+    for s, a in ((120, 4.0), (50, 1.5), (20, 0.4)):
+        f = ndimage.gaussian_filter(rng.normal(size=(n, n)), s / res)
+        z += a * f / f.std()
+    cy, cx = 0.45 * n * res, 0.45 * n * res
+    r = np.hypot((xx - cx) / 1.0, (yy - cy) / 0.88)
+    z += 12.0 * np.exp(-(r / 110.0) ** 2)
+    ang = np.arctan2(yy - cy, xx - cx)
+    ring = np.zeros((n, n), dtype=bool)
+    if rings:
+        for radius, gap in ((35.0, 0.6), (55.0, 2.4), (75.0, -1.9)):
+            d = np.abs(r - radius)
+            keep = np.abs(np.angle(np.exp(1j * (ang - gap)))) > 0.35  # a gap (entrance) in each ditch
+            z -= 0.4 * np.exp(-(d / 2.0) ** 2) * keep
+            ring |= (d < 3) & keep
+    z += ndimage.gaussian_filter(rng.normal(size=(n, n)), 1.5) * 0.06 + rng.normal(0, 0.03, (n, n))
+    # modern road: straight, raised 0.3 m with a flat top and sharp edges, crossing the south-east
+    dd = np.abs((xx - 0.85 * n * res) + 0.35 * (yy - 0.5 * n * res)) / np.hypot(1, 0.35)
+    road = dd < 3
+    z = np.where(dd < 3, z + 0.3, z + 0.3 / (1 + np.exp((dd - 3) / 0.3)))
+    # lake in the north-east corner: a level surface at a fixed elevation with LiDAR noise
+    lake = np.hypot(xx - 0.9 * n * res, yy - 0.1 * n * res) < 0.18 * n * res
+    level = float(np.percentile(z[lake], 5))
+    z = np.where(lake, level + rng.normal(0, 0.05, (n, n)), z)
+    # clipped edge in the south-west: missing data beyond a diagonal, with a 0.8 m artefact step along it
+    cut = (yy - 0.75 * n * res) - xx
+    edge = (cut > -6) & (cut <= 0)
+    z = np.where(edge, z + 0.8, z)
+    z = np.where(cut > 0, np.nan, z)
+    return z.astype(np.float32), {"ring": ring, "lake": lake, "edge": edge | (cut > 0), "road": road}
+
+
 def feature_points(truth, step=15):
     """Points sampled on the truth mask, used as 'known features' in tests (rows, cols)."""
     rr, cc = np.nonzero(truth)

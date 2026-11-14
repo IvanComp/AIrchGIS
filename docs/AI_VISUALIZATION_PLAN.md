@@ -31,6 +31,61 @@ Date of the plan: 14 November 2026.
   overlap 0.40); 0.49 between 5 and 1 m (overlap 0.13), as expected when 5 m cells cannot resolve 5 m features.
 - Runtime: about 5 s for 1000 × 1000 at 1 m, about 35 s for 2000 × 2000 at 0.5 m (W = 5 m).
 
+## Improvement after the first field test (14 November 2026, evening)
+
+Ivan tested the layer on three terrains: a hillfort under trees, a castle beside a lake, and a UK ring under a small
+wood. Feedback: the concentric forms were not marked as priorities, priorities fell on the data edge and in the lake,
+hidden terrace edges looked the same as a visible road, and the UK ring was not flagged.
+
+**Important: these three sites were used to DESIGN the changes below.** Their numbers are a development check, not an
+independent evaluation. The paper needs other sites with known features for that.
+
+What changed (all NumPy/SciPy, seed-fixed, explained in the README and the help page):
+
+1. **Water mask.** Large connected areas that are level at a 15 m scale (tilt < 0.4°, elevation within 1 m, > 0.5 ha)
+   are grown to their shore, buffered by 5 m and left out. Tilt and minimum area are under Advanced.
+2. **Edge strip.** The strip along missing data and the border is twice the largest filter radius (≥ 20 m). Areas
+   with more than 25% of their cells in it are dropped; rings may touch it for at most 10% of the circle.
+3. **Larger structures.** A second pass at 3 × W on a 3× coarser grid, lowered by 3 (heavier natural tail). On by default.
+4. **Ring and concentric-band detector.**
+   - Unusual lines vote across themselves for centres at 24 radii (12–200 m).
+   - Each candidate is checked by walking around the circle: the unusual line must run along it and continue
+     between neighbouring directions, and the inside must be mostly usual.
+   - The share followed must beat the best of 100 random circles of the same size on the same terrain by 0.1, with
+     the same search around each centre. This is a site-adaptive threshold that is stricter on busy terrain.
+   - Evidence e = (c − c_random)/(1 − c_random) ≥ 0.3, or ≥ 0.5 for small single rings.
+5. **Ranking.** Priority = unusualness × (1 + g). For a ring with n bands, g = min(2, 1.5 (0.3 + 2e) + 0.25 (n − 1)).
+   Curved line 0.3, compact 0, long straight line −0.2 (labelled "often a modern road, track, drain or field
+   boundary", never removed).
+6. **Colours by kind** on the map (orange ring, green curved line, red compact, grey straight line), plus a grey
+   "Not analysed" layer and a sentence giving the shares left out.
+7. **3D.** AI Relief runs the analysis automatically when no result exists for the terrain and card settings, and
+   reuses a cached result. If there is no terrain, the user gets one plain sentence.
+
+Before / after on the three design sites (`docs/evaluation/evaluate_sites.py`, targets digitized approximately in
+`docs/evaluation/*_target.geojson`):
+
+| Site | Priorities in water (before → after) | On data edge | Target rank | Target outline covered | AUC on target outline |
+|---|---|---|---|---|---|
+| Hillfort under trees | 0 → 0 | 2 → 0 | none → none | 0 → 0 | 0.53 → 0.53 |
+| Castle by the lake | 44 → 0 | 5 → 0 | none → none | 0 → 0 | 0.56 → 0.52 |
+| UK ring under a wood | 0 → 0 | 2 → 0 | none → **3 (ring, 2 bands)** | 0 → 1.00 | 0.82 → 0.81 |
+
+What did not work, honestly:
+- The hillfort's concentric terraces and the castle's ring are no more continuous than random circles of the same size
+  in their terrain, at any radius from 15 to 130 m. The detector does not find them, and loosening it creates many
+  false rings on natural terrain.
+- Item D, the hidden/visible check with base-map imagery, was **not implemented or tested**. It needs tile downloads
+  and RGB-only imagery (no near-infrared, so the vegetation index is weak), and acquisition dates differ from the
+  LiDAR. Distinguishing a hidden terrace edge from a visible paved road remains open; only the terrain cue "long and
+  straight" is used.
+- Synthetic results are unchanged for the earlier tests: AUC 0.98 on smooth relief; 0.72 on rough fractal relief
+  with terraces, against 0.75 for positive openness and VAT, so it still loses there. Natural terrain: 0 priorities
+  and 0 rings in 24 terrains. Concentric ringwork site: ranked 1st in 3 of 3 seeds, 0 priorities in the lake or on
+  the edge, road ranked lower.
+- Runtime is about twice as long (about 6 s for 500 × 500, 10 s for 1000 × 1000, 20 s for the 2000 × 1300 castle
+  terrain).
+
 ## Riassunto (italiano, per Ivan)
 
 1. Propongo un livello AI **non supervisionato** chiamato "Unusual relief (AI)", in italiano "rilievo insolito".

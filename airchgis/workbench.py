@@ -458,38 +458,72 @@ def run_contrast(wb, layer_id, replace=False):
 AI_SCORE_RANGE = (2.0, 9.0)
 
 
-def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True):
-    """Unusual relief (AI): score layer and priority outlines, shown next to the relief view, never instead of it."""
+# outline colours by kind of priority (values of the tab10 colour map over 0..9)
+AI_KIND_CODES = {"ring": 1, "line": 2, "compact": 3, "straight line": 7}
+AI_KIND_COLOURS = {"ring": "#ff7f0e", "line": "#2ca02c", "compact": "#d62728", "straight line": "#7f7f7f"}
+
+
+def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True, larger=True, mask_water=True,
+                       water_tilt_deg=0.4, water_min_area_m2=5000.0):
+    """Unusual relief (AI): score layer, outlines of the priorities by kind and the area left out, shown next to the
+    relief view, never instead of it. A result for the same terrain and settings is reused."""
     from airchgis.gis.tools import run_tool
 
     width = float(width)
-    out_path = OUT_DIR / f"{wb.name}_unusual_relief_{width:g}m.tif"
-    r = run_tool("unusual_relief", log=wb.log, input=wb.input_path(), output=str(out_path), target_feature_width_m=width,
-                 sensitivity=str(sensitivity), seed=int(seed), output_areas=str(out_path.with_suffix(".geojson")),
-                 sites=wb.sites, compare=bool(compare))
-    if r["status"] == "refused":
-        wb.message = r["message"]
-        wb.message_level = "warning"
-        return
-    out = r["outputs"]
+    params = {"width": width, "sensitivity": str(sensitivity), "seed": int(seed), "compare": bool(compare),
+              "larger": bool(larger), "mask_water": bool(mask_water), "water_tilt_deg": float(water_tilt_deg),
+              "water_min_area_m2": float(water_min_area_m2), "sites": wb.sites}
+    key = (id(wb.dem), tuple(sorted(params.items(), key=lambda kv: kv[0])))
+    cache = getattr(wb, "ai_cache", None)
+    if cache and cache.get("key") == key:
+        out = cache["out"]
+    else:
+        out_path = OUT_DIR / f"{wb.name}_unusual_relief_{width:g}m.tif"
+        r = run_tool("unusual_relief", log=wb.log, input=wb.input_path(), output=str(out_path),
+                     target_feature_width_m=width, sensitivity=params["sensitivity"], seed=params["seed"],
+                     output_areas=str(out_path.with_suffix(".geojson")), sites=wb.sites, compare=params["compare"],
+                     larger=params["larger"], mask_water=params["mask_water"],
+                     water_tilt_deg=params["water_tilt_deg"], water_min_area_m2=params["water_min_area_m2"])
+        if r["status"] == "refused":
+            wb.message = r["message"]
+            wb.message_level = "warning"
+            return
+        out = r["outputs"]
+        wb.ai_cache = {"key": key, "out": out}
+    wb.ai_params = {k: v for k, v in params.items() if k != "sites"}
     score = read_raster(out["output"])
     labels = np.nan_to_num(read_raster(out["priorities"]), nan=0).astype(np.int32)
-    if not any(l["id"] != "ai_score" and l["id"] != "ai_areas" and np.ndim(wb.arrays.get(l["id"])) >= 2 for l in wb.layers):
+    excluded = read_raster(out["excluded"]) if out.get("excluded") else None
+    if not any(l["id"] not in ("ai_score", "ai_areas", "ai_excluded") and np.ndim(wb.arrays.get(l["id"])) >= 2
+               for l in wb.layers):
         wb.add_layer("before", "Hillshade", "The terrain lit from the north-west, for reference.", hillshade(wb.dem, wb.res),
                      display_range=(0, 1))
     wb.add_layer("ai_score", "Unusual relief (AI)", "Bright = the relief does not look like the rest of this terrain when "
                  "several RVT views are read together. Priorities to check, not sites.", score, opacity=0.75,
                  cmap="magma", raw=score, hide_others=False, display_range=AI_SCORE_RANGE)
-    edge = (labels > 0) & ~ndimage_erode(labels > 0)
-    wb.add_layer("ai_areas", "Priorities to check (AI)", "Outlines of the most unusual places, numbered as in the list.",
-                 np.where(edge, 1.0, np.nan), opacity=1.0, cmap="cool", hide_others=False, display_range=(0, 1))
     areas = out.get("areas", [])
+    kind_of = {int(a["id"]): AI_KIND_CODES.get(a.get("kind"), 3) for a in areas}
+    outline = (labels > 0) & ~ndimage_erode(labels > 0)
+    codes = np.zeros(labels.shape, dtype=np.float32)
+    for lab_id, code in kind_of.items():
+        codes[labels == lab_id] = code
+    wb.add_layer("ai_areas", "Priorities to check (AI)", "Outlines by kind: orange = ring or concentric bands, green = "
+                 "curved line, red = compact form, grey = long straight line (often modern). Numbered as in the list.",
+                 np.where(outline | (labels > 0) & (codes == 1), codes, np.nan), opacity=1.0, cmap="tab10",
+                 hide_others=False, display_range=(0, 9))
+    if excluded is not None and np.isfinite(excluded).any():
+        wb.add_layer("ai_excluded", "Not analysed (AI)", "Left out of the analysis: level water surfaces and a strip "
+                     "along the edge of the data, where relief views are not reliable.", np.where(excluded > 0, 1.0, np.nan),
+                     opacity=0.45, cmap="gray", hide_others=False, display_range=(0, 2))
     lonlat = _to_lonlat_points([(a["x"], a["y"]) for a in areas], wb.crs)
-    wb.ai = {"note": out["note"], "width": width, "sensitivity": sensitivity, "seed": int(seed),
+    wb.ai = {"note": out["note"], "width": width, "sensitivity": params["sensitivity"], "seed": params["seed"],
              "flagged_share": out["flagged_share"], "range": list(AI_SCORE_RANGE), "views": out["views"],
-             "areas": [{"id": a["id"], "note": a["note"], "score": round(a["mean_score"], 2),
+             "water_share": out.get("water_share", 0.0), "edge_share": out.get("edge_share", 0.0),
+             "kinds": AI_KIND_COLOURS,
+             "areas": [{"id": a["id"], "note": a["note"], "score": round(a.get("priority", a["mean_score"]), 2),
+                        "kind": a.get("kind", "compact"), "colour": AI_KIND_COLOURS.get(a.get("kind"), "#d62728"),
                         "drivers": [f"{d['view']} {round(100 * d['share'])}%" for d in a["drivers"]],
-                        "lon": ll[0], "lat": ll[1]} for a, ll in zip(areas[:12], lonlat)],
+                        "lon": ll[0], "lat": ll[1]} for a, ll in zip(areas[:15], lonlat)],
              "known": (out.get("known_features") or {}).get("verdict"),
              "known_rows": (out.get("known_features") or {}).get("rows")}
     if wb.ai["known"] is None:
@@ -497,6 +531,25 @@ def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True
                           "Load known features under Advanced to compare it with the RVT views, VAT and e3MSTP.")
     wb.ai_result = {"score": score, "labels": labels, "areas": areas, "width": width}
     wb.message = out["note"]
+
+
+AI_PARAM_KEYS = ("width", "sensitivity", "seed", "compare", "larger", "mask_water", "water_tilt_deg", "water_min_area_m2")
+
+
+def ensure_unusual_relief(wb, settings=None):
+    """Run Find hidden features (AI) with the settings of the map card (or the last ones, or the defaults) when no
+    result exists yet for the terrain on the map, e.g. when the AI relief mode is chosen in 3D. Returns a plain
+    sentence if it cannot run."""
+    if getattr(wb, "ai_result", None) is not None:
+        return None
+    if getattr(wb, "dem", None) is None or not np.isfinite(wb.dem).any():
+        return "Load a terrain first: AI relief colours the terrain with the result of Find hidden features (AI)."
+    params = dict(getattr(wb, "ai_params", None) or {})
+    params.update({k: v for k, v in (settings or {}).items() if k in AI_PARAM_KEYS and v is not None})
+    run_unusual_relief(wb, **params)
+    if getattr(wb, "ai_result", None) is None:
+        return wb.message or "Find hidden features (AI) could not run on this terrain."
+    return None
 
 
 def ndimage_erode(mask):
@@ -577,9 +630,11 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
         elif action == "view3d":
             if view3d is None:
                 raise ValueError("The 3D view is not available here.")
-            if event.get("cloud_key", wb.cloud_key) == "ai_relief" and wb.ai_result is None:
-                run_unusual_relief(wb, **{k: event[k] for k in ("width", "sensitivity", "seed", "compare") if k in event})
-                if wb.ai_result is None:
+            wants_ai = event.get("cloud_key", wb.cloud_key) == "ai_relief" or bool(event.get("ai_toggle") and event.get("ai_show"))
+            if wants_ai and getattr(wb, "ai_result", None) is None:
+                problem = ensure_unusual_relief(wb, {k: event.get(k) for k in AI_PARAM_KEYS})
+                if problem:
+                    wb.message, wb.message_level = problem, "warning"
                     wb.done_nonce = event.get("nonce")
                     return None
             wb.view3d = {"id": event.get("nonce"), "html": view3d()}
@@ -597,7 +652,9 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
         elif action == "fused":
             run_fused(wb, event.get("width"))
         elif action == "unusual_relief":
-            run_unusual_relief(wb, **{k: event[k] for k in ("width", "sensitivity", "seed", "compare") if k in event})
+            run_unusual_relief(wb, **{k: event[k] for k in ("width", "sensitivity", "seed", "compare", "larger",
+                                                           "mask_water", "water_tilt_deg", "water_min_area_m2")
+                                      if k in event})
         elif action == "capture3d":
             from airchgis.terrain.view_export import save_current_view
 

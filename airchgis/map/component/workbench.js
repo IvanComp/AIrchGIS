@@ -237,6 +237,10 @@ function buildTools(){
     <div class="wb-row"><label for="wb-ai-width">Feature width (m)</label><input id="wb-ai-width" type="number" class="wb-ai-width" min="0.5" step="0.5" value="5"></div>
     <div class="wb-row"><label for="wb-ai-sens">Sensitivity</label><select id="wb-ai-sens" class="wb-ai-sens"><option value="low">Low · check up to 0.5% of the area</option><option value="medium" selected>Medium · up to 1%</option><option value="high">High · up to 2%</option></select></div>
     <details class="wb-ai-advanced"><summary>Advanced</summary>
+      <div class="wb-row"><label><input type="checkbox" class="wb-ai-larger" checked> Also look for larger structures (3 × the width)</label></div>
+      <div class="wb-row"><label><input type="checkbox" class="wb-ai-water" checked> Leave out level water surfaces (lakes, sea)</label></div>
+      <div class="wb-row"><label for="wb-ai-water-tilt">Water: largest tilt (°)</label><input id="wb-ai-water-tilt" type="number" class="wb-ai-water-tilt" min="0.05" max="5" step="0.05" value="0.4"></div>
+      <div class="wb-row"><label for="wb-ai-water-area">Water: smallest area (m²)</label><input id="wb-ai-water-area" type="number" class="wb-ai-water-area" min="100" step="500" value="5000"></div>
       <div class="wb-row"><label for="wb-ai-seed">Random seed</label><input id="wb-ai-seed" type="number" class="wb-ai-seed" min="0" step="1" value="0"></div>
       <div class="wb-row"><label><input type="checkbox" class="wb-ai-compare" checked> With known features, also compare with VAT and e3MSTP</label></div>
       <div class="wb-row"><label for="wb-ai-sites">Known features (CSV or GeoJSON)</label><input id="wb-ai-sites" type="file" class="wb-ai-sites" accept=".csv,.txt,.geojson,.json,.gpkg,.kml,.zip"></div>
@@ -246,16 +250,16 @@ function buildTools(){
     <div class="wb-ai-result" hidden>
       <p class="wb-ai-note"></p>
       <div class="wb-ai-legend"><span>usual</span><i></i><span>unusual</span></div>
+      <div class="wb-ai-kinds"><span><b style="background:#ff7f0e"></b>ring</span><span><b style="background:#2ca02c"></b>curved line</span><span><b style="background:#d62728"></b>compact</span><span><b style="background:#7f7f7f"></b>straight line</span><span><b style="background:#8c8c8c;opacity:.5"></b>not analysed</span></div>
       <button type="button" class="wb-ai-compare-btn secondary">Before / after</button>
       <p class="wb-ai-known"></p>
       <ol class="wb-ai-areas"></ol>
     </div></div>`);
-  ai.querySelector('[data-act=ai]').addEventListener('click',()=>send({action:'unusual_relief',width:Number(ai.querySelector('.wb-ai-width').value)||5,
-    sensitivity:ai.querySelector('.wb-ai-sens').value,seed:Number(ai.querySelector('.wb-ai-seed').value)||0,compare:ai.querySelector('.wb-ai-compare').checked}));
+  ai.querySelector('[data-act=ai]').addEventListener('click',()=>send({action:'unusual_relief',...aiSettings()}));
   ai.querySelector('.wb-ai-sites').addEventListener('change',ev=>{const f=ev.target.files[0];if(!f)return;const rd=new FileReader();
     rd.onload=()=>send({action:'sites',filename:f.name,b64:String(rd.result).split(',')[1]});rd.readAsDataURL(f);});
   ai.querySelector('.wb-ai-compare-btn').addEventListener('click',()=>{
-    const ids=['ai_score','ai_areas'].filter(id=>map.getLayer('wb-'+id));if(!ids.length)return;
+    const ids=['ai_score','ai_areas','ai_excluded'].filter(id=>map.getLayer('wb-'+id));if(!ids.length)return;
     const show=!(shownLayers.get(ids[0])||{visible:true}).visible;
     ids.forEach(id=>{const st=shownLayers.get(id)||{visible:true,opacity:1};st.visible=show;shownLayers.set(id,st);map.setLayoutProperty('wb-'+id,'visibility',show?'visible':'none');});
     renderLayerCards();showToast(show?'After: with the AI layer':'Before: relief view only');});
@@ -269,8 +273,14 @@ function buildTools(){
   toolbar.querySelector('.wb-true-scale').onclick=()=>{display3D.verticalExaggeration=1;exaggeration.value=1;update3DDisplay();};
   toolbar.querySelector('.wb-auto-scale').onclick=()=>{display3D.verticalExaggeration=null;exaggeration.value=automaticExaggeration;update3DDisplay();};
   for(const element of toolbar.querySelectorAll('.wb-contrast-3d,.wb-brightness-3d,.wb-relief-opacity-3d,.wb-elevation-color-3d'))element.addEventListener('input',update3DDisplay);
-  const view3dEvent=()=>({action:'view3d',cloud_key:toolbar.querySelector('.wb-cloud').value,ai_show:true,ai_ve:false,width:Number(document.querySelector('.wb-ai-width').value)||5,sensitivity:document.querySelector('.wb-ai-sens').value,seed:Number(document.querySelector('.wb-ai-seed').value)||0,compare:document.querySelector('.wb-ai-compare').checked});
-  toolbar.querySelector('.wb-cloud').addEventListener('change',()=>send(view3dEvent()));
+  const view3dEvent=()=>({action:'view3d',cloud_key:toolbar.querySelector('.wb-cloud').value,ai_show:true,ai_ve:false,...aiSettings()});
+  toolbar.querySelector('.wb-cloud').addEventListener('change',()=>{
+    const ev=view3dEvent();
+    if(ev.cloud_key==='ai_relief'&&!(ARGS.ai3d||{}).available){
+      setTimeout(()=>{const b=document.querySelector('.wb-3d-busy');if(b){b.hidden=false;b.textContent='Finding unusual relief… about 10–30 s';}},0);
+    }
+    send(ev);
+  });
   for(const button of toolbar.querySelectorAll('[data-3d-export]'))button.onclick=()=>{
     const format=button.dataset['3dExport'];
     if(format==='pdf'||format==='png')capture3D(format);else send({action:'research',format});
@@ -305,6 +315,13 @@ function renderPrep(){
   if(r&&out){out.hidden=false;out.textContent=`${r.message} (cell ${r.cell_m} m)`;out.className='wb-reso-result '+(r.verdict||'');}
   renderAI();
 }
+function aiSettings(){
+  const q=s=>document.querySelector(s);
+  return {width:Number(q('.wb-ai-width')?.value)||5,sensitivity:q('.wb-ai-sens')?.value||'medium',seed:Number(q('.wb-ai-seed')?.value)||0,
+    compare:q('.wb-ai-compare')?q('.wb-ai-compare').checked:true,larger:q('.wb-ai-larger')?q('.wb-ai-larger').checked:true,
+    mask_water:q('.wb-ai-water')?q('.wb-ai-water').checked:true,water_tilt_deg:Number(q('.wb-ai-water-tilt')?.value)||0.4,
+    water_min_area_m2:Number(q('.wb-ai-water-area')?.value)||5000};
+}
 function renderAI(){
   const box=document.querySelector('.wb-ai-result');if(!box)return;
   const st=document.querySelector('.wb-ai-sites-state');if(st)st.textContent=ARGS.sites?'Known features loaded.':'';
@@ -313,6 +330,7 @@ function renderAI(){
   box.querySelector('.wb-ai-known').textContent=a.known||'';
   const list=box.querySelector('.wb-ai-areas');list.innerHTML='';
   (a.areas||[]).forEach(x=>{const li=document.createElement('li');li.tabIndex=0;li.title='Show on the map';
+    const dot=document.createElement('b');dot.className='wb-ai-dot';dot.style.background=x.colour||'#d62728';dot.title=x.kind||'';li.appendChild(dot);
     const n=document.createElement('span');n.textContent=x.note;li.appendChild(n);
     const s=document.createElement('small');s.textContent=`Score ${x.score} · driven by ${x.drivers.join(', ')}`;li.appendChild(s);
     const go=()=>map&&map.flyTo({center:[x.lon,x.lat],zoom:Math.max(map.getZoom(),17),duration:600});

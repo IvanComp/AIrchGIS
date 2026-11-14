@@ -161,6 +161,81 @@ class WorkbenchTests(unittest.TestCase):
         self.assertEqual(wb.map_args({})["ai"]["width"], WIDTH)
 
 
+class RingworkSiteTests(unittest.TestCase):
+    """A concentric ringwork on a hill, a lake, a clipped edge with an artefact and a modern road."""
+
+    @classmethod
+    def setUpClass(cls):
+        from scipy import ndimage
+
+        cls.runs = []
+        for seed in (0, 1):
+            dem, masks = sy.ringwork_site(seed=seed)
+            score, labels, areas, report = ur.unusual_relief(dem, 1.0, WIDTH)
+            grown = {k: ndimage.binary_dilation(m, iterations=6) for k, m in masks.items()}
+            cls.runs.append((areas, labels, report, grown))
+
+    def test_ringwork_ranks_first_as_a_ring(self):
+        for areas, labels, report, grown in self.runs:
+            top = areas[0]
+            self.assertEqual(top["kind"], "ring")
+            self.assertTrue((grown["ring"] & (labels == top["id"])).any())
+            self.assertGreaterEqual(len(top["radii_m"]), 2)
+            self.assertIn("concentric", top["note"])
+
+    def test_no_priority_in_the_lake_or_on_the_edge(self):
+        for areas, labels, report, grown in self.runs:
+            self.assertGreater(report["water_share"], 0.03)
+            for a in areas:
+                with self.subTest(area=a["id"]):
+                    self.assertFalse((grown["lake"] & (labels == a["id"])).any())
+                    self.assertFalse((grown["edge"] & (labels == a["id"])).any())
+
+    def test_modern_road_is_not_first(self):
+        for areas, labels, report, grown in self.runs:
+            self.assertFalse((grown["road"] & (labels == areas[0]["id"])).any())
+
+    def test_no_ring_on_natural_terrain(self):
+        for kind in ("easy", "hard"):
+            for seed in range(4):
+                dem, _, _ = sy.terrain(kind, features=False, seed=seed)
+                self.assertEqual(ur.unusual_relief(dem, 1.0, WIDTH)[3]["n_rings"], 0)
+
+
+class AutoRunTests(unittest.TestCase):
+    def setUp(self):
+        dem, _, _ = sy.terrain("easy", n=300)
+        t = from_origin(500000, 4600000, 1, 1)
+        self.wb = Workbench(dem, t, "EPSG:32633", {"transform": t, "crs": "EPSG:32633"}, name="ai_auto")
+
+    def test_ai_relief_runs_the_analysis_when_needed(self):
+        calls = []
+        handle_event(self.wb, {"action": "view3d", "cloud_key": "ai_relief", "width": WIDTH, "nonce": "a"},
+                     view3d=lambda: calls.append(1) or "<html></html>")
+        self.assertNotEqual(self.wb.message_level, "error", self.wb.message)
+        self.assertIsNotNone(self.wb.ai_result)
+        self.assertEqual(calls, [1])
+        self.assertIn("ai_score", [l["id"] for l in self.wb.layers])
+        self.assertIn("run_tool('unusual_relief'", self.wb.log.to_python())
+
+    def test_same_settings_reuse_the_cached_result(self):
+        from airchgis.workbench import run_unusual_relief
+
+        run_unusual_relief(self.wb, width=WIDTH)
+        steps = len(self.wb.log.steps)
+        run_unusual_relief(self.wb, width=WIDTH)
+        self.assertEqual(len(self.wb.log.steps), steps)
+        run_unusual_relief(self.wb, width=WIDTH, sensitivity="high")
+        self.assertEqual(len(self.wb.log.steps), steps + 1)
+
+    def test_plain_sentence_when_there_is_no_terrain(self):
+        from airchgis.workbench import ensure_unusual_relief
+
+        self.wb.dem = np.full((50, 50), np.nan, dtype=np.float32)
+        self.wb.ai_result = None
+        self.assertIn("Load a terrain first", ensure_unusual_relief(self.wb))
+
+
 class ThreeDTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

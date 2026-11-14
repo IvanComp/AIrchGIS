@@ -813,21 +813,27 @@ register(Tool("prepare_dtm", "Prepare a raster terrain model for relief visualiz
 
 
 def _native_unusual_relief(input, output, target_feature_width_m, sensitivity="medium", seed=0, output_areas=None,
-                           sites=None, compare=True):
+                           sites=None, compare=True, larger=True, mask_water=True, water_tilt_deg=0.4,
+                           water_min_area_m2=5000.0):
     from airchgis.ai import unusual_relief as ur
 
     arr, prof = _read(input)
     res = _res(prof)
     score, labels, areas, report = ur.unusual_relief(arr, res, target_feature_width_m, sensitivity=sensitivity,
-                                                     seed=int(seed), transform=prof["transform"])
+                                                     seed=int(seed), transform=prof["transform"], larger=bool(larger),
+                                                     mask_water=bool(mask_water), water_tilt_deg=float(water_tilt_deg),
+                                                     water_min_area_m2=float(water_min_area_m2))
+    excluded = report.pop("excluded_mask")
     out = {"output": _write(output, score, prof), **_json_safe(report), "areas": _json_safe(areas)}
     lab_path = str(Path(output).with_name(Path(output).stem + "_priorities.tif"))
     out["priorities"] = _write(lab_path, np.where(labels > 0, labels, np.nan).astype(np.float32), prof)
+    exc_path = str(Path(output).with_name(Path(output).stem + "_excluded.tif"))
+    out["excluded"] = _write(exc_path, np.where(excluded > 0, excluded, np.nan).astype(np.float32), prof)
     if output_areas:
         crs = prof.get("crs")
         feats = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [a["x"], a["y"]]},
-                  "properties": {k: a[k] for k in ("id", "mean_score", "area_m2", "length_m", "width_m", "bearing_deg",
-                                                   "relief_m", "note")}} for a in areas]
+                  "properties": {k: a.get(k) for k in ("id", "kind", "priority", "mean_score", "area_m2", "length_m",
+                                                       "width_m", "bearing_deg", "relief_m", "note")}} for a in areas]
         Path(output_areas).parent.mkdir(parents=True, exist_ok=True)
         Path(output_areas).write_text(json.dumps({"type": "FeatureCollection", "name": "priorities to check",
                                                   "crs": {"type": "name", "properties": {"name": crs.to_string() if crs else None}},
@@ -840,7 +846,7 @@ def _native_unusual_relief(input, output, target_feature_width_m, sensitivity="m
     return out
 
 
-register(Tool("unusual_relief", "Unusual relief (AI): an unsupervised model of the usual relief of this area, read through several RVT views (sky-view factor, openness, local relief model, slope, two band-pass filters) at the scale of the features sought. Gives each pixel a score and lists the most unusual places as priorities to check. They are not sites: modern features and data artefacts can be unusual too. Deterministic for a given seed.",
+register(Tool("unusual_relief", "Unusual relief (AI): an unsupervised model of the usual relief of this area, read through several RVT views (sky-view factor, openness, local relief model, slope, two band-pass filters) at the scale of the features sought and, optionally, at three times that scale. Level water surfaces and the data edge are left out. Finds rings and concentric bands, curved and straight lines and compact forms, and ranks them as priorities to check: rings first, long straight lines (often modern roads) last. They are not sites: modern features and data artefacts can be unusual too. Deterministic for a given seed.",
               _schema(["input", "output", "target_feature_width_m"], input=_IN,
                       output={"type": "string", "description": "Path of the score GeoTIFF; the priority areas are written next to it."},
                       target_feature_width_m=_WIDTH_REQ,
@@ -849,8 +855,12 @@ register(Tool("unusual_relief", "Unusual relief (AI): an unsupervised model of t
                       seed={"type": "integer", "minimum": 0, "default": 0, "description": "Random seed of the sample used to fit the model."},
                       output_areas={"type": "string", "description": "Optional GeoJSON with one point per priority area and its description."},
                       sites=_SITES,
-                      compare={"type": "boolean", "default": True, "description": "With known features: also compare with RVT's VAT and e3MSTP blends."}),
-              _native_unusual_relief, None, ("input",), output_keys=("output", "priorities", "output_areas"), tags=("lidar", "ai")))
+                      compare={"type": "boolean", "default": True, "description": "With known features: also compare with RVT's VAT and e3MSTP blends."},
+                      larger={"type": "boolean", "default": True, "description": "Also look for larger structures (second pass at three times the feature width)."},
+                      mask_water={"type": "boolean", "default": True, "description": "Leave out level water surfaces such as lakes and the sea."},
+                      water_tilt_deg={"type": "number", "minimum": 0.05, "maximum": 5, "default": 0.4, "description": "Largest tilt (degrees, 15 m scale) of a level water surface."},
+                      water_min_area_m2={"type": "number", "minimum": 100, "default": 5000.0, "description": "Smallest level surface treated as water (m²)."}),
+              _native_unusual_relief, None, ("input",), output_keys=("output", "priorities", "excluded", "output_areas"), tags=("lidar", "ai")))
 
 
 def _guard(tool, params):
