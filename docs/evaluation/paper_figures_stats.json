@@ -1,0 +1,169 @@
+{
+  "UC1": {
+    "name": "Colle San Mauro",
+    "shape": [
+      1153,
+      865
+    ],
+    "cell_m": 0.977,
+    "crs": "EPSG:32633",
+    "runtime_s": 10.1,
+    "n_areas": 2,
+    "kinds": {
+      "hilltop bands": 1,
+      "compact": 1
+    },
+    "water_share": 0.0,
+    "edge_share": 0.14,
+    "top": [
+      {
+        "id": 1,
+        "kind": "hilltop bands",
+        "priority": 9.36,
+        "note": "1 stepped band around a summit, traced over 77% of its perimeter, about 47 m across (ditches or sunken steps; 5.5 m below the top). They follow the shape of the hill, as terraces or the ditches of a hillfort or castle mound would."
+      },
+      {
+        "id": 2,
+        "kind": "compact",
+        "priority": 7.54,
+        "note": "A sunken compact form, about 19 \u00d7 9 m: below the local trend and more enclosed (less sky visible) than the surrounding terrain."
+      }
+    ]
+  },
+  "UC2": {
+    "name": "Castello di Montedoglio",
+    "shape": [
+      1332,
+      1886
+    ],
+    "cell_m": 0.877,
+    "crs": "EPSG:32633",
+    "runtime_s": 19.4,
+    "n_areas": 20,
+    "kinds": {
+      "hilltop bands": 1,
+      "line": 1,
+      "compact": 15,
+      "straight line": 3
+    },
+    "water_share": 0.211,
+    "edge_share": 0.089,
+    "top": [
+      {
+        "id": 1,
+        "kind": "hilltop bands",
+        "priority": 9.93,
+        "note": "2 stepped bands around a summit, traced over 67% of its perimeter, about 90 m across (ditches or sunken steps; 8.5, 9.0 m below the top). They follow the shape of the hill, as terraces or the ditches of a hillfort or castle mound would."
+      },
+      {
+        "id": 2,
+        "kind": "line",
+        "priority": 9.76,
+        "note": "A raised curved line, about 33 m long and 7 m wide: above the local trend and less convex than the surrounding terrain. Near the edge of the data: check for artefacts."
+      },
+      {
+        "id": 3,
+        "kind": "compact",
+        "priority": 8.75,
+        "note": "A sunken compact form, about 8 \u00d7 6 m: below the local trend and more enclosed (less sky visible) than the surrounding terrain."
+      },
+      {
+        "id": 4,
+        "kind": "compact",
+        "priority": 8.63,
+        "note": "A raised compact form, about 11 \u00d7 10 m: below the local trend and less convex than the surrounding terrain."
+      },
+      {
+        "id": 5,
+        "kind": "compact",
+        "priority": 8.51,
+        "note": "A sunken compact form, about 32 \u00d7 24 m: below the local trend and more enclosed (less sky visible) than the surrounding terrain. Near the edge of the data: check for artefacts."
+      }
+    ]
+  },
+  "UC3": {
+    "name": "Housesteads",
+    "shape": [
+      1000,
+      1000
+    ],
+    "cell_m": 1.0,
+    "crs": "EPSG:27700",
+    "runtime_s": 7.8,
+    "n_areas": 20,
+    "kinds": {
+      "line": 13,
+      "compact": 7
+    },
+    "water_share": 0.0,
+    "edge_share": 0.101,
+    "top": [
+      {
+        "id": 1,
+        "kind": "line",
+        "priority": 11.53,
+        "note": "A sunken curved line, about 48 m long and 10 m wide: below the local trend and steeper than the surrounding terrain."
+      },
+      {
+        "id": 2,
+        "kind": "line",
+        "priority": 11.22,
+        "note": "A sunken curved line, about 33 m long and 8 m wide: below the local trend and steeper than the surrounding terrain."
+      },
+      {
+        "id": 3,
+        "kind": "line",
+        "priority": 10.83,
+        "note": "A sunken curved line, about 157 m long and 27 m wide: below the local trend and steeper than the surrounding terrain."
+      },
+      {
+        "id": 4,
+        "kind": "line",
+        "priority": 10.71,
+        "note": "A raised curved line, about 35 m long and 10 m wide: below the local trend and flatter than the surrounding terrain."
+      },
+      {
+        "id": 5,
+        "kind": "line",
+        "priority": 10.66,
+        "note": "A sunken curved line, about 22 m long and 7 m wide: below the local trend and steeper than the surrounding terrain."
+      }
+    ]
+  },
+  "synthetic": {
+    "Smooth relief, ditch, mound, road": [
+      [
+        "line",
+        10.23
+      ],
+      [
+        "compact",
+        8.33
+      ],
+      [
+        "straight line",
+        6.48
+      ]
+    ],
+    "Ringwork, lake, clipped edge, road": [
+      [
+        "ring",
+        19.96
+      ],
+      [
+        "compact",
+        8.7
+      ],
+      [
+        "compact",
+        7.81
+      ]
+    ],
+    "Stepped hill, geology, terraces": [
+      [
+        "ring",
+        17.53
+      ]
+    ]
+  }
+}
