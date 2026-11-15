@@ -86,6 +86,38 @@ What did not work, honestly:
 - Runtime is about twice as long (about 6 s for 500 × 500, 10 s for 1000 × 1000, 20 s for the 2000 × 1300 castle
   terrain).
 
+## Second improvement: stepped bands around hilltops (15 November 2026)
+
+The ring detector missed the hillfort and the castle because their bands follow the shape of the hill, not a circle.
+
+**New detector, "bands around a hilltop":**
+- **Summits:** local maxima of the DTM smoothed at 15 m, at least 8 m above the median of a 100 m circle.
+- **Contour-following frame:** around each summit, the small-scale relief is read in 90 directions as a function of the drop below the top, so a band at one level follows the hill outline. The hill's own smooth shape is removed and the top 3 m (the dome) are skipped.
+- **Persistence:** the share of directions where a step, ditch or bank appears at the same level with the same sign. It must be at least 0.6, beat the best of 40 random points on the same terrain by 0.1, and have |t| ≥ 5.
+- **Ranking:** these structures join the ranking with the same geometry term as rings.
+- **Wording:** "1 stepped band around a summit, traced over 77% of its perimeter, about 47 m across (ditches or sunken steps; 5.5 m below the top)".
+
+**Edge rule changed:** an area is dropped only if more than 50% of it lies in the edge strip, or more than 25% for a line running along it. A compact area just touching the strip is kept, with "near the edge of the data: check for artefacts". The strip is now measured from missing data, water and the raster border (25 m by default) and is adjustable under Advanced ("Data edge strip"). Honest note: at Colle San Mauro, the area you judged correct (former area 2) is 14 m from missing data, while the area you judged an artefact (former area 1) is 19 m away. No distance rule can keep the first and drop the second. At the default of 25 m both are dropped; at 10 m both appear, each with the edge note.
+
+**Single rings** without concentric bands now need evidence 0.4 (was 0.3); multi-band rings keep 0.3.
+
+Before / after on the design sites (again: used to design the method, not an independent test):
+
+| Site | Target rank before (a9ac429) | Target rank now | Kind | False rings / hill bands now |
+|---|---|---|---|---|
+| Hillfort under trees | not found | **1** | bands around a hilltop | 0 / 0 |
+| Castle by the lake | not found | **1** | bands around a hilltop (2 bands) | 0 / 0 (the earlier ring 667 m away is gone) |
+| UK ring under a wood | 3 | **3** | ring (2 bands) | 2 rings on the square earthwork at the top (a real earthwork) / 0 |
+
+Synthetic:
+- **Natural terrain:** 0 priorities, 0 rings and 0 hill bands in 24 terrains.
+- **Irregular stepped hill** (three contour-following bands with gaps): the bands rank first in 3 of 3 seeds. They are caught by the ring detector, because the bands reach only 46–50% persistence. No ring or hill-band structure appears on the geological steps or on the agricultural terraces.
+- **Same hill without bands:** 1 false ring in 3 seeds, on the shoulder of a rounded hill lobe. This is a known false-positive mode.
+- **Ringwork site:** unchanged (first in 3 of 3).
+- **AUC:** 0.98 on smooth relief and 0.72 on rough relief, unchanged; it still loses there to positive openness and VAT (0.75).
+
+Runtime: about 8.5 s for the 1000 × 1000 hillfort terrain, 17.6 s for the 2000 × 1300 castle terrain and 8.2 s for the UK terrain.
+
 ## Riassunto (italiano, per Ivan)
 
 1. Propongo un livello AI **non supervisionato** chiamato "Unusual relief (AI)", in italiano "rilievo insolito".

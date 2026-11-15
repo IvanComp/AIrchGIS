@@ -202,6 +202,62 @@ class RingworkSiteTests(unittest.TestCase):
                 self.assertEqual(ur.unusual_relief(dem, 1.0, WIDTH)[3]["n_rings"], 0)
 
 
+class SteppedHillTests(unittest.TestCase):
+    """Irregular stepped bands around a summit, with geological steps and agricultural terraces as negatives."""
+
+    def test_bands_rank_first_and_negatives_give_no_structure(self):
+        from scipy import ndimage
+
+        for seed in (0, 1):
+            dem, masks = sy.stepped_hill_site(seed=seed)
+            _, labels, areas, _ = ur.unusual_relief(dem, 1.0, WIDTH)
+            grown = {k: ndimage.binary_dilation(m, iterations=6) for k, m in masks.items()}
+            self.assertTrue(areas)
+            self.assertIn(areas[0]["kind"], ("ring", "hilltop bands"))
+            self.assertTrue((grown["bands"] & (labels == areas[0]["id"])).any())
+            for a in areas:
+                if a["kind"] in ("ring", "hilltop bands"):
+                    self.assertFalse((grown["geology"] & (labels == a["id"])).any())
+                    self.assertFalse((grown["agri"] & (labels == a["id"])).any())
+
+    def test_hill_bands_follow_a_real_band_and_not_natural_terrain(self):
+        from airchgis.enhance import metrics
+        from scipy import ndimage
+
+        # a hill with a sunken band at a constant level all around: persistent at that level
+        yy, xx = np.mgrid[0:400, 0:400].astype(float)
+        hill = 30 * np.exp(-(((xx - 200) / 80) ** 2 + ((yy - 200) / 60) ** 2))
+        gy, gx = np.gradient(hill)
+        d = (hill - (hill.max() - 8)) / np.maximum(np.hypot(gx, gy), 1e-3)
+        dem = 100 + hill - 0.5 * np.exp(-(d / 2) ** 2) * (np.abs(d) < 10)
+        dem += np.random.default_rng(0).normal(0, 0.03, dem.shape)
+        f, miss = metrics.finite_fill(dem)
+        s = metrics.target_scale_px(WIDTH, 1.0)
+        dog = ndimage.gaussian_filter(f, s) - ndimage.gaussian_filter(f, 3 * s)
+        levels, M, _ = ur._level_profiles(f, miss, dog, 1.0, 200, 200)
+        pers, t = ur._band_persistence(M)
+        # the sunken band is found at its level (the band-pass filter also puts raised rims beside it)
+        sunken = np.where(t < 0, pers, 0.0)
+        k = int(np.argmax(sunken))
+        self.assertAlmostEqual(levels[k], 8.0, delta=1.5)
+        self.assertGreater(pers[k], 0.6)
+        for kind in ("easy", "hard"):
+            for seed in range(4):
+                dem, _, _ = sy.terrain(kind, features=False, seed=seed)
+                self.assertEqual(ur.unusual_relief(dem, 1.0, WIDTH)[3]["n_hills"], 0)
+
+    def test_compact_area_near_the_edge_is_kept_with_a_note(self):
+        dem, _, _ = sy.terrain("easy", n=300, features=False, seed=1)
+        dem = dem.astype(float)
+        yy, xx = np.mgrid[0:300, 0:300]
+        dem += 0.8 * np.exp(-((xx - 150) ** 2 + (yy - 37) ** 2) / (2 * 4.0 ** 2))  # a mound 37 m from the border
+        _, _, wide, _ = ur.unusual_relief(dem, 1.0, WIDTH, edge_m=60.0)
+        _, _, narrow, _ = ur.unusual_relief(dem, 1.0, WIDTH, edge_m=10.0)
+        near = lambda areas: [a for a in areas if abs(a["row"] - 37) < 8 and abs(a["col"] - 150) < 8]
+        self.assertFalse(near(wide))
+        self.assertTrue(near(narrow))
+
+
 class AutoRunTests(unittest.TestCase):
     def setUp(self):
         dem, _, _ = sy.terrain("easy", n=300)

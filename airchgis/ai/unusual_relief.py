@@ -44,10 +44,12 @@ WATER_TILT_DEG = 0.4
 WATER_BAND_M = 1.0
 WATER_MIN_AREA_M2 = 5000.0
 WATER_BUFFER_M = 5.0
-EDGE_SHARE = 0.25  # a priority area is dropped as a likely data-edge artefact if more than this share is in the edge band
+EDGE_SHARE = 0.25  # an elongated area with more than this share in the edge band runs along the boundary: dropped
+EDGE_M = 25.0  # width of the edge band from missing data, water and the raster border
+EDGE_DROP = 0.5  # any area with more than this share in the edge band lies mostly in it: dropped
 # geometry term: priority = unusualness x (1 + GEOMETRY_WEIGHT x g)
 GEOMETRY_WEIGHT = 1.0
-GEOMETRY = {"ring": 1.5, "line": 0.3, "compact": 0.0, "straight line": -0.2}
+GEOMETRY = {"ring": 1.5, "hilltop bands": 1.5, "line": 0.3, "compact": 0.0, "straight line": -0.2}
 STRAIGHT_MIN_M = 80.0
 STRAIGHT_TOL = 0.03
 RING_RADII_M = (12.0, 200.0)
@@ -65,9 +67,26 @@ RING_QUANTILE = 0.85  # ... and it must be in the top 15% of the fine-scale scor
 RING_MIN_UNUSUAL = 4.0  # mean score along a ring; rings are faint lines, their evidence is mostly the geometry
 RING_MIN_EXCESS = 0.3  # share of the gap between the best random circle and a complete circle that a ring must close
 RING_EDGE_SHARE = 0.1  # share of a ring allowed in the edge band
+RING_SINGLE_EXCESS = 0.4  # a single ring (no concentric band) needs a little more evidence
 RING_SMALL_M = 20.0  # single rings smaller than this radius need stronger evidence:
 RING_SMALL_EXCESS = 0.5
 RING_SMALL_UNUSUAL = 5.0
+# concentric bands around a hilltop
+HILL_MIN_PROM_M = 8.0  # a summit must stand this much above the median of a 100 m circle around it
+HILL_MAX_SUMMITS = 20
+HILL_ANGLES = 90
+HILL_RMAX_M = 220.0
+HILL_MAX_DROP_M = 40.0
+HILL_MIN_DROP_M = 3.0  # levels closer to the top belong to the dome itself
+HILL_LEVEL_STEP_M = 0.5
+HILL_TREND_LEVELS = 6  # smoothing (in levels) of the hill's own shape, removed before looking for bands
+HILL_MIN_DATA = 0.5  # share of directions with data at a level
+HILL_NULL = 40  # random points used for the site-adaptive threshold
+HILL_MIN_PERS = 0.6  # a band must be present in at least 60% of the directions...
+HILL_MARGIN = 0.1  # ...and beat the best random point by this share
+HILL_MIN_T = 5.0
+HILL_MIN_SEPARATION_M = 1.5
+HILL_MIN_UNUSUAL = 3.0  # floor of the unusualness used to rank bands that are faint in the per-cell score
 
 FEATURES = (
     ("svf", "Sky-view factor"),
@@ -211,6 +230,8 @@ def _describe(area, res):
     text = f"A {form} {shape}, {size}" + (f": {drivers} than the surrounding terrain." if drivers else ".")
     if kind == "straight line":
         text += " Long and straight: often a modern road, track, drain or field boundary, ranked lower."
+    if area.get("near_edge"):
+        text += " Near the edge of the data: check for artefacts."
     return text
 
 
@@ -250,10 +271,21 @@ def priority_areas(score, valid, contrib, z, slrm, res, width_m, transform=None,
         peaks = ndimage.maximum(score, labels, idx)
         on_edge = (ndimage.mean(edge_band.astype(np.float64), labels, idx) if edge_band is not None
                    else np.zeros(n))
+        def hugs_edge(i):
+            # an area is a likely edge artefact if it lies mostly in the edge strip, or if it is a line running
+            # inside the strip (along the boundary); a compact, well-formed area just touching the strip is kept
+            if on_edge[i] > EDGE_DROP:
+                return True
+            if on_edge[i] <= EDGE_SHARE:
+                return False
+            rr_, cc_ = np.nonzero(labels == idx[i])
+            length_, width_, _ = _area_shape(rr_, cc_, res)
+            return length_ >= 3 * width_
+
         big = [i for i in range(n) if sizes[i] >= min_px and means[i] >= area_floor]
-        n_edge = sum(1 for i in big if on_edge[i] > EDGE_SHARE)
-        order = [i for i in np.argsort(-means) if sizes[i] >= min_px and means[i] >= area_floor
-                 and on_edge[i] <= EDGE_SHARE]
+        dropped = {i for i in big if hugs_edge(i)}
+        n_edge = len(dropped)
+        order = [i for i in np.argsort(-means) if sizes[i] >= min_px and means[i] >= area_floor and i not in dropped]
         keep = np.zeros(n + 1, dtype=bool)
         names = dict(FEATURES)
         for rank, i in enumerate(order, 1):
@@ -287,7 +319,7 @@ def priority_areas(score, valid, contrib, z, slrm, res, width_m, transform=None,
                     "mean_score": float(means[i]), "peak_score": float(peaks[i]), "length_m": length, "width_m": width,
                     "bearing_deg": bearing, "relief_m": float(np.nanmean(slrm[rr, cc])), "drivers": drivers,
                     "bbox": [int(rr.min()), int(cc.min()), int(rr.max()), int(cc.max())], "kind": kind,
-                    "geometry": geom, "axis_offset_m": dev, "label": lab}
+                    "geometry": geom, "axis_offset_m": dev, "label": lab, "near_edge": bool(on_edge[i] > 0)}
             if transform is not None:
                 x, y = transform * (col + 0.5, row + 0.5)
                 area["x"], area["y"] = float(x), float(y)
@@ -612,8 +644,150 @@ def _describe_ring(area):
             + (f", {drivers} than the surrounding terrain." if drivers else "."))
 
 
+def _summits(filled, missing, res):
+    """Summits and promontories: local maxima of the terrain smoothed at 15 m, at least HILL_MIN_PROM_M above the
+    median of a 100 m circle around them, away from missing data."""
+    g = ndimage.gaussian_filter(filled, max(1.0, 15.0 / res))
+    size = int(round(100.0 / res)) | 1
+    far = ~ndimage.binary_dilation(missing, iterations=max(1, int(round(30.0 / res))))
+    pk = (g == ndimage.maximum_filter(g, size=size)) & far
+    ang = np.linspace(0, 2 * np.pi, 36, endpoint=False)
+    out = []
+    for r, c in zip(*np.nonzero(pk)):
+        radius = 100.0 / res
+        pr = np.clip(np.rint(r + radius * np.cos(ang)).astype(int), 0, g.shape[0] - 1)
+        pc = np.clip(np.rint(c + radius * np.sin(ang)).astype(int), 0, g.shape[1] - 1)
+        prom = float(g[r, c] - np.median(g[pr, pc]))
+        if prom >= HILL_MIN_PROM_M:
+            out.append((prom, int(r), int(c)))
+    out.sort(reverse=True)
+    return out[:HILL_MAX_SUMMITS]
+
+
+def _level_profiles(filled, missing, dog, res, r0, c0):
+    """Unwrap the terrain around a point: in each of HILL_ANGLES directions, the small-scale relief as a function of
+    the drop below the point (a contour-following frame: a band at one level follows the shape of the hill).
+    Returns the levels, the matrix (directions x levels), and for each direction the distance of each level."""
+    radius = np.arange(0, HILL_RMAX_M / res)
+    ang = np.linspace(0, 2 * np.pi, HILL_ANGLES, endpoint=False)
+    rr = np.clip(r0 + radius[None, :] * np.cos(ang)[:, None], 0, filled.shape[0] - 1)
+    cc = np.clip(c0 + radius[None, :] * np.sin(ang)[:, None], 0, filled.shape[1] - 1)
+    z = ndimage.map_coordinates(filled, [rr, cc], order=1)
+    v = ndimage.map_coordinates(dog, [rr, cc], order=1)
+    bad = ndimage.map_coordinates(missing.astype(np.float64), [rr, cc], order=0) > 0
+    drop = np.maximum.accumulate(z[:, :1] - z, axis=1)
+    levels = np.arange(1.0, HILL_MAX_DROP_M, HILL_LEVEL_STEP_M)
+    M = np.full((HILL_ANGLES, levels.size), np.nan)
+    dist = np.full((HILL_ANGLES, levels.size), np.nan)
+    for i in range(HILL_ANGLES):
+        ok = ~bad[i]
+        if ok.sum() < 10:
+            continue
+        d, val, rad = drop[i][ok], v[i][ok], radius[ok]
+        _, u = np.unique(d, return_index=True)
+        if u.size < 5:
+            continue
+        M[i] = np.interp(levels, d[u], val[u], left=np.nan, right=np.nan)
+        dist[i] = np.interp(levels, d[u], rad[u], left=np.nan, right=np.nan)
+    # remove the smooth shape of the hill: only steps, ditches and banks remain
+    trend = ndimage.gaussian_filter1d(np.nan_to_num(M), HILL_TREND_LEVELS, axis=1, mode="nearest")
+    M = np.where(np.isfinite(M), M - trend, np.nan)
+    M[:, levels < HILL_MIN_DROP_M] = np.nan
+    return levels, M, dist
+
+
+def _band_persistence(M):
+    """For each level: the share of directions where the small-scale relief has the same sign as the mean and is
+    clearly away from zero (persistence), and the t-statistic of the mean."""
+    n = np.isfinite(M).sum(axis=0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = np.nanmean(M, axis=0)
+        t = mean / (np.nanstd(M, axis=0) / np.sqrt(np.maximum(n, 1)) + 1e-9)
+    sig = float(np.nanstd(M)) if np.isfinite(M).any() else 1.0
+    sig = sig or 1.0
+    pers = np.nanmean((np.sign(M) == np.sign(mean)) & (np.abs(M) > sig), axis=0)
+    short = n < HILL_MIN_DATA * M.shape[0]
+    t = np.where(short | ~np.isfinite(t), 0.0, t)
+    pers = np.where(short | ~np.isfinite(pers), 0.0, pers)
+    return pers, t
+
+
+def detect_hill_bands(work, valid, edge, res, width_m, seed=DEFAULT_SEED):
+    """Concentric bands around a hilltop (terraces, ditch-and-bank lines of a hillfort or castle mound) that follow
+    the shape of the hill instead of a circle. Around each summit, the terrain is read level by level below the top;
+    a band is a level at which a step, ditch or bank appears in most directions. It must be more persistent than the
+    same statistic around random points of the same terrain."""
+    filled, missing = metrics.finite_fill(work)
+    s = metrics.target_scale_px(width_m, res)
+    dog = ndimage.gaussian_filter(filled, s) - ndimage.gaussian_filter(filled, 3 * s)
+    tops = _summits(filled, missing, res)
+    if not tops:
+        return []
+    rng = np.random.default_rng(seed)
+    vr, vc = np.nonzero(valid)
+    null = []
+    for j in rng.choice(vr.size, min(vr.size, HILL_NULL), replace=False):
+        _, M, _ = _level_profiles(filled, missing, dog, res, int(vr[j]), int(vc[j]))
+        null.append(float(_band_persistence(M)[0].max()))
+    null_max = max(null) if null else 0.0
+    thr = max(HILL_MIN_PERS, null_max + HILL_MARGIN)
+    found = []
+    for prom, r0, c0 in tops:
+        levels, M, dist = _level_profiles(filled, missing, dog, res, r0, c0)
+        pers, t = _band_persistence(M)
+        ok = (pers >= thr) & (np.abs(t) >= HILL_MIN_T)
+        peaks = ok & (pers == ndimage.maximum_filter1d(pers, int(round(HILL_MIN_SEPARATION_M / HILL_LEVEL_STEP_M)) | 1))
+        idx = list(np.nonzero(peaks)[0])
+        if not idx:
+            continue
+        bands = []
+        for k in idx:
+            radii = dist[:, k]
+            if np.isfinite(radii).mean() < HILL_MIN_DATA:
+                continue
+            bands.append({"level_m": float(levels[k]), "persistence": float(pers[k]), "t": float(t[k]),
+                          "sunken": bool(t[k] < 0), "radii_px": radii})
+        if not bands:
+            continue
+        excess = max(0.0, (max(b["persistence"] for b in bands) - null_max) / max(1e-6, 1.0 - null_max))
+        found.append({"row": float(r0), "col": float(c0), "prominence_m": prom, "bands": bands, "excess": excess,
+                      "random_best": null_max})
+    return found
+
+
+def _hill_masks(hill, shape, valid):
+    """Outline of each band (its contour-following line) and the cells near it."""
+    line = np.zeros(shape, dtype=bool)
+    ang = np.linspace(0, 2 * np.pi, HILL_ANGLES, endpoint=False)
+    for b in hill["bands"]:
+        rad = b["radii_px"]
+        pts = [(hill["row"] + r * np.cos(a), hill["col"] + r * np.sin(a)) for a, r in zip(ang, rad) if np.isfinite(r)]
+        for (r1, c1), (r2, c2) in zip(pts, pts[1:] + pts[:1]):
+            n = int(max(abs(r2 - r1), abs(c2 - c1))) + 1
+            if n > 4 * max(shape):
+                continue
+            rr = np.clip(np.rint(np.linspace(r1, r2, n)).astype(int), 0, shape[0] - 1)
+            cc = np.clip(np.rint(np.linspace(c1, c2, n)).astype(int), 0, shape[1] - 1)
+            line[rr, cc] = True
+    line &= valid
+    near = ndimage.binary_dilation(line, iterations=2) & valid
+    around = ndimage.binary_dilation(line, iterations=8) & ~near & valid
+    return line, near, around
+
+
+def _describe_hill(area):
+    n = len(area["levels_m"])
+    sunk = sum(area["sunken"])
+    kind = ("ditches or sunken steps" if sunk == n else "banks or raised steps" if sunk == 0 else "steps, ditches and banks")
+    levels = ", ".join(f"{lv:.1f}" for lv in area["levels_m"])
+    return (f"{n} stepped band{'s' if n != 1 else ''} around a summit, traced over {100 * area['coverage']:.0f}% of its "
+            f"perimeter, about {area['length_m']:.0f} m across ({kind}; {levels} m below the top). They follow the "
+            "shape of the hill, as terraces or the ditches of a hillfort or castle mound would.")
+
+
 def unusual_relief(dem, res, width_m, sensitivity="medium", seed=DEFAULT_SEED, transform=None, larger=True,
-                   mask_water=True, water_tilt_deg=WATER_TILT_DEG, water_min_area_m2=WATER_MIN_AREA_M2):
+                   mask_water=True, water_tilt_deg=WATER_TILT_DEG, water_min_area_m2=WATER_MIN_AREA_M2, hill_bands=True,
+                   edge_m=EDGE_M):
     """Run the whole method on a terrain array. Returns the score, the priority labels, the areas and a report.
 
     1. Exclude level water surfaces and a buffer around missing data and the data boundary.
@@ -647,10 +821,13 @@ def unusual_relief(dem, res, width_m, sensitivity="medium", seed=DEFAULT_SEED, t
             except ValueError:
                 pass
     s, rho = scales(res, width_m)
-    # clipped DTMs often carry a strip of interpolated or stretched data along the boundary: the edge band reaches
-    # twice the largest filter radius (at least 20 m) beyond the analysed area
-    edge_px = int(2 * max(rho, np.ceil(3 * s), round(10.0 / res)))
-    edge = ndimage.binary_dilation(~valid, iterations=edge_px) & valid
+    # clipped DTMs often carry a strip of interpolated or stretched data along the boundary: the edge band is measured
+    # from missing data, level water and the raster border, and reaches EDGE_M or twice the largest filter radius
+    outside = ~np.isfinite(work)
+    outside[[0, -1], :] = True
+    outside[:, [0, -1]] = True
+    edge_px = float(edge_m) / res if edge_m < EDGE_M else max(float(edge_m) / res, 2 * max(rho, np.ceil(3 * s)))
+    edge = (ndimage.distance_transform_edt(~outside) <= edge_px) & valid
     score = np.where(valid, score, np.nan).astype(np.float32)
     blob_labels, blobs, stats = priority_areas(score, valid, contrib, X, slrm, res, width_m, transform, sensitivity,
                                                edge_band=edge)
@@ -661,7 +838,8 @@ def unusual_relief(dem, res, width_m, sensitivity="medium", seed=DEFAULT_SEED, t
     items = []
     absorbed = set()
     for ring in rings_raw:
-        if ring["unusual"] < RING_MIN_UNUSUAL or ring["excess"] < RING_MIN_EXCESS:
+        min_excess = RING_MIN_EXCESS if len(ring["bands"]) > 1 else RING_SINGLE_EXCESS
+        if ring["unusual"] < RING_MIN_UNUSUAL or ring["excess"] < min_excess:
             continue
         if (len(ring["bands"]) == 1 and ring["radius_px"] * res < RING_SMALL_M
                 and (ring["excess"] < RING_SMALL_EXCESS or ring["unusual"] < RING_SMALL_UNUSUAL)):
@@ -684,6 +862,31 @@ def unusual_relief(dem, res, width_m, sensitivity="medium", seed=DEFAULT_SEED, t
         area["note"] = _describe_ring(area)
         for b in blobs:
             if np.hypot(b["row"] - ring["row"], b["col"] - ring["col"]) <= ring["outer_px"] + 2 * ring["bands"][-1][1]:
+                absorbed.add(b["label"])
+        items.append(area)
+    hills = detect_hill_bands(work, valid, edge, res, width_m, seed) if hill_bands else []
+    for hill in hills:
+        line, near, around = _hill_masks(hill, dem.shape, valid)
+        if not near.any() or (edge & line).sum() > RING_EDGE_SHARE * max(1, line.sum()) * 3:
+            continue
+        outer = max(hill["bands"], key=lambda b: b["level_m"])
+        radius_m = float(np.nanmedian(outer["radii_px"])) * res
+        cover = max(b["persistence"] for b in hill["bands"])
+        g = min(2.0, GEOMETRY["hilltop bands"] * (0.3 + 2.0 * hill["excess"]) + 0.25 * (len(hill["bands"]) - 1))
+        u = float(np.nanmean(S[near])) if near.any() else 0.0
+        area = {"row": hill["row"], "col": hill["col"], "pixels": int(line.sum()),
+                "area_m2": float(np.pi * radius_m ** 2), "mean_score": max(u, HILL_MIN_UNUSUAL),
+                "peak_score": float(S[near].max()), "length_m": 2 * radius_m, "width_m": 2 * radius_m,
+                "bearing_deg": 0.0, "relief_m": float(np.nanmean(slrm[near])),
+                "drivers": _drivers(near, around, contrib, X), "kind": "hilltop bands", "geometry": g,
+                "coverage": cover, "levels_m": [b["level_m"] for b in hill["bands"]],
+                "sunken": [b["sunken"] for b in hill["bands"]], "prominence_m": hill["prominence_m"],
+                "excess": hill["excess"], "mask": line,
+                "bbox": [int(hill["row"] - radius_m / res), int(hill["col"] - radius_m / res),
+                         int(hill["row"] + radius_m / res), int(hill["col"] + radius_m / res)]}
+        area["note"] = _describe_hill(area)
+        for b in blobs:
+            if np.hypot(b["row"] - hill["row"], b["col"] - hill["col"]) * res <= radius_m + width_m:
                 absorbed.add(b["label"])
         items.append(area)
     for b in blobs:
@@ -718,6 +921,7 @@ def unusual_relief(dem, res, width_m, sensitivity="medium", seed=DEFAULT_SEED, t
         "rvt_radius_cells": rho, "valid_share": float(valid.mean()), **stats,
         "flagged_share": float((labels > 0)[valid].mean()) if valid.any() else 0.0,
         "n_areas": len(areas), "n_rings": sum(1 for a in areas if a["kind"] == "ring"),
+        "n_hills": sum(1 for a in areas if a["kind"] == "hilltop bands"),
         "water_share": float(water[data].mean()) if data.any() else 0.0,
         "edge_share": float((excluded == 2)[data].mean()) if data.any() else 0.0,
         "large_scale_share": float(scale_used[valid].mean()) if valid.any() else 0.0,

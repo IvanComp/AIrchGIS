@@ -459,12 +459,13 @@ AI_SCORE_RANGE = (2.0, 9.0)
 
 
 # outline colours by kind of priority (values of the tab10 colour map over 0..9)
-AI_KIND_CODES = {"ring": 1, "line": 2, "compact": 3, "straight line": 7}
-AI_KIND_COLOURS = {"ring": "#ff7f0e", "line": "#2ca02c", "compact": "#d62728", "straight line": "#7f7f7f"}
+AI_KIND_CODES = {"ring": 1, "line": 2, "compact": 3, "hilltop bands": 4, "straight line": 7}
+AI_KIND_COLOURS = {"ring": "#ff7f0e", "line": "#2ca02c", "compact": "#d62728", "hilltop bands": "#9467bd",
+                   "straight line": "#7f7f7f"}
 
 
 def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True, larger=True, mask_water=True,
-                       water_tilt_deg=0.4, water_min_area_m2=5000.0):
+                       water_tilt_deg=0.4, water_min_area_m2=5000.0, edge_m=25.0):
     """Unusual relief (AI): score layer, outlines of the priorities by kind and the area left out, shown next to the
     relief view, never instead of it. A result for the same terrain and settings is reused."""
     from airchgis.gis.tools import run_tool
@@ -472,7 +473,7 @@ def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True
     width = float(width)
     params = {"width": width, "sensitivity": str(sensitivity), "seed": int(seed), "compare": bool(compare),
               "larger": bool(larger), "mask_water": bool(mask_water), "water_tilt_deg": float(water_tilt_deg),
-              "water_min_area_m2": float(water_min_area_m2), "sites": wb.sites}
+              "water_min_area_m2": float(water_min_area_m2), "edge_m": float(edge_m), "sites": wb.sites}
     key = (id(wb.dem), tuple(sorted(params.items(), key=lambda kv: kv[0])))
     cache = getattr(wb, "ai_cache", None)
     if cache and cache.get("key") == key:
@@ -483,7 +484,8 @@ def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True
                      target_feature_width_m=width, sensitivity=params["sensitivity"], seed=params["seed"],
                      output_areas=str(out_path.with_suffix(".geojson")), sites=wb.sites, compare=params["compare"],
                      larger=params["larger"], mask_water=params["mask_water"],
-                     water_tilt_deg=params["water_tilt_deg"], water_min_area_m2=params["water_min_area_m2"])
+                     water_tilt_deg=params["water_tilt_deg"], water_min_area_m2=params["water_min_area_m2"],
+                     edge_m=params["edge_m"])
         if r["status"] == "refused":
             wb.message = r["message"]
             wb.message_level = "warning"
@@ -507,9 +509,9 @@ def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True
     codes = np.zeros(labels.shape, dtype=np.float32)
     for lab_id, code in kind_of.items():
         codes[labels == lab_id] = code
-    wb.add_layer("ai_areas", "Priorities to check (AI)", "Outlines by kind: orange = ring or concentric bands, green = "
+    wb.add_layer("ai_areas", "Priorities to check (AI)", "Outlines by kind: orange = ring or concentric bands, purple = bands around a hilltop, green = "
                  "curved line, red = compact form, grey = long straight line (often modern). Numbered as in the list.",
-                 np.where(outline | (labels > 0) & (codes == 1), codes, np.nan), opacity=1.0, cmap="tab10",
+                 np.where(outline | (labels > 0) & ((codes == 1) | (codes == 4)), codes, np.nan), opacity=1.0, cmap="tab10",
                  hide_others=False, display_range=(0, 9))
     if excluded is not None and np.isfinite(excluded).any():
         wb.add_layer("ai_excluded", "Not analysed (AI)", "Left out of the analysis: level water surfaces and a strip "
@@ -533,7 +535,8 @@ def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True
     wb.message = out["note"]
 
 
-AI_PARAM_KEYS = ("width", "sensitivity", "seed", "compare", "larger", "mask_water", "water_tilt_deg", "water_min_area_m2")
+AI_PARAM_KEYS = ("width", "sensitivity", "seed", "compare", "larger", "mask_water", "water_tilt_deg", "water_min_area_m2",
+                 "edge_m")
 
 
 def ensure_unusual_relief(wb, settings=None):
@@ -653,7 +656,7 @@ def handle_event(wb, event, compute=None, core=None, view3d=None):
             run_fused(wb, event.get("width"))
         elif action == "unusual_relief":
             run_unusual_relief(wb, **{k: event[k] for k in ("width", "sensitivity", "seed", "compare", "larger",
-                                                           "mask_water", "water_tilt_deg", "water_min_area_m2")
+                                                           "mask_water", "water_tilt_deg", "water_min_area_m2", "edge_m")
                                       if k in event})
         elif action == "capture3d":
             from airchgis.terrain.view_export import save_current_view

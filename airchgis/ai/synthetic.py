@@ -108,6 +108,47 @@ def ringwork_site(n=600, res=1.0, seed=0, rings=True):
     return z.astype(np.float32), {"ring": ring, "lake": lake, "edge": edge | (cut > 0), "road": road}
 
 
+def stepped_hill_site(n=600, res=1.0, seed=0, terraces=True):
+    """An irregular hill (two lobes, about 25 m high) with three stepped bands that follow its contours (sunken steps
+    0.4 m deep at 6, 10 and 14 m below the top, each with a gap), under smooth natural relief and noise. Negatives
+    on the same terrain: a long straight slope with natural geological steps at constant elevation, and agricultural
+    terraces (parallel straight risers). Returns (dem, masks) with masks 'bands', 'geology', 'agri'."""
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:n, 0:n] * res
+    z = 250 + 0.01 * xx
+    for s, a in ((120, 3.0), (50, 1.0), (20, 0.3)):
+        f = ndimage.gaussian_filter(rng.normal(size=(n, n)), s / res)
+        z += a * f / f.std()
+    cy, cx = 0.4 * n * res, 0.4 * n * res
+    hill = (25.0 * np.exp(-(((xx - cx) / 90.0) ** 2 + ((yy - cy) / 65.0) ** 2))
+            + 10.0 * np.exp(-(((xx - cx - 60) / 45.0) ** 2 + ((yy - cy + 35) / 40.0) ** 2)))
+    top = float(hill.max())
+    gy, gx = np.gradient(hill, res)
+    slope = np.maximum(np.hypot(gx, gy), 1e-3)
+    ang = np.arctan2(yy - cy, xx - cx)
+    bands = np.zeros((n, n), dtype=bool)
+    if terraces:
+        for drop, gap in ((6.0, 0.8), (10.0, 2.6), (14.0, -1.7)):
+            d = (hill - (top - drop)) / slope  # horizontal distance to the contour
+            keep = np.abs(np.angle(np.exp(1j * (ang - gap)))) > 0.5
+            near = (np.abs(d) < 10)
+            z -= 0.4 * np.exp(-(d / 2.0) ** 2) * keep * near
+            bands |= (np.abs(d) < 3) & keep
+    z += hill
+    # natural geological steps on a long straight slope (east strip): steps at constant elevation, straight lines
+    geo = xx > 0.8 * n * res
+    plane = 0.12 * (xx - 0.8 * n * res)
+    steps = 0.5 * np.floor(plane / 2.0) + 0.5 / (1 + np.exp(-((plane % 2.0) - 1.5) / 0.05))
+    z = np.where(geo, z + plane + steps - 0.25 * plane, z)
+    geology = geo & (np.abs((plane % 2.0) - 1.5) < 0.4)
+    # agricultural terraces in the south: parallel straight risers every 20 m
+    agri_zone = yy > 0.8 * n * res
+    z = np.where(agri_zone, z + 0.6 / (1 + np.exp(-((xx % 20.0) - 17.0) / 0.6)), z)
+    agri = agri_zone & (np.abs((xx % 20.0) - 17.0) < 2.5)
+    z += ndimage.gaussian_filter(rng.normal(size=(n, n)), 1.5) * 0.06 + rng.normal(0, 0.03, (n, n))
+    return z.astype(np.float32), {"bands": bands, "geology": geology, "agri": agri}
+
+
 def feature_points(truth, step=15):
     """Points sampled on the truth mask, used as 'known features' in tests (rows, cols)."""
     rr, cc = np.nonzero(truth)

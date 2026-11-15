@@ -10,16 +10,16 @@
       "auc_on_target_outline": 0.525
     },
     "after": {
-      "areas": 1,
-      "target_rank": null,
-      "target_kind": null,
+      "areas": 2,
+      "target_rank": 1,
+      "target_kind": "hilltop bands",
       "target_outline_covered": 0.0,
       "in_water": 0,
       "on_edge": 0,
       "auc_on_target_outline": 0.525
     },
     "water_share_after": 0.0,
-    "edge_share_after": 0.154
+    "edge_share_after": 0.14
   },
   "castello_montedoglio": {
     "before": {
@@ -32,16 +32,16 @@
       "auc_on_target_outline": 0.555
     },
     "after": {
-      "areas": 19,
-      "target_rank": null,
-      "target_kind": null,
-      "target_outline_covered": 0.0,
+      "areas": 20,
+      "target_rank": 1,
+      "target_kind": "hilltop bands",
+      "target_outline_covered": 0.57,
       "in_water": 0,
-      "on_edge": 0,
+      "on_edge": 1,
       "auc_on_target_outline": 0.52
     },
     "water_share_after": 0.211,
-    "edge_share_after": 0.097
+    "edge_share_after": 0.089
   },
   "betterton_ring": {
     "before": {
@@ -59,10 +59,10 @@
       "target_kind": "ring",
       "target_outline_covered": 1.0,
       "in_water": 0,
-      "on_edge": 0,
+      "on_edge": 2,
       "auc_on_target_outline": 0.814
     },
     "water_share_after": 0.0,
-    "edge_share_after": 0.116
+    "edge_share_after": 0.101
   }
 }

@@ -241,6 +241,7 @@ function buildTools(){
       <div class="wb-row"><label><input type="checkbox" class="wb-ai-water" checked> Leave out level water surfaces (lakes, sea)</label></div>
       <div class="wb-row"><label for="wb-ai-water-tilt">Water: largest tilt (°)</label><input id="wb-ai-water-tilt" type="number" class="wb-ai-water-tilt" min="0.05" max="5" step="0.05" value="0.4"></div>
       <div class="wb-row"><label for="wb-ai-water-area">Water: smallest area (m²)</label><input id="wb-ai-water-area" type="number" class="wb-ai-water-area" min="100" step="500" value="5000"></div>
+      <div class="wb-row"><label for="wb-ai-edge">Data edge strip (m)</label><input id="wb-ai-edge" type="number" class="wb-ai-edge" min="0" max="200" step="5" value="25" title="Priorities lying mostly in this strip along the edge of the data are dropped; smaller values show more, marked as near the edge"></div>
       <div class="wb-row"><label for="wb-ai-seed">Random seed</label><input id="wb-ai-seed" type="number" class="wb-ai-seed" min="0" step="1" value="0"></div>
       <div class="wb-row"><label><input type="checkbox" class="wb-ai-compare" checked> With known features, also compare with VAT and e3MSTP</label></div>
       <div class="wb-row"><label for="wb-ai-sites">Known features (CSV or GeoJSON)</label><input id="wb-ai-sites" type="file" class="wb-ai-sites" accept=".csv,.txt,.geojson,.json,.gpkg,.kml,.zip"></div>
@@ -250,7 +251,7 @@ function buildTools(){
     <div class="wb-ai-result" hidden>
       <p class="wb-ai-note"></p>
       <div class="wb-ai-legend"><span>usual</span><i></i><span>unusual</span></div>
-      <div class="wb-ai-kinds"><span><b style="background:#ff7f0e"></b>ring</span><span><b style="background:#2ca02c"></b>curved line</span><span><b style="background:#d62728"></b>compact</span><span><b style="background:#7f7f7f"></b>straight line</span><span><b style="background:#8c8c8c;opacity:.5"></b>not analysed</span></div>
+      <div class="wb-ai-kinds"><span><b style="background:#ff7f0e"></b>ring</span><span><b style="background:#9467bd"></b>bands around a hilltop</span><span><b style="background:#2ca02c"></b>curved line</span><span><b style="background:#d62728"></b>compact</span><span><b style="background:#7f7f7f"></b>straight line</span><span><b style="background:#8c8c8c;opacity:.5"></b>not analysed</span></div>
       <button type="button" class="wb-ai-compare-btn secondary">Before / after</button>
       <p class="wb-ai-known"></p>
       <ol class="wb-ai-areas"></ol>
@@ -320,7 +321,8 @@ function aiSettings(){
   return {width:Number(q('.wb-ai-width')?.value)||5,sensitivity:q('.wb-ai-sens')?.value||'medium',seed:Number(q('.wb-ai-seed')?.value)||0,
     compare:q('.wb-ai-compare')?q('.wb-ai-compare').checked:true,larger:q('.wb-ai-larger')?q('.wb-ai-larger').checked:true,
     mask_water:q('.wb-ai-water')?q('.wb-ai-water').checked:true,water_tilt_deg:Number(q('.wb-ai-water-tilt')?.value)||0.4,
-    water_min_area_m2:Number(q('.wb-ai-water-area')?.value)||5000};
+    water_min_area_m2:Number(q('.wb-ai-water-area')?.value)||5000,
+    edge_m:q('.wb-ai-edge')&&q('.wb-ai-edge').value!==''?Number(q('.wb-ai-edge').value):25};
 }
 function renderAI(){
   const box=document.querySelector('.wb-ai-result');if(!box)return;

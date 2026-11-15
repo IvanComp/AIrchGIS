@@ -814,7 +814,7 @@ register(Tool("prepare_dtm", "Prepare a raster terrain model for relief visualiz
 
 def _native_unusual_relief(input, output, target_feature_width_m, sensitivity="medium", seed=0, output_areas=None,
                            sites=None, compare=True, larger=True, mask_water=True, water_tilt_deg=0.4,
-                           water_min_area_m2=5000.0):
+                           water_min_area_m2=5000.0, edge_m=25.0):
     from airchgis.ai import unusual_relief as ur
 
     arr, prof = _read(input)
@@ -822,7 +822,7 @@ def _native_unusual_relief(input, output, target_feature_width_m, sensitivity="m
     score, labels, areas, report = ur.unusual_relief(arr, res, target_feature_width_m, sensitivity=sensitivity,
                                                      seed=int(seed), transform=prof["transform"], larger=bool(larger),
                                                      mask_water=bool(mask_water), water_tilt_deg=float(water_tilt_deg),
-                                                     water_min_area_m2=float(water_min_area_m2))
+                                                     water_min_area_m2=float(water_min_area_m2), edge_m=float(edge_m))
     excluded = report.pop("excluded_mask")
     out = {"output": _write(output, score, prof), **_json_safe(report), "areas": _json_safe(areas)}
     lab_path = str(Path(output).with_name(Path(output).stem + "_priorities.tif"))
@@ -859,7 +859,8 @@ register(Tool("unusual_relief", "Unusual relief (AI): an unsupervised model of t
                       larger={"type": "boolean", "default": True, "description": "Also look for larger structures (second pass at three times the feature width)."},
                       mask_water={"type": "boolean", "default": True, "description": "Leave out level water surfaces such as lakes and the sea."},
                       water_tilt_deg={"type": "number", "minimum": 0.05, "maximum": 5, "default": 0.4, "description": "Largest tilt (degrees, 15 m scale) of a level water surface."},
-                      water_min_area_m2={"type": "number", "minimum": 100, "default": 5000.0, "description": "Smallest level surface treated as water (m²)."}),
+                      water_min_area_m2={"type": "number", "minimum": 100, "default": 5000.0, "description": "Smallest level surface treated as water (m²)."},
+                      edge_m={"type": "number", "minimum": 0, "maximum": 200, "default": 25.0, "description": "Width (m) of the strip along the data edge where priorities that lie mostly inside it are dropped."}),
               _native_unusual_relief, None, ("input",), output_keys=("output", "priorities", "excluded", "output_areas"), tags=("lidar", "ai")))
 
 

@@ -107,7 +107,9 @@ Rendering and image capture use the highest supported resolution up to an 8192-p
 
 Step by step:
 
-1. **Leave out what cannot be read.** Level water surfaces (lakes, the sea) and a strip along the edge of the data are not analysed and are shown grey. Water is found as large connected areas that are flat at a 15 m scale and keep the same elevation. The edge strip is twice the largest filter radius, at least 20 m, because clipped DTMs often carry stretched or interpolated data along their border.
+1. **Leave out what cannot be read.** Level water surfaces (lakes, the sea) are not analysed and are shown grey. Water is found as large connected areas that are flat at a 15 m scale and keep the same elevation. Clipped DTMs often carry stretched or interpolated data along their border, so there is also an edge strip, 25 m wide by default (adjustable under Advanced):
+   - a priority lying mostly in the strip, or running along it as a line, is dropped;
+   - a compact, well-formed one that only touches it is kept, with the note "near the edge of the data: check for artefacts".
 2. **Read the terrain through several RVT views.** These are sky-view factor, positive and negative openness, the local relief model and slope, computed at the feature width you type, plus the small- and medium-scale relief.
 3. **Compare each place with its neighbourhood.** Each view is expressed relative to the terrain around it, so the general shape of the landscape (a hill, a valley) does not count.
 4. **Learn the usual relief of this area.** A statistical model of what the views usually look like together is fitted on a random sample of the same terrain, with a fixed seed. The most unusual 10% is left out of the fit, so that features do not shape the idea of "usual".
@@ -118,12 +120,19 @@ Step by step:
    - it beats every one of 100 random circles of the same size drawn on the same terrain.
 
    The last test makes the threshold adapt to busy terrain such as field systems.
-7. **Rank the priorities to check.** Rings and concentric bands, curved lines and compact forms are ranked by unusualness × (1 + geometry), so rings come first. Long straight lines rank last and are labelled "often a modern road, track, drain or field boundary". They are never removed, because a hidden road can matter too.
+7. **Find stepped bands around hilltops.** Hillforts and castle mounds are often ringed by terraces or ditches that follow the shape of the hill, not a circle. Around each summit at least 8 m high:
+   - the terrain is read level by level below the top, in 90 directions;
+   - a band is a level where a step, ditch or bank appears in at least 60% of the directions;
+   - it must also beat the same measure taken around 40 random points of the same terrain.
 
-The map shows the score, the outlines by kind (orange ring, green curved line, red compact form, grey straight line) and the area left out. Each one appears next to the relief view, never instead of it, with a **Before / after** switch. Each priority comes with one sentence, for example "A ring-shaped form about 64 m across, with 2 concentric bands (50, 64 m)…", and the RVT views that drive it.
+   The result is reported as, for example, "1 stepped band around a summit, traced over 77% of its perimeter, about 47 m across".
+8. **Rank the priorities to check.** Rings and concentric bands, curved lines and compact forms are ranked by unusualness × (1 + geometry), so rings come first. Long straight lines rank last and are labelled "often a modern road, track, drain or field boundary". They are never removed, because a hidden road can matter too.
+
+The map shows the score, the outlines by kind (orange ring, purple bands around a hilltop, green curved line, red compact form, grey straight line) and the area left out. Each one appears next to the relief view, never instead of it, with a **Before / after** switch. Each priority comes with one sentence, for example "A ring-shaped form about 64 m across, with 2 concentric bands (50, 64 m)…", and the RVT views that drive it.
 
 **Two settings.** The feature width, and the sensitivity, which is the largest share of the area to check (0.5, 1 or 2%; default 1%). A place is listed only if it is also clearly unusual, so a uniform natural terrain can give no priority at all. Under **Advanced** are:
 - larger structures on or off;
+- the width of the data-edge strip;
 - the water options (largest tilt, smallest area);
 - the random seed;
 - known features (CSV or GeoJSON) to measure, on your terrain, the AUC of the AI layer against each RVT view, VAT and e3MSTP.
@@ -135,7 +144,7 @@ The map shows the score, the outlines by kind (orange ring, green curved line, r
 - natural terrain gives no priority at the default sensitivity;
 - on rough relief with terraces the layer does not beat the best single RVT view or VAT.
 
-Three real terrains were used to design the masks and the ring detector, so they do not count as an independent test ([`docs/evaluation/`](docs/evaluation/)). Performance on a new survey must be checked against known features.
+Three real terrains were used to design the masks, the ring detector and the hilltop-band detector, so they do not count as an independent test ([`docs/evaluation/`](docs/evaluation/)). Performance on a new survey must be checked against known features.
 
 ## Use cases and references
 
