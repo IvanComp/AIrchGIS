@@ -43,7 +43,7 @@ SECTIONS = [
         <ul><li><strong>Rasters:</strong> coordinates and a coordinate system are needed to place the terrain on the map. Compatible tiles are joined; excluded inputs are reported.</li>
         <li><strong>Point clouds:</strong> ground-class points are used when available, then interpolated into a terrain model. Without a ground class, vegetation and buildings may remain in the result.</li>
         <li><strong>Geographic coordinates:</strong> the app converts degrees to a metric UTM grid for terrain calculations.</li></ul>
-        <div class="ag-example"><span class="ag-example-label">Try it</span><h3>Open a use case</h3><p>Choose <strong>Colle San Mauro</strong> on the upload screen. The map opens with a hillshade already applied. Choose <strong>Home</strong> to return and try Montedoglio or Betterton.</p></div>"""),
+        <div class="ag-example"><span class="ag-example-label">Try it</span><h3>Open a use case</h3><p>Choose <strong>Colle San Mauro</strong> on the upload screen. The map opens with a hillshade already applied. Choose <strong>Home</strong> to return and try Montedoglio or Housesteads.</p></div>"""),
     ("preprocessing", "Check the prepared terrain", """
         <p>In <strong>Visualization tools → Pre-processing</strong>, read the recorded steps before interpreting the terrain.</p>
         <ul><li>Check the coordinate system, cell size and elevation range.</li>
@@ -81,7 +81,7 @@ SECTIONS = [
         <p>In the map, scores and outlines appear beside the relief view. In <strong>3D Analysis → View → AI Relief</strong>, the analysis runs automatically if needed and existing results are reused. Labels stay near their anomaly markers as the terrain rotates. Hover to read details; click to focus the camera.</p>
         {ai_image}
         <div class="ag-example"><span class="ag-example-label">Example from Colle San Mauro</span><h3>Anomaly 2: a raised form</h3><p>With feature width <strong>5 m</strong> and medium sensitivity, the example shows a form about <strong>17.3 × 6.4 m</strong>, with local relief of <strong>+0.27 m</strong>. Its shape is compatible with a mound or built-up platform; a natural rise or spoil heap can have similar relief.</p><p>The dimensions and relief are measurements from this analysis. The interpretation is a morphological hypothesis, not evidence that the form is archaeological. Anomaly numbers can change with data or settings.</p></div>
-        <p>Known features can be loaded as CSV or GeoJSON to compare the result with individual RVT views and VAT/e3MSTP. Without independent reference data, the app cannot establish detection accuracy for the survey. Settings and the random seed are recorded in the downloaded script.</p>"""),
+        <p>Known features can be loaded as CSV or GeoJSON to compare the result with individual RVT views and VAT/e3MSTP. Without independent reference data, the app cannot establish detection accuracy for the survey. Settings and the random seed are recorded in the processing provenance.</p>"""),
     ("rvt", "Use the full RVT workspace", """
         <p>Choose <strong>Visualization tools → Open RVT workspace</strong>. The tools dock beside the map. The pinned RVT_py version exposes <strong>148 public operations</strong>, including their parameters.</p>
         <div class="ag-tool-grid">
@@ -111,11 +111,11 @@ SECTIONS = [
         </tbody></table></div>
         <div class="ag-example"><span class="ag-example-label">Export example</span><h3>Save a figure</h3><p>Choose the rendering, position the terrain, set the relief opacity and press <strong>PNG</strong> or <strong>PDF</strong> under <strong>EXPORT AS</strong>. The image matches that view. Images render up to an 8192-pixel longest edge, within graphics-device and 32-million-pixel limits; PDF embeds a raster figure.</p></div>"""),
     ("usecases", "Use cases and references", """
-        <p>The upload screen provides three datasets. <strong>Site &amp; references</strong> in the map gives context for the Italian sites.</p>
+        <p>The upload screen provides three datasets. <strong>Site &amp; references</strong> in the map gives context for each site.</p>
         <div class="ag-case-list">
           <div><h3>🇮🇹 Colle San Mauro, L'Aquila</h3><p>One original 1000 × 1000 DTM tile. The examples in this guide use this dataset.</p><p>Heinzelmann, M., Jordan, D. &amp; Murer, C. (2010). <em>Amiternum and the upper Aterno valley: a Sabine-Roman town and its territory.</em> Journal of Roman Archaeology 23, 55–83. <a href="https://doi.org/10.1017/S1047759400002300" target="_blank" rel="noopener noreferrer">Read reference</a>.</p></div>
           <div><h3>🇮🇹 Castello di Montedoglio, Sansepolcro</h3><p>Two adjacent tiles mosaicked into 2000 × 1000 cells without resampling, for inspecting the castle's surrounding terrain.</p><p>Vigotti, L. (2021). <em>Il castello e i possedimenti dei conti di Montedoglio nel 1434.</em> Pagine Altotiberine 70, 181–202. <a href="https://www.researchgate.net/publication/389939665_Il_castello_di_Montedoglio_e_i_possedimenti_dei_Conti_di_Montdoglio_nel_1434" target="_blank" rel="noopener noreferrer">Read reference</a>.</p></div>
-          <div><h3>🇬🇧 Betterton, Oxfordshire</h3><p>Environment Agency native 1 m DTM. Terrain data are licensed under <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener noreferrer">OGL v3.0</a>.</p></div>
+          <div><h3>🇬🇧 Housesteads Roman Fort, Northumberland</h3><p>Native 1 m Environment Agency DTM centred on the Roman fort on Hadrian’s Wall. <a href="https://www.english-heritage.org.uk/visit/places/housesteads-roman-fort-hadrians-wall/history/" target="_blank" rel="noopener noreferrer">Historical reference</a>. Terrain data are licensed under <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener noreferrer">OGL v3.0</a>.</p></div>
         </div>
         <p>RVT algorithms are provided by <a href="https://github.com/EarthObservation/RVT_py" target="_blank" rel="noopener noreferrer">RVT_py</a> (ZRC SAZU and University of Ljubljana, Apache License 2.0), pinned to commit bab109c. Cite RVT_py and the relevant method publications when using its visualizations.</p>"""),
     ("questions", "Practical questions", """
@@ -126,7 +126,7 @@ SECTIONS = [
           <details><summary>Why is part of the terrain missing?</summary><p>NoData and large boundary-connected fill regions are excluded from the 3D surface. Check the input coverage and preparation log before treating an edge as a real landform.</p></details>
           <details><summary>What stays local?</summary><p>Terrain processing runs locally. Basemap imagery, place labels and global terrain tiles require internet access. Opening an external coordinate link passes that location to the external service.</p></details>
           <details><summary>What if a file or operation is too large?</summary><p>Check georeferencing and input contents first. Reduce the study area or tile count, or use a tiled RVT operation. Processing uses local memory. Browser downloads are limited to 200 MB; larger outputs remain at the local location reported by the app.</p></details>
-          <details><summary>Can I reproduce the processing?</summary><p>Use the map's <strong>Script</strong> card to download the recorded Python steps. RVT workspace packages retain managed inputs, outputs, settings and operation history.</p></details>
+          <details><summary>Can I reproduce the processing?</summary><p>RVT workspace packages retain managed inputs, outputs, settings and operation history. Processing provenance also records parameters and input checksums.</p></details>
         </div>"""),
 ]
 

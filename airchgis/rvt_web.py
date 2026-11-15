@@ -163,8 +163,14 @@ def render_workbench(core, wb):
     args = wb.map_args(workbench_tools(core))
     args["use_case"] = getattr(wb, "use_case", None)
     args["basemap"] = satellite_template(core, "Current")
+    nav_event = st.session_state.pop("as_wb_nav_event", None)
+    open_from_map = bool(nav_event and nav_event.get("action") == "view3d")
+    if open_from_map:
+        args["open3d_request"] = nav_event["nonce"]
     event = map_workbench(args, key="as_map_workbench", height=780)
-    event = st.session_state.pop("as_wb_nav_event", None) or event
+    if open_from_map:
+        return
+    event = nav_event or event
     if not event or event.get("nonce") == st.session_state.get("as_wb_last_nonce"):
         return
     st.session_state.as_wb_last_nonce = event.get("nonce")
@@ -191,6 +197,8 @@ def render_workbench(core, wb):
                                                 ai=getattr(wb, "ai_result", None), show_ai=wb.ai3d["show"],
                                                 adaptive_ve=wb.ai3d["adaptive_ve"])
         html = Path(html_path).read_text(encoding="utf-8")
+        Path(html_path).unlink(missing_ok=True)
+        Path(_las).unlink(missing_ok=True)
         capture = (Path(__file__).with_name("terrain") / "viewer_capture.js").read_text(encoding="utf-8")
         html = html.replace("      renderer.render(scene, camera);", "      renderInteractive();")
         html = html.replace("    function animate() {", capture + "\n    function animate() {", 1)

@@ -1,0 +1,27 @@
+{
+  "source": "Environment Agency LIDAR Composite DTM 1m",
+  "source_url": "https://environment.data.gov.uk/spatialdata/lidar-composite-digital-terrain-model-dtm-1m/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=13787b9a-26a4-4775-8523-806d13af58fc__Lidar_Composite_Elevation_DTM_1m&subset=E%28378400%2C379400%29&subset=N%28568250%2C569250%29&format=image%2Ftiff",
+  "license": "Open Government Licence v3.0",
+  "license_url": "https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
+  "attribution": "Contains public sector information licensed under the Open Government Licence v3.0. © Environment Agency.",
+  "reference_site": "https://www.english-heritage.org.uk/visit/places/housesteads-roman-fort-hadrians-wall/",
+  "resolution_m": 1,
+  "native": true,
+  "crs": "EPSG:27700",
+  "bounds": [
+    378400.0,
+    568250.0,
+    379400.0,
+    569250.0
+  ],
+  "shape": [
+    1000,
+    1000
+  ],
+  "processing": "Native 1 m grid retained; NoData represented as NaN; lossless compression.",
+  "sha256": "5391fc50efd4e2277a797e06f6220f786d2d297bb60b9e8e41f66f197cf534e3",
+  "site_location": {
+    "longitude": -2.3314,
+    "latitude": 55.0131
+  }
+}

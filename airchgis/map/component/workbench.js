@@ -8,7 +8,7 @@ function fitHeight(){let height=ARGS?.height||760;try{const top=window.frameElem
 let ARGS=null,map=null,initialized=false,pendingNonce=null,lastDownload=null,last3d=null,nonceCounter=0;
 let rvtWorkspace=null,captureRequest=null,captureTimeout=null,viewerReady=false;
 const display3D={background:'none',contrast:65,brightness:40,verticalExaggeration:1,reliefOpacity:100,elevationColor:35};
-let automaticExaggeration=1;
+let automaticExaggeration=1,lastOpen3dRequest=null;
 function update3DDisplay(){const toolbar=document.querySelector('.wb-3d-toolbar');if(!toolbar)return;display3D.elevationColor=Number(toolbar.querySelector('.wb-elevation-color-3d').value);toolbar.querySelector('.wb-elevation-color-readout').textContent=Math.round(display3D.elevationColor)+'%';display3D.contrast=Number(toolbar.querySelector('.wb-contrast-3d').value);display3D.brightness=Number(toolbar.querySelector('.wb-brightness-3d').value);display3D.reliefOpacity=Number(toolbar.querySelector('.wb-relief-opacity-3d').value);toolbar.querySelector('.wb-relief-opacity-readout').textContent=Math.round(display3D.reliefOpacity)+'%';toolbar.querySelector('.wb-contrast-readout').textContent=Math.round(display3D.contrast)+'%';toolbar.querySelector('.wb-brightness-readout').textContent=Math.round(display3D.brightness)+'%';const ve=display3D.verticalExaggeration||automaticExaggeration;toolbar.querySelector('.wb-exaggeration-readout').textContent=Math.abs(ve-automaticExaggeration)<.00001?'Auto':'×'+Number(ve).toFixed(2);if(viewerReady)document.querySelector('.wb-modal iframe').contentWindow.postMessage({type:'airchgis:3d-options',...display3D,controlPanelWidth:0,verticalExaggeration:display3D.verticalExaggeration||automaticExaggeration},'*');}
 function sync3DButtons(){for(const b of document.querySelectorAll('[data-3d-export]'))b.disabled=Boolean(pendingNonce||captureRequest)||(['pdf','png'].includes(b.dataset['3dExport'])&&!viewerReady);}
 function capture3D(format){if(pendingNonce||captureRequest||!viewerReady)return;const id=String(Date.now())+'-'+(++nonceCounter);captureRequest={id,format};document.querySelector('.wb-3d-busy').hidden=false;document.querySelector('.wb-3d-busy').textContent='Preparing '+format.toUpperCase()+'…';sync3DButtons();document.querySelector('.wb-modal iframe').contentWindow.postMessage({type:'airchgis:capture3d',id},'*');captureTimeout=setTimeout(()=>{captureRequest=null;document.querySelector('.wb-3d-busy').hidden=true;showToast('Image export timed out. Try again.');sync3DButtons();},60000);}
@@ -274,7 +274,7 @@ function buildTools(){
   toolbar.querySelector('.wb-true-scale').onclick=()=>{display3D.verticalExaggeration=1;exaggeration.value=1;update3DDisplay();};
   toolbar.querySelector('.wb-auto-scale').onclick=()=>{display3D.verticalExaggeration=null;exaggeration.value=automaticExaggeration;update3DDisplay();};
   for(const element of toolbar.querySelectorAll('.wb-contrast-3d,.wb-brightness-3d,.wb-relief-opacity-3d,.wb-elevation-color-3d'))element.addEventListener('input',update3DDisplay);
-  const view3dEvent=()=>({action:'view3d',cloud_key:toolbar.querySelector('.wb-cloud').value,ai_show:true,ai_ve:false,...aiSettings()});
+  const view3dEvent=()=>({action:'view3d',cloud_key:toolbar.querySelector('.wb-cloud').value,ai_show:toolbar.querySelector('.wb-cloud').value==='ai_relief',ai_ve:false,...aiSettings()});
   toolbar.querySelector('.wb-cloud').addEventListener('change',()=>{
     const ev=view3dEvent();
     if(ev.cloud_key==='ai_relief'&&!(ARGS.ai3d||{}).available){
@@ -295,10 +295,6 @@ function buildTools(){
   }
   document.querySelector('.wb-modal-content').appendChild(downloads);
   sync3DButtons();
-  const sc=el(`<div class="wb-card"><h4>Script</h4><p>Every step of this session (pre-processing, relief views, exports) with its settings and input checksums, as a Python script that repeats it.</p>
-    <button type="button" class="wb-run secondary" data-act="script">Download the steps as a Python script</button></div>`);
-  sc.querySelector('[data-act=script]').addEventListener('click',()=>send({action:'script'}));
-  box.appendChild(sc);
   const credit=el('<p class="wb-credit">Visualizations computed with <a href="https://github.com/EarthObservation/RVT_py" target="_blank" rel="noopener">RVT_py</a> (Relief Visualization Toolbox, ZRC SAZU and University of Ljubljana).</p>');
   box.appendChild(credit);
 }
@@ -370,6 +366,16 @@ function update(){
   const aiOpt=cloud.querySelector('option[value=ai_relief]');if(aiOpt){aiOpt.disabled=false;aiOpt.textContent='AI Relief';}
   const dl=ARGS.download;
   if(dl&&dl.id!==lastDownload){lastDownload=dl.id;const bytes=Uint8Array.from(atob(dl.b64),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:dl.mime}));const a=document.createElement('a');a.href=url;a.download=dl.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);showToast(`Saved: ${dl.filename}`);}
+  if(ARGS.open3d_request&&ARGS.open3d_request!==lastOpen3dRequest&&!pendingNonce){
+    lastOpen3dRequest=ARGS.open3d_request;
+    const aiVisible=Boolean(ARGS.ai3d?.available)&&(ARGS.layers||[]).some(layer=>{
+      if(!['ai_score','ai_areas'].includes(layer.id))return false;
+      const state=shownLayers.get(layer.id)||layer;
+      return state.visible&&Number(state.opacity)>0;
+    });
+    const mode=aiVisible?'ai_relief':(cloud.value==='ai_relief'?'original':cloud.value);
+    send({action:'view3d',cloud_key:mode,ai_show:aiVisible,ai_ve:false,...aiSettings()});
+  }
   const v3=ARGS.view3d;
   if(v3&&v3.id!==last3d){last3d=v3.id;const m=document.querySelector('.wb-modal');viewerReady=false;sync3DButtons();m.querySelector('iframe').srcdoc=v3.html;m.hidden=false;}
 }

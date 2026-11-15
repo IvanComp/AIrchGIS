@@ -154,11 +154,11 @@ Three terrains are available on the upload screen:
 |---|---|
 | 🇮🇹 **Colle San Mauro, L'Aquila, Italy** | One 1000 × 1000 DTM tile supplied by the user |
 | 🇮🇹 **Castello di Montedoglio, Sansepolcro, Italy** | Two adjacent DTM tiles, mosaicked into 2000 × 1000 cells without resampling |
-| 🇬🇧 **Betterton, Oxfordshire, UK** | Environment Agency native 1 m DTM, under OGL v3.0 |
+| 🇬🇧 **Housesteads Roman Fort, Northumberland, UK** | Environment Agency native 1 m DTM, under OGL v3.0 |
 
 The Italian datasets retain their original EPSG:4326 grid at 0.00001° spacing and their NoData values. The app converts them to metric coordinates on load. Each dataset has a `provenance.json` recording source files, processing and checksums. A data license was not included in the supplied Italian archives. The archived Vaassen resolution-test rasters remain under `airchgis/data/use_cases/vaassen/`.
 
-**Site & references** in the map provides historical context and publication links for the Italian sites:
+**Site & references** in the map provides historical context and publication links for the sites:
 
 - **Heinzelmann, M., Jordan, D. & Murer, C. (2010).** Amiternum and the upper Aterno valley: a Sabine-Roman town and its territory. *Journal of Roman Archaeology* 23, 55–83. [DOI](https://doi.org/10.1017/S1047759400002300).
 - **Vigotti, L. (2021).** Il castello e i possedimenti dei conti di Montedoglio nel 1434. *Pagine Altotiberine* 70, 181–202. ISSN 2039-4861. [Author's publication page](https://www.researchgate.net/publication/389939665_Il_castello_di_Montedoglio_e_i_possedimenti_dei_Conti_di_Montdoglio_nel_1434).

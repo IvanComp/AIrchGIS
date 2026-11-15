@@ -46,6 +46,13 @@ class UseCaseTests(unittest.TestCase):
             self.assertEqual(src.crs.to_epsg(), 27700)
             self.assertEqual(src.shape, (1000, 1000))
             self.assertEqual(src.read(1, masked=True).count(), 1000000)
+            from pyproj import Transformer
+
+            site = metadata["site_location"]
+            x, y = Transformer.from_crs(4326, src.crs, always_xy=True).transform(site["longitude"], site["latitude"])
+            row, col = src.index(x, y)
+            self.assertTrue(150 < row < 850 and 150 < col < 850)
+            self.assertIn("Housesteads", case["label"])
 
     def test_use_case_button_opens_real_terrain(self):
         app = AppTest.from_file(APP, default_timeout=120).run()
