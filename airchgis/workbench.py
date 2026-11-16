@@ -130,7 +130,7 @@ class Workbench:
                          "b64": base64.b64encode(p.read_bytes()).decode("ascii")}
 
     def map_args(self, tools):
-        return {"layers": self.layers, "message": self.message if self.message_level in {"warning", "error"} else "", "message_level": self.message_level, "details": self.details, "download": self.download,
+        return {"layers": [layer for layer in self.layers if layer["id"] != "ai_excluded"], "message": self.message if self.message_level in {"warning", "error"} else "", "message_level": self.message_level, "details": self.details, "download": self.download,
                 "view3d": self.view3d, "prep": self.prep_view(), "resolution": self.resolution, "cloud_key": self.cloud_key, "done_nonce": self.done_nonce, "tools": tools, "name": self.name,
                 "elevation": self.elevation(), "sites": bool(self.sites), "ai": self.ai, "ai3d": {**self.ai3d, "available": self.ai_result is not None},
                 "rvt_api": self.rvt_workspace.snapshot() if self.rvt_workspace is not None else None}
@@ -495,7 +495,6 @@ def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True
     wb.ai_params = {k: v for k, v in params.items() if k != "sites"}
     score = read_raster(out["output"])
     labels = np.nan_to_num(read_raster(out["priorities"]), nan=0).astype(np.int32)
-    excluded = read_raster(out["excluded"]) if out.get("excluded") else None
     if not any(l["id"] not in ("ai_score", "ai_areas", "ai_excluded") and np.ndim(wb.arrays.get(l["id"])) >= 2
                for l in wb.layers):
         wb.add_layer("before", "Hillshade", "The terrain lit from the north-west, for reference.", hillshade(wb.dem, wb.res),
@@ -513,10 +512,6 @@ def run_unusual_relief(wb, width=5.0, sensitivity="medium", seed=0, compare=True
                  "curved line, red = compact form, grey = long straight line (often modern). Numbered as in the list.",
                  np.where(outline | (labels > 0) & ((codes == 1) | (codes == 4)), codes, np.nan), opacity=1.0, cmap="tab10",
                  hide_others=False, display_range=(0, 9))
-    if excluded is not None and np.isfinite(excluded).any():
-        wb.add_layer("ai_excluded", "Not analysed (AI)", "Left out of the analysis: level water surfaces and a strip "
-                     "along the edge of the data, where relief views are not reliable.", np.where(excluded > 0, 1.0, np.nan),
-                     opacity=0.45, cmap="gray", hide_others=False, display_range=(0, 2))
     lonlat = _to_lonlat_points([(a["x"], a["y"]) for a in areas], wb.crs)
     wb.ai = {"note": out["note"], "width": width, "sensitivity": params["sensitivity"], "seed": params["seed"],
              "flagged_share": out["flagged_share"], "range": list(AI_SCORE_RANGE), "views": out["views"],

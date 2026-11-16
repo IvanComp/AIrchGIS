@@ -1,0 +1,76 @@
+{
+  "case": "Colle San Mauro, L'Aquila, Italy",
+  "app_case_id": "colle_san_mauro",
+  "input": "airchgis/data/use_cases/colle_san_mauro/colle_san_mauro_DTM.tif",
+  "input_sha256": "1528a4f4fade567258744ede649cfaa8bdb29045639bc6df20a6061e3f963128",
+  "native_grid": {
+    "crs": "EPSG:4326",
+    "shape_rows_columns": [
+      1000,
+      1000
+    ],
+    "cell_size_crs_units": [
+      1e-05,
+      1e-05
+    ],
+    "bounds": [
+      13.290000000000001,
+      42.4,
+      13.3,
+      42.41
+    ],
+    "nodata": "-9999.0",
+    "valid_cells": 638637,
+    "elevation_min_max": [
+      676.6010131835938,
+      941.3619995117188
+    ]
+  },
+  "figure_grid": {
+    "crs": "EPSG:32633",
+    "shape_rows_columns": [
+      1153,
+      865
+    ],
+    "cell_size_m": [
+      0.9774999071889978,
+      0.9774999071889978
+    ],
+    "affine": [
+      0.9774999071889978,
+      0.0,
+      359270.30856569274,
+      0.0,
+      -0.9774999071889978,
+      4696716.021618279
+    ],
+    "valid_cells": 610996
+  },
+  "processing": {
+    "geographic_inputs": "App to_metric: bilinear reprojection to local UTM; projected inputs retained.",
+    "void_handling": "Nearest finite fill for derivatives only; original metric NoData mask restored before plotting.",
+    "hillshade": {
+      "azimuth_degrees": [
+        315,
+        45
+      ],
+      "sun_altitude_degrees": 35,
+      "vertical_factor": 1
+    },
+    "display": "Hillshade fixed range 0\u20131; native metric grid displayed without smoothing; PNG 300 dpi and PDF.",
+    "scope": "Illustrative terrain figures only; no AI analysis, water exclusion or archaeological classification."
+  },
+  "software": {
+    "numpy": "2.5.4",
+    "rasterio": "1.4.4",
+    "matplotlib": "3.9.2",
+    "rvt-py": "2.2.3"
+  },
+  "code": {
+    "git_head": "c9d154db7b96f39e3706082bd08c0f9c66516a06",
+    "dirty_checkout": true,
+    "script_sha256": "574f70c00b8a37f83e0c1b60462635db5125833a30dcf250f2c1d615ca345060",
+    "metric_preparation_sha256": "5bb03e6de67aa9759bd120a3741ab3aec37029ad9974297041968e368d1cd14c",
+    "fill_implementation_sha256": "55e59f726506ba8643819541dfb392f33fb4cce3b8b087c71970e6a9b0abcf29"
+  }
+}

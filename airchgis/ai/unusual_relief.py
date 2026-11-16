@@ -938,16 +938,10 @@ def summary_sentence(report):
     what = (f"{n} priority area{'s' if n != 1 else ''} to check"
             + (f", {rings} of them ring-shaped" if rings else "")
             if n else "no priority area: nothing in this terrain is clearly more unusual than the rest")
-    excl = []
-    if report.get("water_share", 0) >= 0.001:
-        excl.append(f"{100 * report['water_share']:.1f}% level water surface")
-    if report.get("edge_share", 0) >= 0.001:
-        excl.append(f"{100 * report['edge_share']:.1f}% data edge")
     return (f"Unusual relief for features about {report['target_width_m']:g} m wide"
             + (" and larger structures" if report.get("larger_structures") else "") + f": {what}. "
             "Bright places do not look like the rest of this terrain when several RVT views are read together; "
             "rings and curved lines rank first, long straight lines last. "
-            + (f"Not analysed (shown grey): {' and '.join(excl)}. " if excl else "")
             + "These are priorities to check, not sites: modern features and data artefacts can show up too.")
 
 

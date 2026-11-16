@@ -1,0 +1,29 @@
+{
+  "case": "colle_san_mauro",
+  "status": "Development-only snapshot, not independent evaluation",
+  "source": "docs/evaluation/design_sites_results.json",
+  "settings": "See docs/evaluation/evaluate_sites.py; feature width 5 m",
+  "version": "Original run version not recorded; these values are archived, not recomputed with current code.",
+  "results": {
+    "before": {
+      "areas": 3,
+      "target_rank": null,
+      "target_kind": null,
+      "target_outline_covered": 0.0,
+      "in_water": 0,
+      "on_edge": 2,
+      "auc_on_target_outline": 0.525
+    },
+    "after": {
+      "areas": 2,
+      "target_rank": 1,
+      "target_kind": "hilltop bands",
+      "target_outline_covered": 0.0,
+      "in_water": 0,
+      "on_edge": 0,
+      "auc_on_target_outline": 0.525
+    },
+    "water_share_after": 0.0,
+    "edge_share_after": 0.14
+  }
+}

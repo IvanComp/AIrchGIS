@@ -1,0 +1,76 @@
+{
+  "case": "Housesteads Roman Fort, Northumberland, UK",
+  "app_case_id": "england_1",
+  "input": "airchgis/data/use_cases/housesteads/Housesteads_EA_DTM_1m.tif",
+  "input_sha256": "5391fc50efd4e2277a797e06f6220f786d2d297bb60b9e8e41f66f197cf534e3",
+  "native_grid": {
+    "crs": "EPSG:27700",
+    "shape_rows_columns": [
+      1000,
+      1000
+    ],
+    "cell_size_crs_units": [
+      1.0,
+      1.0
+    ],
+    "bounds": [
+      378400.0,
+      568250.0,
+      379400.0,
+      569250.0
+    ],
+    "nodata": "nan",
+    "valid_cells": 1000000,
+    "elevation_min_max": [
+      211.22999572753906,
+      294.9200134277344
+    ]
+  },
+  "figure_grid": {
+    "crs": "EPSG:27700",
+    "shape_rows_columns": [
+      1000,
+      1000
+    ],
+    "cell_size_m": [
+      1.0,
+      1.0
+    ],
+    "affine": [
+      1.0,
+      0.0,
+      378400.0,
+      0.0,
+      -1.0,
+      569250.0
+    ],
+    "valid_cells": 1000000
+  },
+  "processing": {
+    "geographic_inputs": "App to_metric: bilinear reprojection to local UTM; projected inputs retained.",
+    "void_handling": "Nearest finite fill for derivatives only; original metric NoData mask restored before plotting.",
+    "hillshade": {
+      "azimuth_degrees": [
+        315,
+        45
+      ],
+      "sun_altitude_degrees": 35,
+      "vertical_factor": 1
+    },
+    "display": "Hillshade fixed range 0\u20131; native metric grid displayed without smoothing; PNG 300 dpi and PDF.",
+    "scope": "Illustrative terrain figures only; no AI analysis, water exclusion or archaeological classification."
+  },
+  "software": {
+    "numpy": "2.5.4",
+    "rasterio": "1.4.4",
+    "matplotlib": "3.9.2",
+    "rvt-py": "2.2.3"
+  },
+  "code": {
+    "git_head": "c9d154db7b96f39e3706082bd08c0f9c66516a06",
+    "dirty_checkout": true,
+    "script_sha256": "574f70c00b8a37f83e0c1b60462635db5125833a30dcf250f2c1d615ca345060",
+    "metric_preparation_sha256": "5bb03e6de67aa9759bd120a3741ab3aec37029ad9974297041968e368d1cd14c",
+    "fill_implementation_sha256": "55e59f726506ba8643819541dfb392f33fb4cce3b8b087c71970e6a9b0abcf29"
+  }
+}

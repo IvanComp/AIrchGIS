@@ -44,3 +44,5 @@ env/
 /.playwright-mcp/
 /.pytest_cache/
 /.ruff_cache/
+
+/airchgis/data/use_cases/*/paper/local_sources/

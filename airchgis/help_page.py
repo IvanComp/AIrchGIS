@@ -71,7 +71,7 @@ SECTIONS = [
     ("ai", "Read an AI anomaly", """
         <p><strong>Find hidden features (AI)</strong> combines RVT relief descriptors to find forms that differ from their surroundings. It analyzes the loaded terrain; it does not create extra terrain detail.</p>
         <ol class="ag-ai-flow">
-          <li><b>Leave out</b><span>Level water (lakes, sea) and a strip along the data edge are not analysed; they appear grey.</span></li>
+          <li><b>Leave out</b><span>Level water (lakes, sea) and a strip along the data edge are not analysed; these exclusions are applied automatically.</span></li>
           <li><b>Describe</b><span>Read relief at the chosen feature width, and at three times it, using several RVT views.</span></li>
           <li><b>Compare</b><span>Model the usual relief of this terrain and score how unusual each place is.</span></li>
           <li><b>Find shapes</b><span>Look for rings and concentric bands that a line of unusual relief follows around a circle, and for stepped bands that follow the shape of a hill around its summit (terraces or ditches of a hillfort or castle mound), each better than chance on the same terrain.</span></li>

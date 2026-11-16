@@ -251,7 +251,7 @@ function buildTools(){
     <div class="wb-ai-result" hidden>
       <p class="wb-ai-note"></p>
       <div class="wb-ai-legend"><span>usual</span><i></i><span>unusual</span></div>
-      <div class="wb-ai-kinds"><span><b style="background:#ff7f0e"></b>ring</span><span><b style="background:#9467bd"></b>bands around a hilltop</span><span><b style="background:#2ca02c"></b>curved line</span><span><b style="background:#d62728"></b>compact</span><span><b style="background:#7f7f7f"></b>straight line</span><span><b style="background:#8c8c8c;opacity:.5"></b>not analysed</span></div>
+      <div class="wb-ai-kinds"><span><b style="background:#ff7f0e"></b>ring</span><span><b style="background:#9467bd"></b>bands around a hilltop</span><span><b style="background:#2ca02c"></b>curved line</span><span><b style="background:#d62728"></b>compact</span><span><b style="background:#7f7f7f"></b>straight line</span></div>
       <button type="button" class="wb-ai-compare-btn secondary">Before / after</button>
       <p class="wb-ai-known"></p>
       <ol class="wb-ai-areas"></ol>
@@ -260,7 +260,7 @@ function buildTools(){
   ai.querySelector('.wb-ai-sites').addEventListener('change',ev=>{const f=ev.target.files[0];if(!f)return;const rd=new FileReader();
     rd.onload=()=>send({action:'sites',filename:f.name,b64:String(rd.result).split(',')[1]});rd.readAsDataURL(f);});
   ai.querySelector('.wb-ai-compare-btn').addEventListener('click',()=>{
-    const ids=['ai_score','ai_areas','ai_excluded'].filter(id=>map.getLayer('wb-'+id));if(!ids.length)return;
+    const ids=['ai_score','ai_areas'].filter(id=>map.getLayer('wb-'+id));if(!ids.length)return;
     const show=!(shownLayers.get(ids[0])||{visible:true}).visible;
     ids.forEach(id=>{const st=shownLayers.get(id)||{visible:true,opacity:1};st.visible=show;shownLayers.set(id,st);map.setLayoutProperty('wb-'+id,'visibility',show?'visible':'none');});
     renderLayerCards();showToast(show?'After: with the AI layer':'Before: relief view only');});

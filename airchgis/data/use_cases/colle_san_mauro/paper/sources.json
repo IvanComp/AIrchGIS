@@ -1,0 +1,15 @@
+[
+  {
+    "file": "local_sources/Heinzelmann_Jordan_Murer_2010_Amiternum.pdf",
+    "source": "https://archaeologie.phil-fak.uni-koeln.de/sites/archaeologie/Forschungsprojekte/amiternum/Heinzelmann_Amiternum_JRA_2010.pdf",
+    "sha256": "2532c833a4e16046a9e1739dbde98a579feede9a468fc4b0c51eac4cbef3db9e",
+    "text_extracted": false,
+    "redistribution": "Research copy retained locally; consult original rights statement before reusing text or figures.",
+    "pages": 30
+  },
+  {
+    "file": "local_sources/DTM_ColleSanMauro.zip",
+    "source": "User-supplied archive",
+    "sha256": "72d791f856530513cd7353d301e67bab81d656f537f5e83a61e9a6ea0f1e5661"
+  }
+]

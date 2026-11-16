@@ -1,0 +1,76 @@
+{
+  "case": "Castello di Montedoglio, Sansepolcro, Italy",
+  "app_case_id": "castello_montedoglio",
+  "input": "airchgis/data/use_cases/castello_montedoglio/castello_montedoglio_DTM.tif",
+  "input_sha256": "dafb0dff880b5e05acc9789edb7c0dc48c9a2ed9af957a249bc87e4b6853399d",
+  "native_grid": {
+    "crs": "EPSG:4326",
+    "shape_rows_columns": [
+      1000,
+      2000
+    ],
+    "cell_size_crs_units": [
+      1e-05,
+      1e-05
+    ],
+    "bounds": [
+      12.05,
+      43.58,
+      12.07,
+      43.589999999999996
+    ],
+    "nodata": "-9999.0",
+    "valid_cells": 1988883,
+    "elevation_min_max": [
+      334.25,
+      521.4299926757812
+    ]
+  },
+  "figure_grid": {
+    "crs": "EPSG:32633",
+    "shape_rows_columns": [
+      1332,
+      1886
+    ],
+    "cell_size_m": [
+      0.8770107351741783,
+      0.8770107351741783
+    ],
+    "affine": [
+      0.8770107351741783,
+      0.0,
+      261818.98335883158,
+      0.0,
+      -0.8770107351741783,
+      4830565.632693214
+    ],
+    "valid_cells": 2321720
+  },
+  "processing": {
+    "geographic_inputs": "App to_metric: bilinear reprojection to local UTM; projected inputs retained.",
+    "void_handling": "Nearest finite fill for derivatives only; original metric NoData mask restored before plotting.",
+    "hillshade": {
+      "azimuth_degrees": [
+        315,
+        45
+      ],
+      "sun_altitude_degrees": 35,
+      "vertical_factor": 1
+    },
+    "display": "Hillshade fixed range 0\u20131; native metric grid displayed without smoothing; PNG 300 dpi and PDF.",
+    "scope": "Illustrative terrain figures only; no AI analysis, water exclusion or archaeological classification."
+  },
+  "software": {
+    "numpy": "2.5.4",
+    "rasterio": "1.4.4",
+    "matplotlib": "3.9.2",
+    "rvt-py": "2.2.3"
+  },
+  "code": {
+    "git_head": "c9d154db7b96f39e3706082bd08c0f9c66516a06",
+    "dirty_checkout": true,
+    "script_sha256": "574f70c00b8a37f83e0c1b60462635db5125833a30dcf250f2c1d615ca345060",
+    "metric_preparation_sha256": "5bb03e6de67aa9759bd120a3741ab3aec37029ad9974297041968e368d1cd14c",
+    "fill_implementation_sha256": "55e59f726506ba8643819541dfb392f33fb4cce3b8b087c71970e6a9b0abcf29"
+  }
+}

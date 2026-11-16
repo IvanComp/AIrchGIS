@@ -1,0 +1,18 @@
+[
+  {
+    "file": "local_sources/Rushworth_2009_Housesteads_Volume_1.pdf",
+    "source": "https://archaeologydataservice.ac.uk/catalogue/adsdata/arch-4637-1/dissemination/pdf/nmr1-515482_211224.pdf",
+    "sha256": "2fde7f756c6e980c598c3a7acaa8326770d409cb598a618cdaaad6c1dc1127ae",
+    "text_extracted": true,
+    "redistribution": "Research copy retained locally; consult original rights statement before reusing text or figures.",
+    "pages": 358
+  },
+  {
+    "file": "local_sources/Rushworth_2009_Housesteads_Volume_2.pdf",
+    "source": "https://archaeologydataservice.ac.uk/catalogue/adsdata/arch-4637-1/dissemination/pdf/nmr1-515482_211224_1.pdf",
+    "sha256": "fc623ead13fe5f403f951d935ca7162a0d48f607ac3f5264e16fd45e209ce9f7",
+    "text_extracted": true,
+    "redistribution": "Research copy retained locally; consult original rights statement before reusing text or figures.",
+    "pages": 290
+  }
+]

@@ -1,0 +1,15 @@
+[
+  {
+    "file": "local_sources/Vigotti_2021_Montedoglio.pdf",
+    "source": "User-supplied PDF; bibliographic landing page in references.bib",
+    "sha256": "8b22cc7df3fd4e78fba45c442bd92098a53cebd03daa1ef974e44d232ec43901",
+    "text_extracted": true,
+    "redistribution": "Research copy retained locally; consult original rights statement before reusing text or figures.",
+    "pages": 22
+  },
+  {
+    "file": "local_sources/DTM_CastelloDiMontedoglio.zip",
+    "source": "User-supplied archive",
+    "sha256": "b68a77bed9200b5d6260fa704000da63e07eecae2693b7a7d2140b1233732f50"
+  }
+]
