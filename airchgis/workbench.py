@@ -235,10 +235,11 @@ def run_preparation(wb, fill_voids=True, cell_m=0.0):
     import rasterio
 
     with rasterio.open(out["output"]) as src:
-        dem = src.read(1).astype(np.float32)
+        dem = src.read(1, out_dtype="float32")
         dem[dem == -9999.0] = np.nan
         transform, crs, profile = src.transform, src.crs, src.profile.copy()
     wb.set_dem(dem, transform, crs, profile)
+    wb.src_path = out["output"]
     wb.prep["steps"] = out["steps"]
     wb.prep["params"] = {"fill_voids": bool(fill_voids), "cell_m": float(cell_m or 0.0)}
     run_relief(wb, None, "Hillshade", 315, replace=True)

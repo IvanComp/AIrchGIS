@@ -75,10 +75,14 @@ def georeference(array, transform, crs, layer_id, name, description="", cmap="gr
     a = np.asarray(array, dtype=np.float32)
     if a.ndim == 3:
         bands, bounds = _to_lonlat([a[..., i] for i in range(3)], transform, crs)
-        rgb = np.stack(bands, axis=-1)
-        valid = np.all(np.isfinite(rgb), axis=-1)
-        rgba = np.zeros(rgb.shape[:2] + (4,), dtype=np.uint8)
-        rgba[..., :3] = (np.clip(np.nan_to_num(rgb), 0, 1) * 255).astype(np.uint8)
+        rgba = np.empty(bands[0].shape + (4,), dtype=np.uint8)
+        valid = np.ones(bands[0].shape, dtype=bool)
+        for i, band in enumerate(bands):
+            valid &= np.isfinite(band)
+            channel = np.clip(band, 0, 1)
+            np.nan_to_num(channel, copy=False)
+            channel *= 255
+            rgba[..., i] = channel
     else:
         (dst,), bounds = _to_lonlat([a], transform, crs)
         valid = np.isfinite(dst)
@@ -96,7 +100,7 @@ def georeference(array, transform, crs, layer_id, name, description="", cmap="gr
                     lo, hi = max(lo, med - 3.5 * sigma), min(hi, med + 3.5 * sigma)
         norm = np.clip((dst - lo) / max(hi - lo, 1e-12), 0, 1)
         rgba = matplotlib.colormaps[cmap](np.nan_to_num(norm), bytes=True)
-    rgba[..., 3] = np.where(valid, 255, 0)
+    np.multiply(valid, np.uint8(255), out=rgba[..., 3])
     return MapLayer(layer_id, name, description, _png_b64(rgba), bounds, visible, float(opacity))
 
 

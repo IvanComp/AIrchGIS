@@ -11,8 +11,8 @@ STEPS = ("destripe", "despike", "fill_voids", "denoise")
 
 
 def _spectrum_geometry(h, w):
-    fy = np.fft.fftfreq(h)[:, None] * np.ones((1, w))
-    fx = np.fft.fftfreq(w)[None, :] * np.ones((h, 1))
+    fy = np.fft.fftfreq(h)[:, None]
+    fx = np.fft.fftfreq(w)[None, :]
     rho = np.hypot(fy, fx)
     ang = np.degrees(np.arctan2(fy, fx)) % 180.0
     return rho, ang
@@ -23,8 +23,11 @@ def periodic_peaks(P, angle_deg=None, width_deg=10.0, k=3.0, n_r=48, n_a=36):
     h, w = P.shape
     rho, ang = _spectrum_geometry(h, w)
     rbin = np.minimum((rho / (rho.max() + 1e-12) * n_r).astype(int), n_r - 1)
-    ref = np.array([np.median(P[rbin == i]) if (rbin == i).any() else 0.0 for i in range(n_r)])
-    refmap = ref[rbin]
+    ref = []
+    for i in range(n_r):
+        values = P[rbin == i]
+        ref.append(np.median(values, overwrite_input=True) if values.size else 0.0)
+    refmap = np.asarray(ref)[rbin]
     cand = (rho > 3.0 / max(h, w)) & (P > k * refmap)
     if angle_deg is not None:
         d = np.abs(((ang - angle_deg) + 90.0) % 180.0 - 90.0)
