@@ -63,7 +63,7 @@ def _png_b64(rgba):
     from PIL import Image
 
     buf = io.BytesIO()
-    Image.fromarray(rgba).save(buf, "PNG", optimize=True)
+    Image.fromarray(rgba).save(buf, "PNG", compress_level=3)
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
@@ -82,12 +82,12 @@ def georeference(array, transform, crs, layer_id, name, description="", cmap="gr
     else:
         (dst,), bounds = _to_lonlat([a], transform, crs)
         valid = np.isfinite(dst)
-        finite = dst[valid]
         if display_range is not None:
             lo, hi = map(float, display_range)
             if not np.isfinite([lo, hi]).all() or hi <= lo:
                 raise ValueError("The display range must contain two finite increasing values.")
         else:
+            finite = dst[valid]
             lo, hi = np.percentile(finite, [p_low, p_high]) if finite.size else (0.0, 1.0)
             if finite.size:
                 med = float(np.median(finite))
@@ -95,7 +95,7 @@ def georeference(array, transform, crs, layer_id, name, description="", cmap="gr
                 if sigma > 0:
                     lo, hi = max(lo, med - 3.5 * sigma), min(hi, med + 3.5 * sigma)
         norm = np.clip((dst - lo) / max(hi - lo, 1e-12), 0, 1)
-        rgba = (matplotlib.colormaps[cmap](np.nan_to_num(norm)) * 255).astype(np.uint8)
+        rgba = matplotlib.colormaps[cmap](np.nan_to_num(norm), bytes=True)
     rgba[..., 3] = np.where(valid, 255, 0)
     return MapLayer(layer_id, name, description, _png_b64(rgba), bounds, visible, float(opacity))
 
