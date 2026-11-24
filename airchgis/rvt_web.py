@@ -11,13 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
-import folium
 import numpy as np
 import streamlit as st
 import streamlit.components.v1 as components
-from folium.plugins import Draw, MeasureControl
 from PIL import Image, ImageDraw
-from streamlit_folium import st_folium
 from xml.sax.saxutils import escape as xml_escape
 
 from .paths import RVT_DIR
@@ -50,23 +47,26 @@ def save_settings(keys):
 
 
 def render_rvt_web():
-    core = load_rvt_core()
     keep_settings(PERSISTENT_KEYS)
-    init_rvt_state(core)
+    init_rvt_state()
     wb = st.session_state.get("as_wb")
     if wb is None:
-        render_start_page(core)
+        render_start_page()
     else:
+        core = load_rvt_core()
+        if "as_rvt_place" not in st.session_state:
+            places = core.list_database_places(RVT_DIR)
+            st.session_state.as_rvt_place = places[0] if places else ""
         render_workbench(core, wb)
 
 
-def render_start_page(core):
+def render_start_page():
 
     _, mid, _ = st.columns([0.12, 0.76, 0.12])
     with mid, st.container(key="home_layout"):
         with st.container(key="terrain_upload"):
             st.session_state.as_rvt_source_mode = source_mode = "Upload"
-            uploads = render_upload_controls(core)
+            uploads = render_upload_controls()
             example_path = st.session_state.pop("as_use_case_path", None)
             if example_path:
                 uploads = {"DTM": [example_path]}
@@ -87,6 +87,7 @@ def render_start_page(core):
         if not uploads.get("DTM"):
             return
         params = {"source_mode": source_mode, "source_payload": payload, "base_mode": "Original"}
+        core = load_rvt_core()
         data = current_rvt_data(core, params)
         if data is None or not data.loaded or data.dtm is None:
             msg = getattr(data, "error", None) if data is not None else None
@@ -233,7 +234,7 @@ def load_rvt_core():
     return module
 
 
-def init_rvt_state(core):
+def init_rvt_state():
     defaults = {
         "as_rvt_data": None,
         "as_rvt_data_sig": None,
@@ -267,10 +268,6 @@ def init_rvt_state(core):
     if not st.session_state.get("as_rvt_default_method_applied"):
         st.session_state.as_rvt_method = "Hillshade"
         st.session_state.as_rvt_default_method_applied = True
-
-    places = core.list_database_places(RVT_DIR)
-    if "as_rvt_place" not in st.session_state:
-        st.session_state.as_rvt_place = places[0] if places else ""
 
 
 BEST_VIEW_TOOL = "Improve and find the best view"
@@ -366,28 +363,29 @@ def render_rvt_controls(core):
     }
 
 
-def render_upload_controls(core):
+def render_upload_controls(core=None):
     from airchgis import data_input as di
     from airchgis.input_ui import render_file_input
 
     uploads = {}
 
     def load_group(key, label):
-        from airchgis.gis.provenance import ProvenanceLog
-        from airchgis.gis.tools import run_tool
-
         exts = {".tif", ".tiff", ".asc", ".zip"} | ({".las", ".laz"} if key == "DTM" else set())
         paths = render_file_input(label, exts, f"as_rvt_in_{key}", f"terrain_{key}")
         out = []
         for p in paths:
             try:
                 if p.suffix.lower() == ".zip":
-                    out.extend(extract_zip_rasters(core, p, key))
+                    zip_core = core if core is not None else load_rvt_core()
+                    out.extend(extract_zip_rasters(zip_core, p, key))
                 elif p.suffix.lower() in di.POINT_CLOUD_EXTS:
                     # point cloud -> DTM with the default pre-processing (ground class, outliers, density, TIN)
                     tif = di.UPLOAD_DIR / "dtm_from_point_cloud" / f"{p.stem}_tin_auto.tif"
                     cached = st.session_state.get("as_prep_source")
                     if not (cached and cached.get("path") == str(p) and tif.exists()):
+                        from airchgis.gis.provenance import ProvenanceLog
+                        from airchgis.gis.tools import run_tool
+
                         log = ProvenanceLog(f"AIrchGIS · {p.stem}")
                         with st.spinner(f"Making a terrain model from {p.name}..."):
                             r = run_tool("grid_point_cloud", log=log, input=str(p), output=str(tif))
@@ -537,6 +535,10 @@ def render_regional_dtm_selector(core):
             ["Current satellite", "Towns and roads"],
             key="as_rvt_dtm_map_view",
         )
+
+    import folium
+    from folium.plugins import Draw
+    from streamlit_folium import st_folium
 
     center = [(bounds[1] + bounds[3]) / 2.0, (bounds[0] + bounds[2]) / 2.0]
     fmap = folium.Map(location=center, zoom_start=8, tiles=None, control_scale=True)

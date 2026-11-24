@@ -2,14 +2,8 @@ import logging
 from datetime import date
 from uuid import uuid4
 
-import folium
 import streamlit as st
-from folium.plugins import Draw
-from streamlit_folium import st_folium
 
-from . import candidate_store
-from . import cropmarks_engine as cropmarks
-from . import site_index
 from . import ui
 from .paths import LOGO_PATH
 from .rvt_web import render_rvt_web
@@ -130,6 +124,11 @@ def render_cropmarks(standalone=False):
         render_field_marks_upload()
         return
 
+    import folium
+    from folium.plugins import Draw
+    from streamlit_folium import st_folium
+
+    from . import cropmarks_engine as cropmarks
     from .spectral.screen import render_provider_table
 
     with st.expander("Public image sources: what they cover and how to get them"):
@@ -297,6 +296,11 @@ def render_cropmarks(standalone=False):
 
 
 def render_crop_results(result, show_sites=True):
+    import folium
+    from streamlit_folium import st_folium
+
+    from . import cropmarks_engine as cropmarks
+
     frame = result["df"]
     selected = frame[frame["selected_for_composite"]] if "selected_for_composite" in frame else frame
 
@@ -416,9 +420,13 @@ def result_chips(result, selected):
 
 
 def add_known_sites(target_map, bounds, padding=0.03):
-
     if not bounds:
         return 0
+
+    import folium
+
+    from . import site_index
+
     try:
         sites = site_index.sites_in_bounds(
             bounds, padding=padding, methods=("pubblicata", "toponimo")
@@ -468,6 +476,9 @@ def add_known_sites(target_map, bounds, padding=0.03):
 
 
 def render_site_validation(result):
+
+    from . import cropmarks_engine as cropmarks
+    from . import site_index
 
     sites = cropmarks.sites_inside(
         result.get("geometry"), site_index.georeferenced_sites(methods=("pubblicata",))
@@ -521,6 +532,8 @@ def render_site_validation(result):
 
 
 def render_candidate_save_form(result, active_layer):
+    from . import candidate_store
+
     source = compact_source_record(st.session_state.get("as_crop_source_record"))
     default_title = (
         f"{source.get('localita') or source.get('comune')} · {source.get('number')}"
@@ -557,6 +570,8 @@ def render_candidate_save_form(result, active_layer):
 
 
 def render_crop_candidate_archive():
+    from . import candidate_store
+
     candidates = candidate_store.load_candidates()
     if not candidates:
         return
@@ -578,10 +593,17 @@ def render_crop_candidate_archive():
 
 
 def render_candidates():
+    from . import candidate_store
+
     candidates = candidate_store.load_candidates()
     if not candidates:
         st.info("No candidate yet. On the Terrain or Field marks screen, use «Save as candidate» on a result.")
         return
+
+    import folium
+    from streamlit_folium import st_folium
+
+    from . import cropmarks_engine as cropmarks
 
     status_filter = st.multiselect(
         "Filter by status",
